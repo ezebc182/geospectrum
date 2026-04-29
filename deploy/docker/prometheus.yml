@@ -1,0 +1,17 @@
+# Configuración Prometheus para scraping del servicio
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'seismic-monitor'
+    static_configs:
+      - targets: ['seismic-monitor:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'inpres-adapter'
+    static_configs:
+      - targets: ['inpres-adapter:8001']
+    metrics_path: '/health'
+    scrape_interval: 60s

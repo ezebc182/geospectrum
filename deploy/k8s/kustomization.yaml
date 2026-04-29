@@ -1,0 +1,31 @@
+# Kustomize para orquestar todos los manifests
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: seismic-monitor
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - deployment-inpres-adapter.yaml
+  - service.yaml
+  - hpa.yaml
+  - ingress.yaml
+  # - servicemonitor.yaml  # Descomentar si usas Prometheus Operator
+
+# Labels comunes
+commonLabels:
+  project: seismic-monitor
+  managed-by: kustomize
+
+# Images (personalizar según tu registry)
+images:
+  - name: seismic-monitor
+    newName: ghcr.io/your-org/seismic-monitor  # CAMBIAR
+    newTag: latest
+
+  - name: inpres-adapter
+    newName: ghcr.io/your-org/inpres-adapter  # CAMBIAR
+    newTag: latest

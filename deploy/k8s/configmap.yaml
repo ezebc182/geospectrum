@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seismic-monitor-config
+  namespace: seismic-monitor
+data:
+  # Región de monitoreo
+  REGION_MINLAT: "-40"
+  REGION_MAXLAT: "-20"
+  REGION_MINLON: "-75"
+  REGION_MAXLON: "-60"
+
+  # Alertas
+  MIN_MAG_ALERT: "3.0"
+  WINDOW_MINUTES: "60"
+
+  # Timeouts
+  USGS_TIMEOUT_S: "5.0"
+  INPRES_TIMEOUT_S: "5.0"
+
+  # INPRES adapter interno
+  INPRES_PROXY_URL: "http://inpres-adapter-service:8001/recent"
+
+  # Logging
+  LOG_LEVEL: "INFO"
+
+  # Observability
+  PROMETHEUS_ENABLED: "true"

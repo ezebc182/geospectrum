@@ -1,0 +1,158 @@
+version: '3.8'
+
+# =============================================================================
+# Docker Compose para Seismic Monitor
+#
+# Servicios:
+# - seismic-monitor: API principal
+# - inpres-adapter: Scraper INPRES (opcional)
+# - prometheus: Métricas (opcional)
+# - grafana: Dashboard (opcional)
+# - timescaledb: Storage histórico (opcional)
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Servicio principal
+  # ===========================================================================
+  seismic-monitor:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: seismic-monitor:latest
+    container_name: seismic-monitor
+    ports:
+      - "8000:8000"
+    environment:
+      # Region
+      REGION_MINLAT: "-40"
+      REGION_MAXLAT: "-20"
+      REGION_MINLON: "-75"
+      REGION_MAXLON: "-60"
+
+      # Alertas
+      MIN_MAG_ALERT: "3.0"
+      WINDOW_MINUTES: "60"
+
+      # Timeouts
+      USGS_TIMEOUT_S: "5.0"
+      INPRES_TIMEOUT_S: "5.0"
+
+      # INPRES adapter
+      INPRES_PROXY_URL: "http://inpres-adapter:8001/recent"
+
+      # Logging
+      LOG_LEVEL: "INFO"
+
+      # Observability
+      PROMETHEUS_ENABLED: "true"
+
+      # Storage (descomentar si usas TimescaleDB)
+      # TIMESCALEDB_HOST: "timescaledb"
+      # TIMESCALEDB_PORT: "5432"
+      # TIMESCALEDB_DB: "seismic"
+      # TIMESCALEDB_USER: "seismic"
+      # TIMESCALEDB_PASSWORD: "changeme"
+
+    depends_on:
+      - inpres-adapter
+    restart: unless-stopped
+    networks:
+      - seismic-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # ===========================================================================
+  # INPRES Adapter (scraper)
+  # ===========================================================================
+  inpres-adapter:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.inpres-adapter
+    image: inpres-adapter:latest
+    container_name: inpres-adapter
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    networks:
+      - seismic-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # ===========================================================================
+  # Prometheus (opcional)
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+    networks:
+      - seismic-net
+    profiles:
+      - observability
+
+  # ===========================================================================
+  # Grafana (opcional)
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - seismic-net
+    profiles:
+      - observability
+
+  # ===========================================================================
+  # TimescaleDB (opcional, para histórico)
+  # ===========================================================================
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: seismic
+      POSTGRES_USER: seismic
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - seismic-net
+    profiles:
+      - storage
+
+networks:
+  seismic-net:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  timescaledb-data:

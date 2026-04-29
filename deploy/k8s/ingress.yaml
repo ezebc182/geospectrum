@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: seismic-monitor-ingress
+  namespace: seismic-monitor
+  annotations:
+    # NGINX ingress
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+    # Rate limiting (ajustar según necesidad)
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+
+    # CORS (si es necesario)
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+
+    # TLS/SSL
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Si usas cert-manager
+
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - seismic.example.com  # CAMBIAR A TU DOMINIO
+      secretName: seismic-monitor-tls
+  rules:
+    - host: seismic.example.com  # CAMBIAR A TU DOMINIO
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: seismic-monitor-service
+                port:
+                  number: 8000

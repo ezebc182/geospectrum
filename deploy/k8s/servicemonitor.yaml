@@ -1,0 +1,19 @@
+# ServiceMonitor para Prometheus Operator
+# Solo aplicar si tienes Prometheus Operator instalado
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: seismic-monitor
+  namespace: seismic-monitor
+  labels:
+    app: seismic-monitor
+    release: prometheus  # Ajustar según tu release de Prometheus
+spec:
+  selector:
+    matchLabels:
+      app: seismic-monitor
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

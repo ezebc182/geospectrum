@@ -1,0 +1,21 @@
+# Minimal requirements for local development
+# Use this if full requirements.txt fails due to compilation issues
+
+# Core FastAPI
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+httpx==0.27.0
+pydantic==2.9.0
+pydantic-settings==2.5.0
+python-dotenv==1.0.0
+
+# INPRES scraper (using html5lib instead of lxml for better compatibility)
+beautifulsoup4==4.12.3
+html5lib==1.1
+
+# Observability
+prometheus-client==0.20.0
+
+# Utils
+python-dateutil==2.9.0
+pytz==2024.1
