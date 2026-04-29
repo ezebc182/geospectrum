@@ -96,10 +96,14 @@ export function EventsTable({ eventos, limit, className }: EventsTableProps) {
                 <td className="whitespace-nowrap px-4 py-3 text-center">
                   <div className="flex items-center justify-center gap-2">
                     {evento.revisado && (
-                      <CheckCircle className="h-4 w-4 text-green-500" title="Revisado" />
+                      <span title="Revisado">
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      </span>
                     )}
                     {evento.sentido && (
-                      <Users className="h-4 w-4 text-orange-500" title="Sentido" />
+                      <span title="Sentido">
+                        <Users className="h-4 w-4 text-orange-500" />
+                      </span>
                     )}
                   </div>
                 </td>
