@@ -58,6 +58,33 @@ class Settings(BaseSettings):
     timescaledb_user: Optional[str] = None
     timescaledb_password: Optional[str] = None
 
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+    redis_password: Optional[str] = None
+
+    # SSE
+    max_sse_clients: int = 200
+    sse_heartbeat_seconds: int = 30
+    sse_replay_window_hours: int = 24
+
+    # Archive
+    archive_dir: str = "/tmp/events-archive"
+
+    # Observability
+    glitchtip_dsn: Optional[str] = None
+    glitchtip_dsn_frontend: Optional[str] = None
+    environment: str = "development"
+    git_sha: str = "unknown"
+    glitchtip_traces_sample_rate: float = 0.1
+
+    # CORS
+    cors_allowed_origins: str = "http://localhost:3008,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parsea cors_allowed_origins (CSV) a lista."""
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     @property
     def bbox(self) -> dict:
         """Retorna bounding box como dict."""
