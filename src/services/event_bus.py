@@ -105,3 +105,76 @@ class AsyncioQueueBus:
                     queue.put_nowait(_CLOSE_SENTINEL)
                 except asyncio.QueueFull:
                     await queue.put(_CLOSE_SENTINEL)
+
+
+# ===========================================================================
+# RedisPubSubBus - cross-process via Redis Pub/Sub
+# ===========================================================================
+
+import json
+import logging
+
+import redis.asyncio as aioredis
+
+logger = logging.getLogger(__name__)
+
+
+class RedisPubSubBus:
+    """Bus pub/sub respaldado por Redis. Usado entre procesos.
+
+    Semantica: igual que AsyncioQueueBus, fan-out nativo (cada subscriber
+    recibe todos los eventos publicados al canal).
+
+    Es responsabilidad del caller llamar `connect()` antes de publish/subscribe.
+    """
+
+    def __init__(self, redis_url: str) -> None:
+        self._url = redis_url
+        self._client: aioredis.Redis | None = None
+        self._closed = False
+
+    async def connect(self) -> None:
+        self._client = aioredis.from_url(self._url, decode_responses=True)
+        await self._client.ping()
+
+    @property
+    def client(self) -> aioredis.Redis:
+        if self._client is None:
+            raise RuntimeError("Bus not connected. Call connect() first.")
+        return self._client
+
+    async def publish(self, channel: str, event: dict[str, Any]) -> None:
+        if self._closed:
+            raise RuntimeError("Bus is closed")
+        await self.client.publish(channel, json.dumps(event))
+
+    def subscribe(self, channel: str) -> AsyncIterator[dict[str, Any]]:
+        """Sync: devuelve AsyncIterator. Matchea signature del Protocol."""
+        return self._consume(channel)
+
+    async def _consume(self, channel: str) -> AsyncIterator[dict[str, Any]]:
+        pubsub = self.client.pubsub()
+        await pubsub.subscribe(channel)
+        try:
+            while not self._closed:
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0
+                )
+                if msg is None:
+                    continue
+                if msg.get("type") != "message":
+                    continue
+                try:
+                    yield json.loads(msg["data"])
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Bad JSON in pubsub: {e}")
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._client is not None:
+            await self._client.aclose()
