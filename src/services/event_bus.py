@@ -3,7 +3,7 @@ EventBus: abstraccion de transporte pub/sub con semantica fan-out.
 
 Implementaciones:
 - AsyncioQueueBus: in-process, usado dentro del ingestor
-- RedisPubSubBus: cross-process via Redis (se agrega en Task 1.4)
+- RedisPubSubBus: cross-process via Redis
 
 Ambas implementaciones cumplen semantica fan-out: cada subscriber del mismo
 canal recibe TODOS los eventos publicados (igual que Redis Pub/Sub). Esto es
@@ -16,7 +16,13 @@ el codigo de listeners/dispatchers.
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from typing import Any, AsyncIterator, Protocol
+
+import redis.asyncio as aioredis
+
+logger = logging.getLogger(__name__)
 
 
 # Sentinel publicado a las queues de subscribers cuando el bus se cierra,
@@ -111,13 +117,6 @@ class AsyncioQueueBus:
 # RedisPubSubBus - cross-process via Redis Pub/Sub
 # ===========================================================================
 
-import json
-import logging
-
-import redis.asyncio as aioredis
-
-logger = logging.getLogger(__name__)
-
 
 class RedisPubSubBus:
     """Bus pub/sub respaldado por Redis. Usado entre procesos.
@@ -126,14 +125,23 @@ class RedisPubSubBus:
     recibe todos los eventos publicados al canal).
 
     Es responsabilidad del caller llamar `connect()` antes de publish/subscribe.
+    Constructor sincronico para permitir construir instancias en init code
+    sin tocar I/O y para facilitar mocking en tests.
+
+    close() cancela las tareas de los subscribers activos via _close_event,
+    eliminando la latencia de hasta 1s del polling de get_message.
     """
 
     def __init__(self, redis_url: str) -> None:
         self._url = redis_url
         self._client: aioredis.Redis | None = None
         self._closed = False
+        self._close_event = asyncio.Event()
+        self._active_cleanups: set[asyncio.Event] = set()
 
     async def connect(self) -> None:
+        if self._client is not None:
+            return  # idempotente
         self._client = aioredis.from_url(self._url, decode_responses=True)
         await self._client.ping()
 
@@ -155,26 +163,59 @@ class RedisPubSubBus:
     async def _consume(self, channel: str) -> AsyncIterator[dict[str, Any]]:
         pubsub = self.client.pubsub()
         await pubsub.subscribe(channel)
+        # Trackear este consumer para que close() pueda esperar su cleanup.
+        cleanup_done = asyncio.Event()
+        self._active_cleanups.add(cleanup_done)
         try:
-            while not self._closed:
-                msg = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0
-                )
-                if msg is None:
-                    continue
-                if msg.get("type") != "message":
-                    continue
-                try:
-                    yield json.loads(msg["data"])
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Bad JSON in pubsub: {e}")
+            close_task = asyncio.create_task(self._close_event.wait())
+            try:
+                while not self._closed:
+                    get_task = asyncio.create_task(
+                        pubsub.get_message(
+                            ignore_subscribe_messages=True, timeout=1.0
+                        )
+                    )
+                    done, _ = await asyncio.wait(
+                        {get_task, close_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if close_task in done:
+                        get_task.cancel()
+                        return
+                    msg = get_task.result()
+                    if msg is None:
+                        continue
+                    if msg.get("type") != "message":
+                        continue
+                    try:
+                        yield json.loads(msg["data"])
+                    except json.JSONDecodeError as e:
+                        logger.warning("Bad JSON in pubsub: %s", e)
+            finally:
+                close_task.cancel()
         finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.aclose()
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.aclose()
+            except Exception:
+                # El cliente puede haber sido cerrado ya. No es un error
+                # propagable: el cleanup es best-effort.
+                pass
+            cleanup_done.set()
+            self._active_cleanups.discard(cleanup_done)
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        # Desbloquear subscribers activos y esperar su cleanup ANTES de tirar
+        # el cliente. Sin esto, los pubsub.unsubscribe/aclose() de los
+        # subscribers pegan contra una conexion cerrada.
+        self._close_event.set()
+        if self._active_cleanups:
+            await asyncio.wait(
+                {asyncio.create_task(ev.wait()) for ev in list(self._active_cleanups)},
+                timeout=2.0,
+            )
         if self._client is not None:
             await self._client.aclose()

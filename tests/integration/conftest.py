@@ -1,5 +1,6 @@
 """Fixtures compartidas para tests de integracion."""
 import pytest
+import redis.asyncio as aioredis
 from testcontainers.redis import RedisContainer
 
 
@@ -20,7 +21,6 @@ def redis_url(redis_container):
 
 @pytest.fixture
 async def redis_client(redis_url):
-    import redis.asyncio as aioredis
     client = aioredis.from_url(redis_url, decode_responses=True)
     await client.flushdb()
     yield client
