@@ -200,7 +200,11 @@ class RedisPubSubBus:
             except Exception:
                 # El cliente puede haber sido cerrado ya. No es un error
                 # propagable: el cleanup es best-effort.
-                pass
+                logger.warning(
+                    "event_bus: RedisPubSubBus pubsub cleanup failed (best-effort, bus may be closed)",
+                    extra={"channel": channel},
+                    exc_info=True,
+                )
             cleanup_done.set()
             self._active_cleanups.discard(cleanup_done)
 
