@@ -48,7 +48,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
 
   const resetFilters = () => {
     onFiltersChange({
-      sources: ['usgs', 'emsc'],
+      sources: ['usgs', 'emsc', 'inpres'],
       minMag: 2.5,
       maxMag: 9.0,
       minDepth: null,

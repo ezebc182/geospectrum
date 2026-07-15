@@ -5,22 +5,41 @@
 'use client';
 
 import { SeismicEvent } from '@/lib/types';
-import { formatDateTime, formatMagnitude, formatDepth, getMagnitudeColor, cn } from '@/lib/utils';
-import { CheckCircle, Clock, Users } from 'lucide-react';
+import { formatDateTime, formatMagnitude, formatDepth, getMagnitudeSeverity, cn } from '@/lib/utils';
+import { CheckCircle, Clock, MapPin, Users } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface EventsTableProps {
   eventos: SeismicEvent[];
   limit?: number;
   className?: string;
+  /** Invocado con el id del evento al hacer click en su fila (sincronización tabla→mapa). Default: undefined. */
+  onRowClick?: (id: string) => void;
+  /** Id del evento actualmente seleccionado (resalta la fila correspondiente). Default: undefined. */
+  selectedEventId?: string | null;
 }
 
-export function EventsTable({ eventos, limit, className }: EventsTableProps) {
+const magnitudeBadgeVariant = {
+  low: 'secondary' as const,
+  moderate: 'outline' as const,
+  high: 'outline' as const,
+  critical: 'destructive' as const,
+};
+
+const magnitudeBadgeClass = {
+  low: 'bg-severity-low/15 text-severity-low',
+  moderate: 'bg-severity-moderate/15 text-severity-moderate',
+  high: 'bg-severity-high/15 text-severity-high',
+  critical: 'bg-severity-critical/15 text-severity-critical',
+};
+
+export function EventsTable({ eventos, limit, className, onRowClick, selectedEventId }: EventsTableProps) {
   const displayEvents = limit ? eventos.slice(0, limit) : eventos;
 
   if (displayEvents.length === 0) {
     return (
-      <div className={cn('rounded-lg border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-8 text-center', className)}>
-        <p className="text-gray-500 dark:text-gray-400">
+      <div className={cn('rounded-lg border-2 border-border bg-muted/40 p-8 text-center', className)}>
+        <p className="text-muted-foreground">
           No hay eventos registrados en la ventana de tiempo actual
         </p>
       </div>
@@ -28,92 +47,104 @@ export function EventsTable({ eventos, limit, className }: EventsTableProps) {
   }
 
   return (
-    <div className={cn('overflow-hidden rounded-lg border-2 border-gray-200 dark:border-gray-700', className)}>
-      <div className="overflow-x-auto">
+    <div className={cn('flex flex-col overflow-hidden rounded-lg border-2 border-border', className)}>
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full">
-          <thead className="bg-gray-100 dark:bg-gray-800">
+          <thead className="sticky top-0 z-10 bg-muted">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Tiempo
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Magnitud
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Profundidad
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Ubicación
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Fuente
               </th>
-              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Estado
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
-            {displayEvents.map((evento) => (
-              <tr
-                key={evento.id}
-                className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              >
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-gray-400" />
-                    {formatDateTime(evento.hora_utc)}
-                  </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <span
-                    className="inline-flex items-center rounded-full px-3 py-1 text-sm font-bold text-white"
-                    style={{ backgroundColor: getMagnitudeColor(evento.mag) }}
-                  >
-                    M{formatMagnitude(evento.mag)}
-                  </span>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                  {formatDepth(evento.prof_km)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                  <div className="max-w-md truncate" title={evento.lugar || 'Desconocido'}>
-                    {evento.lugar || 'Desconocido'}
-                  </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm">
-                  <div className="flex flex-wrap gap-1">
-                    {evento.fuentes.map((fuente) => (
-                      <span
-                        key={fuente}
-                        className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-2 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200"
-                      >
-                        {fuente}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    {evento.revisado && (
-                      <span title="Revisado">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      </span>
-                    )}
-                    {evento.sentido && (
-                      <span title="Sentido">
-                        <Users className="h-4 w-4 text-orange-500" />
-                      </span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+          <tbody className="divide-y divide-border bg-card">
+            {displayEvents.map((evento) => {
+              const severity = getMagnitudeSeverity(evento.mag);
+              const isSelected = evento.id === selectedEventId;
+              return (
+                <tr
+                  key={evento.id}
+                  onClick={onRowClick ? () => onRowClick(evento.id) : undefined}
+                  data-state={isSelected ? 'selected' : undefined}
+                  className={cn(
+                    'transition-colors hover:bg-muted/50',
+                    onRowClick && 'cursor-pointer',
+                    isSelected && 'bg-severity-low/10 ring-1 ring-inset ring-severity-low'
+                  )}
+                >
+                  <td className="whitespace-nowrap px-4 py-3 font-data text-sm text-foreground">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      {formatDateTime(evento.hora_utc)}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <Badge
+                      variant={magnitudeBadgeVariant[severity]}
+                      className={cn('font-data font-bold', magnitudeBadgeClass[severity])}
+                    >
+                      M{formatMagnitude(evento.mag)}
+                    </Badge>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-data text-sm text-muted-foreground">
+                    {formatDepth(evento.prof_km)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    <div className="max-w-md truncate" title={evento.lugar || 'Desconocido'}>
+                      {evento.lugar || 'Desconocido'}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-sm">
+                    <div className="flex flex-wrap gap-1">
+                      {evento.fuentes.map((fuente) => (
+                        <Badge key={fuente} variant="secondary" className="font-data">
+                          {fuente}
+                        </Badge>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      {isSelected && (
+                        <span title="Seleccionado en el mapa">
+                          <MapPin className="h-4 w-4 text-severity-low" />
+                        </span>
+                      )}
+                      {evento.revisado && (
+                        <span title="Revisado">
+                          <CheckCircle className="h-4 w-4 text-severity-ok" />
+                        </span>
+                      )}
+                      {evento.sentido && (
+                        <span title="Sentido">
+                          <Users className="h-4 w-4 text-severity-moderate" />
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
       {limit && eventos.length > limit && (
-        <div className="border-t-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">
+        <div className="border-t-2 border-border bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground">
           Mostrando {limit} de {eventos.length} eventos
         </div>
       )}
