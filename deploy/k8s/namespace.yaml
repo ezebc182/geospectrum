@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: seismic-monitor
+  name: geospectrum
   labels:
-    name: seismic-monitor
+    name: geospectrum
     environment: production

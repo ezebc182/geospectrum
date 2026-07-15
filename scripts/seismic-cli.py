@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI cliente para Seismic Monitor Service.
+CLI cliente para GeoSpectrum Service.
 
 Uso:
     python scripts/seismic-cli.py report
@@ -18,7 +18,7 @@ from datetime import datetime
 
 
 class SeismicCLI:
-    """Cliente CLI para interactuar con Seismic Monitor API."""
+    """Cliente CLI para interactuar con GeoSpectrum API."""
 
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
@@ -200,7 +200,7 @@ class SeismicCLI:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Seismic Monitor CLI Client",
+        description="GeoSpectrum CLI Client",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 

@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: seismic-monitor-config
-  namespace: seismic-monitor
+  name: geospectrum-config
+  namespace: geospectrum
 data:
   # Región de monitoreo
   REGION_MINLAT: "-40"

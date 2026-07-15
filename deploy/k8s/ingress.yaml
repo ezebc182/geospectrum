@@ -1,8 +1,8 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: seismic-monitor-ingress
-  namespace: seismic-monitor
+  name: geospectrum-ingress
+  namespace: geospectrum
   annotations:
     # NGINX ingress
     nginx.ingress.kubernetes.io/rewrite-target: /
@@ -28,16 +28,16 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - seismic.example.com  # CAMBIAR A TU DOMINIO
-      secretName: seismic-monitor-tls
+        - geospectrum.org
+      secretName: geospectrum-tls
   rules:
-    - host: seismic.example.com  # CAMBIAR A TU DOMINIO
+    - host: geospectrum.org
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: seismic-monitor-service
+                name: geospectrum-service
                 port:
                   number: 8000

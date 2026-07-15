@@ -1,8 +1,8 @@
 [project]
-name = "seismic-monitor"
+name = "geospectrum"
 version = "1.0.0"
 description = "Production-grade seismic monitoring service with USGS + INPRES integration"
-authors = [{name = "Seismic Ops Team"}]
+authors = [{name = "GeoSpectrum Ops Team"}]
 requires-python = ">=3.11"
 license = {text = "MIT"}
 

@@ -4,7 +4,7 @@
 
 FROM python:3.11-slim
 
-LABEL maintainer="seismic-ops@example.com"
+LABEL maintainer="geospectrum-ops@example.com"
 LABEL description="INPRES scraper adapter"
 
 # Security: usuario no root

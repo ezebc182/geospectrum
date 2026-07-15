@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: inpres-adapter
-  namespace: seismic-monitor
+  namespace: geospectrum
   labels:
     app: inpres-adapter
     version: v1

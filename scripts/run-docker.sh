@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🐳 Starting Seismic Monitor with Docker Compose"
+echo "🐳 Starting GeoSpectrum with Docker Compose"
 
 cd "$(dirname "$0")/.."
 

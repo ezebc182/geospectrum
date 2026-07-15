@@ -1,1 +1,1 @@
-"""Seismic Monitor Service - Production-grade seismic monitoring."""
+"""GeoSpectrum Service - Production-grade seismic monitoring."""

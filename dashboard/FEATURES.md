@@ -1,4 +1,4 @@
-# Dashboard Features - Seismic Monitor
+# Dashboard Features - GeoSpectrum
 
 ## Mapa Interactivo Profesional con Ciudades
 

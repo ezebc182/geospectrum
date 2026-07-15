@@ -1,6 +1,6 @@
-# Seismic Monitor API Documentation
+# GeoSpectrum API Documentation
 
-Complete API reference for Seismic Monitor Service.
+Complete API reference for GeoSpectrum Service.
 
 **Base URL**: `https://seismic.example.com` (replace with your deployment)
 
@@ -30,7 +30,7 @@ Add via API Gateway (NGINX, Kong, etc.) or FastAPI middleware.
 **Response**:
 ```json
 {
-  "service": "Seismic Monitor",
+  "service": "GeoSpectrum",
   "version": "1.0.0",
   "status": "operational",
   "docs": "/docs",
@@ -64,14 +64,14 @@ Add via API Gateway (NGINX, Kong, etc.) or FastAPI middleware.
 
 **Example metrics**:
 ```
-# HELP seismic_monitor_requests_total Total de requests por endpoint
-# TYPE seismic_monitor_requests_total counter
-seismic_monitor_requests_total{endpoint="/report",status="200"} 142
+# HELP geospectrum_requests_total Total de requests por endpoint
+# TYPE geospectrum_requests_total counter
+geospectrum_requests_total{endpoint="/report",status="200"} 142
 
-# HELP seismic_monitor_events_fetched_total Total de eventos obtenidos
-# TYPE seismic_monitor_events_fetched_total counter
-seismic_monitor_events_fetched_total{source="USGS"} 87
-seismic_monitor_events_fetched_total{source="INPRES"} 12
+# HELP geospectrum_events_fetched_total Total de eventos obtenidos
+# TYPE geospectrum_events_fetched_total counter
+geospectrum_events_fetched_total{source="USGS"} 87
+geospectrum_events_fetched_total{source="INPRES"} 12
 ```
 
 ---

@@ -31,7 +31,7 @@ export function Header() {
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-2 font-bold text-xl">
               <Activity className="h-6 w-6 text-seismic-600" />
-              <span className="text-gray-900 dark:text-white">Seismic Monitor</span>
+              <span className="text-gray-900 dark:text-white">GeoSpectrum</span>
             </Link>
 
             <nav className="hidden md:flex items-center gap-6">
