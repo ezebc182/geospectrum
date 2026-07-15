@@ -2,6 +2,7 @@
 Cliente para USGS Earthquake Catalog API (ComCat).
 """
 import httpx
+import time
 import uuid
 from typing import List, Optional, Tuple
 from datetime import datetime, timezone, timedelta
@@ -9,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from src.models.event import SeismicEvent
 from src.utils.geo import ms_to_iso
 from src.config.settings import settings
+from src.observability.metrics import source_fetch_duration_seconds, source_errors_total
 
 
 async def fetch_usgs_events(window_minutes: int) -> Tuple[List[SeismicEvent], Optional[str]]:
@@ -38,17 +40,34 @@ async def fetch_usgs_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
         "limit": "200",
     }
 
+    t0 = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=settings.usgs_timeout_s) as client:
             response = await client.get(settings.usgs_api_url, params=params)
             response.raise_for_status()
             data = response.json()
     except httpx.TimeoutException as e:
+        source_fetch_duration_seconds.labels(source="usgs", status="error").observe(
+            time.perf_counter() - t0
+        )
+        source_errors_total.labels(source="usgs", error_type="timeout").inc()
         return [], f"USGS_TIMEOUT:{str(e)}"
     except httpx.HTTPStatusError as e:
+        source_fetch_duration_seconds.labels(source="usgs", status="error").observe(
+            time.perf_counter() - t0
+        )
+        source_errors_total.labels(source="usgs", error_type="http_error").inc()
         return [], f"USGS_HTTP_ERROR:{e.response.status_code}"
     except Exception as e:
+        source_fetch_duration_seconds.labels(source="usgs", status="error").observe(
+            time.perf_counter() - t0
+        )
+        source_errors_total.labels(source="usgs", error_type="unknown").inc()
         return [], f"USGS_ERROR:{str(e)}"
+
+    source_fetch_duration_seconds.labels(source="usgs", status="success").observe(
+        time.perf_counter() - t0
+    )
 
     events: List[SeismicEvent] = []
 

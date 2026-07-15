@@ -1,11 +1,14 @@
 """
 Servicio de cálculo de KPIs y generación de alertas.
 """
+import logging
 from typing import List, Tuple
 from datetime import datetime, timezone
 
 from src.models.event import SeismicEvent, KPIs, Alert
 from src.utils.geo import haversine_km, energy_weight, parse_datetime_utc
+
+logger = logging.getLogger(__name__)
 
 
 def compute_kpis_and_alerts(
@@ -26,14 +29,12 @@ def compute_kpis_and_alerts(
 
     now_dt = datetime.now(timezone.utc)
 
-    # Estructuras para cálculos
     mags: List[float] = []
     energies: List[float] = []
     depths_significant: List[float] = []
     felt_count = 0
     strong_last_minutes: float | None = None
 
-    # Para detección de clusters/enjambres
     cluster_points: List[dict] = []
 
     for event in events:
@@ -41,15 +42,12 @@ def compute_kpis_and_alerts(
         mags.append(mag)
         energies.append(energy_weight(mag))
 
-        # Profundidad media en eventos M≥4
         if mag >= 4.0 and event.prof_km is not None:
             depths_significant.append(event.prof_km)
 
-        # Eventos sentidos
         if event.sentido:
             felt_count += 1
 
-        # Tiempo desde último M≥5
         if mag >= 5.0:
             try:
                 t_dt = parse_datetime_utc(event.hora_utc)
@@ -57,9 +55,12 @@ def compute_kpis_and_alerts(
                 if strong_last_minutes is None or delta_min < strong_last_minutes:
                     strong_last_minutes = delta_min
             except Exception:
-                pass
+                logger.warning(
+                    "kpi_service: failed to parse hora_utc for M>=5 timing",
+                    extra={"event_id": event.id, "hora_utc": event.hora_utc, "mag": mag},
+                    exc_info=True,
+                )
 
-        # Datos para detección de clusters
         try:
             t_dt = parse_datetime_utc(event.hora_utc)
             cluster_points.append({
@@ -70,14 +71,16 @@ def compute_kpis_and_alerts(
                 "id": event.id,
             })
         except Exception:
-            pass
+            logger.warning(
+                "kpi_service: failed to parse hora_utc for cluster detection, event excluded",
+                extra={"event_id": event.id, "hora_utc": event.hora_utc},
+                exc_info=True,
+            )
 
-    # === Calcular KPIs ===
     total_events = len(events)
     tasa_hora = total_events * (60.0 / window_minutes)
     magnitud_max = max(mags) if mags else None
 
-    # Magnitud promedio ponderada por energía: sum(M*E) / sum(E)
     mag_pond = None
     if energies and mags and sum(energies) > 0:
         mag_pond = sum(m * e for m, e in zip(mags, energies)) / sum(energies)
@@ -99,21 +102,18 @@ def compute_kpis_and_alerts(
         minutos_desde_M_ge_5=strong_last_minutes,
     )
 
-    # === Generar alertas ===
     alertas: List[Alert] = []
 
-    # 1. Enjambre: ≥3 eventos M≥3 en ≤15 min y ≤20 km
     swarm_groups = _detect_swarms(cluster_points)
     for swarm_ids in swarm_groups:
         alertas.append(
             Alert(
                 tipo="enjambre",
-                descripcion=f"{len(swarm_ids)} eventos M≥3 en ≤15min y ≤20km",
+                descripcion=f"{len(swarm_ids)} eventos M>=3 en <=15min y <=20km",
                 eventos_relacionados=swarm_ids,
             )
         )
 
-    # 2. Evento significativo: M≥5 y prof<70km
     for event in events:
         if event.mag >= 5.0:
             if event.prof_km is not None and event.prof_km < 70:
@@ -125,7 +125,6 @@ def compute_kpis_and_alerts(
                     )
                 )
 
-    # 3. Actividad sentida: >50% eventos sentidos
     if pct_felt > 0.5:
         felt_ids = [ev.id for ev in events if ev.sentido]
         alertas.append(
@@ -156,14 +155,7 @@ def _empty_kpis() -> KPIs:
 def _detect_swarms(cluster_points: List[dict]) -> List[List[str]]:
     """
     Detecta enjambres sísmicos (clusters espacio-temporales).
-
-    Criterio: ≥3 eventos con M≥3 en ≤15 min y ≤20 km
-
-    Args:
-        cluster_points: Lista de dicts con {t, lat, lon, mag, id}
-
-    Returns:
-        Lista de grupos (cada grupo es lista de IDs)
+    Criterio: >=3 eventos con M>=3 en <=15 min y <=20 km
     """
     swarm_groups: List[List[str]] = []
 
@@ -177,10 +169,7 @@ def _detect_swarms(cluster_points: List[dict]) -> List[List[str]]:
             if i == j or other["mag"] < 3.0:
                 continue
 
-            # Δt en minutos
             dt_min = abs((base["t"] - other["t"]).total_seconds()) / 60.0
-
-            # Distancia epicentral
             dist_km = haversine_km(base["lat"], base["lon"], other["lat"], other["lon"])
 
             if dt_min <= 15 and dist_km <= 20:
@@ -188,9 +177,7 @@ def _detect_swarms(cluster_points: List[dict]) -> List[List[str]]:
                     local_group.append(other["id"])
 
         if len(local_group) >= 3:
-            # Ordenar IDs para evitar duplicados con diferente orden
             local_group_sorted = sorted(local_group)
-            # Solo agregar si no existe ya este grupo exacto
             if local_group_sorted not in swarm_groups:
                 swarm_groups.append(local_group_sorted)
 

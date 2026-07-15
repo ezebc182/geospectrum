@@ -43,12 +43,12 @@ class EMSCDetailService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Intentar primero con formato JSON (QuakeML)
                 url = f"{cls.FDSN_EVENT_URL}/query"
+                # seismicportal.eu (fdsnws-event v1.2.1) no implementa
+                # includeallmagnitudes/includeallorigins/includearrivals pese a
+                # ser parte del spec FDSN estándar — devuelve 400 si se envían.
                 params = {
                     "eventid": event_id,
                     "format": "json",
-                    "includeallmagnitudes": "true",
-                    "includeallorigins": "true",
-                    "includearrivals": "true"
                 }
 
                 response = await client.get(url, params=params)
@@ -56,8 +56,16 @@ class EMSCDetailService:
                 if response.status_code == 200:
                     data = response.json()
 
-                    if "features" in data and len(data["features"]) > 0:
+                    # La API de EMSC devuelve un Feature único (no una
+                    # FeatureCollection) cuando se consulta por eventid puntual.
+                    if data.get("type") == "Feature":
+                        event = data
+                    elif "features" in data and len(data["features"]) > 0:
                         event = data["features"][0]
+                    else:
+                        event = None
+
+                    if event is not None:
                         properties = event.get("properties", {})
                         geometry = event.get("geometry", {})
                         coordinates = geometry.get("coordinates", [None, None, None])
@@ -71,7 +79,10 @@ class EMSCDetailService:
                             "mag_type": properties.get("magtype"),
                             "lat": coordinates[1] if len(coordinates) > 1 else None,
                             "lon": coordinates[0] if len(coordinates) > 0 else None,
-                            "depth_km": coordinates[2] if len(coordinates) > 2 else None,
+                            # Igual criterio que emsc_service.py: coordinates[2] es
+                            # elevación GeoJSON (negativa bajo superficie), se
+                            # normaliza a profundidad positiva.
+                            "depth_km": abs(coordinates[2]) if len(coordinates) > 2 and coordinates[2] is not None else None,
                             "place": properties.get("flynn_region") or properties.get("place"),
                             "felt": properties.get("felt"),
                             "reviewed": properties.get("status") == "reviewed",
