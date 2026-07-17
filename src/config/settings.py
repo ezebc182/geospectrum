@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     prometheus_enabled: bool = True
     sentry_dsn: Optional[str] = None
 
+    # Caché TTL (segundos). 0 = deshabilitado.
+    cache_ttl_seconds: int = 30
+    spectrogram_cache_ttl_seconds: int = 45
+
     # Rate limiting
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
@@ -78,7 +82,10 @@ class Settings(BaseSettings):
     glitchtip_traces_sample_rate: float = 0.1
 
     # CORS
-    cors_allowed_origins: str = "http://localhost:3008,http://localhost:3000"
+    cors_allowed_origins: str = (
+        "http://localhost:3008,http://localhost:3000,"
+        "http://127.0.0.1:3008,http://127.0.0.1:3000"
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:

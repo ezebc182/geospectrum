@@ -1,0 +1,35 @@
+# openspec/config.yaml
+schema: spec-driven
+
+context: |
+  Tech stack: Backend FastAPI (Python 3.11, src/) + Frontend Next.js 15 / React 19 (dashboard/, TS)
+  Architecture: Adapters (USGS/INPRES/EMSC) + services + workers; SeedLink+Redis+WebSocket for live spectrograms
+  Testing: Backend pytest (asyncio_mode=auto, coverage via pytest-cov); Frontend Vitest + Playwright
+  Style: Backend black/ruff/mypy (line-length 100, strict typed); Frontend ESLint (eslint-config-next) + TS strict
+  No CI pipeline detected (no .github/workflows)
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages (backend src/{adapters,api,services,workers} vs dashboard/{app,components,hooks,lib})
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows (esp. SeedLink/WebSocket/Redis pipelines)
+    - Document architecture decisions with rationale
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing code patterns and conventions
+    - Load relevant coding skills for the project stack
+    tdd: false
+    test_command: "cd seismic-monitor && pytest"
+  verify:
+    test_command: "cd seismic-monitor && pytest"
+    build_command: "cd seismic-monitor/dashboard && npm run build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas (large removals)

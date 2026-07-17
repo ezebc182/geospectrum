@@ -6,17 +6,25 @@
 
 import { Alert } from '@/lib/types';
 import { getAlertIcon, getAlertSeverity, cn } from '@/lib/utils';
-import { AlertTriangle, Users, Activity } from 'lucide-react';
+import { AlertTriangle, Users, Activity, CheckCircle2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface AlertBannerProps {
   alertas: Alert[];
   className?: string;
 }
 
+/** Remapeo 1:1 de severidad de alerta a tokens `--severity-*`. */
 const severityStyles = {
-  danger: 'bg-red-100 dark:bg-red-950 border-red-500 text-red-900 dark:text-red-100',
-  warning: 'bg-yellow-100 dark:bg-yellow-950 border-yellow-500 text-yellow-900 dark:text-yellow-100',
-  info: 'bg-blue-100 dark:bg-blue-950 border-blue-500 text-blue-900 dark:text-blue-100',
+  danger: 'border-severity-critical bg-severity-critical/10 text-foreground',
+  warning: 'border-severity-moderate bg-severity-moderate/10 text-foreground',
+  info: 'border-severity-low bg-severity-low/10 text-foreground',
+};
+
+const severityBadgeVariant = {
+  danger: 'destructive' as const,
+  warning: 'outline' as const,
+  info: 'secondary' as const,
 };
 
 function getAlertIconComponent(tipo: string) {
@@ -35,14 +43,17 @@ function getAlertIconComponent(tipo: string) {
 export function AlertBanner({ alertas, className }: AlertBannerProps) {
   if (alertas.length === 0) {
     return (
-      <div className={cn('rounded-lg border-2 border-green-200 bg-green-50 dark:bg-green-950 p-4', className)}>
+      <div
+        className={cn(
+          'rounded-lg border-2 border-severity-ok bg-severity-ok/10 p-4',
+          className
+        )}
+      >
         <div className="flex items-center gap-3">
-          <span className="text-2xl">✅</span>
+          <CheckCircle2 className="h-6 w-6 text-severity-ok" />
           <div>
-            <p className="font-semibold text-green-900 dark:text-green-100">
-              No hay alertas activas
-            </p>
-            <p className="text-sm text-green-700 dark:text-green-300">
+            <p className="font-semibold text-foreground">No hay alertas activas</p>
+            <p className="text-sm text-muted-foreground">
               Todos los parámetros dentro de rangos normales
             </p>
           </div>
@@ -53,8 +64,11 @@ export function AlertBanner({ alertas, className }: AlertBannerProps) {
 
   return (
     <div className={cn('space-y-3', className)}>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-        🚨 Alertas Activas ({alertas.length})
+      <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+        Alertas Activas
+        <Badge variant="destructive" className="font-data">
+          {alertas.length}
+        </Badge>
       </h3>
       {alertas.map((alerta, idx) => {
         const severity = getAlertSeverity(alerta.tipo);
@@ -67,20 +81,18 @@ export function AlertBanner({ alertas, className }: AlertBannerProps) {
             )}
           >
             <div className="flex items-start gap-3">
-              <div className="mt-0.5">
-                {getAlertIconComponent(alerta.tipo)}
-              </div>
+              <div className="mt-0.5">{getAlertIconComponent(alerta.tipo)}</div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{getAlertIcon(alerta.tipo)}</span>
-                  <p className="font-semibold uppercase tracking-wide">
+                  <span className="text-lg" aria-hidden>
+                    {getAlertIcon(alerta.tipo)}
+                  </span>
+                  <Badge variant={severityBadgeVariant[severity]} className="uppercase tracking-wide">
                     {alerta.tipo.replace('_', ' ')}
-                  </p>
+                  </Badge>
                 </div>
-                <p className="mt-1 text-sm font-medium">
-                  {alerta.descripcion}
-                </p>
-                <p className="mt-1 text-xs opacity-75">
+                <p className="mt-1 text-sm font-medium">{alerta.descripcion}</p>
+                <p className="mt-1 font-data text-xs opacity-75">
                   {alerta.eventos_relacionados.length} evento(s) relacionado(s)
                 </p>
               </div>

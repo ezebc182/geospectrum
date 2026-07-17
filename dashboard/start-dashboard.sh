@@ -1,11 +1,11 @@
 #!/bin/bash
-# Script para iniciar el Dashboard de Seismic Monitor en puerto 3008
+# Script para iniciar el Dashboard de GeoSpectrum en puerto 3008
 
 set -e
 
 cd "$(dirname "$0")"
 
-echo "🌐 Starting Seismic Monitor Dashboard"
+echo "🌐 Starting GeoSpectrum Dashboard"
 echo ""
 echo "📍 Dashboard will be available at: http://localhost:3008"
 echo "🔌 Make sure the backend is running at: http://localhost:8000"

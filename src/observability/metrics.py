@@ -9,7 +9,7 @@ phase futura) o se inspeccionan via stdout en debug.
 
 Ver tambien las metricas existentes en src/main.py (requests_total, etc.).
 """
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 # ---------------------------------------------------------------------------
 # Ingestor: EMSC WebSocket
@@ -107,4 +107,22 @@ archive_writes_total = Counter(
 archive_write_errors_total = Counter(
     "seismic_archive_write_errors_total",
     "Errores al escribir al archivo JSONL",
+)
+
+
+# ---------------------------------------------------------------------------
+# Source fetch observability (M1.4)
+# ---------------------------------------------------------------------------
+
+source_fetch_duration_seconds = Histogram(
+    "geospectrum_source_fetch_duration_seconds",
+    "Time spent fetching events from external sources",
+    labelnames=["source", "status"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
+source_errors_total = Counter(
+    "geospectrum_source_errors_total",
+    "Total errors fetching from external sources",
+    labelnames=["source", "error_type"],
 )

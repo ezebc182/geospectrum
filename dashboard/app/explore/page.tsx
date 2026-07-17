@@ -10,7 +10,7 @@ import { Search, MapPin, List, Download } from 'lucide-react';
 
 export default function ExplorePage() {
   const [filters, setFilters] = useState<SeismicFilters>({
-    sources: ['usgs', 'emsc'],
+    sources: ['usgs', 'emsc', 'inpres'],
     minMag: 2.5,
     maxMag: 9.0,
     minDepth: null,
@@ -94,7 +94,7 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="min-h-screen">
+    <div>
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -144,7 +144,7 @@ export default function ExplorePage() {
                     onClick={() => setView('map')}
                     className={`px-4 py-2 flex items-center gap-2 transition-colors ${
                       view === 'map'
-                        ? 'bg-seismic-600 text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                   >
@@ -155,7 +155,7 @@ export default function ExplorePage() {
                     onClick={() => setView('list')}
                     className={`px-4 py-2 flex items-center gap-2 transition-colors border-l-2 border-gray-300 dark:border-gray-600 ${
                       view === 'list'
-                        ? 'bg-seismic-600 text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                   >
@@ -191,7 +191,7 @@ export default function ExplorePage() {
               {eventos.length > 0 ? (
                 <AdvancedSeismicMap
                   eventos={eventos}
-                  className="h-[700px]"
+                  className="h-[calc(100vh-22rem)] min-h-[420px]"
                   showCities={true}
                 />
               ) : (
@@ -212,9 +212,10 @@ export default function ExplorePage() {
           {view === 'list' && (
             <div>
               {eventos.length > 0 ? (
-                <div className="bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                  <EventsTable eventos={eventos} />
-                </div>
+                <EventsTable
+                  eventos={eventos}
+                  className="h-[calc(100vh-22rem)] min-h-[420px]"
+                />
               ) : (
                 <div className="bg-gray-50 dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-12 text-center">
                   <List className="h-16 w-16 text-gray-400 mx-auto mb-4" />

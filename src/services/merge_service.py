@@ -1,9 +1,34 @@
 """
-Servicio de fusión de eventos de múltiples fuentes (USGS + INPRES).
+Servicio de fusión de eventos de múltiples fuentes (USGS + INPRES + EMSC).
 """
+import logging
 from typing import List, Set
 from src.models.event import SeismicEvent
 from src.utils.geo import haversine_km, parse_datetime_utc
+
+logger = logging.getLogger(__name__)
+
+
+def merge_all_sources(*source_lists: List[SeismicEvent]) -> List[SeismicEvent]:
+    """
+    Fusiona N listas de eventos aplicando deduplicación iterativa.
+
+    Reduce las listas de a pares: (acumulado, siguiente_fuente).
+    Así el criterio Δt/distancia aplica correctamente entre fuentes.
+
+    Args:
+        *source_lists: Cualquier cantidad de listas de SeismicEvent
+
+    Returns:
+        Lista unificada de eventos
+    """
+    non_empty = [lst for lst in source_lists if lst]
+    if not non_empty:
+        return []
+    result = non_empty[0]
+    for next_list in non_empty[1:]:
+        result = merge_events(result, next_list)
+    return result
 
 
 def merge_events(
@@ -47,6 +72,15 @@ def merge_events(
                 t_inpres = parse_datetime_utc(ie.hora_utc)
                 dt_sec = abs((t_usgs - t_inpres).total_seconds())
             except Exception:
+                logger.warning(
+                    "merge_events: datetime parse failed, treating as non-match",
+                    extra={
+                        "usgs_event_id": ue.id,
+                        "usgs_hora_utc": ue.hora_utc,
+                        "inpres_hora_utc": ie.hora_utc,
+                    },
+                    exc_info=True,
+                )
                 dt_sec = 999999.0
 
             # Comparar distancia
@@ -57,13 +91,11 @@ def merge_events(
                 break
 
         if best_match_idx is not None:
-            # Fusionar
             used_usgs.add(ui)
             used_inpres.add(best_match_idx)
             fused = _fuse_two_events(ue, inpres_events[best_match_idx])
             merged.append(fused)
         else:
-            # USGS solo
             used_usgs.add(ui)
             merged.append(ue)
 
@@ -78,27 +110,15 @@ def merge_events(
 def _fuse_two_events(a: SeismicEvent, b: SeismicEvent) -> SeismicEvent:
     """
     Fusiona dos reportes del mismo evento.
-
-    Criterios:
-    - mag: mayor de ambas (conservador)
-    - prof_km: menor de ambas (si ambas existen)
-    - revisado: true si cualquiera está revisado
-    - sentido: true si cualquiera lo marca
-    - hora_utc: la más temprana
-    - fuentes: unión de ambas
     """
-    # Magnitud mayor
     mag = max(a.mag, b.mag)
 
-    # Profundidad menor (si ambas existen)
     prof_vals = [x for x in [a.prof_km, b.prof_km] if x is not None]
     prof = min(prof_vals) if prof_vals else None
 
-    # Flags acumulativos
     revisado = a.revisado or b.revisado
     sentido = a.sentido or b.sentido
 
-    # Hora más temprana
     try:
         t_a = parse_datetime_utc(a.hora_utc)
         t_b = parse_datetime_utc(b.hora_utc)
@@ -106,10 +126,8 @@ def _fuse_two_events(a: SeismicEvent, b: SeismicEvent) -> SeismicEvent:
     except Exception:
         hora = a.hora_utc
 
-    # Fuentes unificadas
     fuentes = sorted(list(set(a.fuentes + b.fuentes)))
 
-    # Coordenadas: preferir la revisada, si no, tomar la de USGS (típicamente más precisa)
     if a.revisado and not b.revisado:
         lat, lon = a.lat, a.lon
         lugar = a.lugar
@@ -117,7 +135,6 @@ def _fuse_two_events(a: SeismicEvent, b: SeismicEvent) -> SeismicEvent:
         lat, lon = b.lat, b.lon
         lugar = b.lugar
     else:
-        # Ambas revisadas o ambas automáticas → preferir USGS
         if "USGS" in a.fuentes:
             lat, lon = a.lat, a.lon
             lugar = a.lugar
@@ -125,13 +142,12 @@ def _fuse_two_events(a: SeismicEvent, b: SeismicEvent) -> SeismicEvent:
             lat, lon = b.lat, b.lon
             lugar = b.lugar
 
-    # Tipo de magnitud: preferir Mw si está disponible
     mag_tipo = a.mag_tipo
     if b.mag_tipo == "Mw":
         mag_tipo = "Mw"
 
     return SeismicEvent(
-        id=a.id,  # Mantener ID del evento base
+        id=a.id,
         fuentes=fuentes,
         hora_utc=hora,
         lat=lat,

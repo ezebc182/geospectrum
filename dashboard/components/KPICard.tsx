@@ -4,6 +4,7 @@
 
 import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface KPICardProps {
   title: string;
@@ -15,20 +16,21 @@ interface KPICardProps {
   className?: string;
 }
 
-const colorClasses = {
-  blue: 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
-  green: 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800',
-  yellow: 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800',
-  red: 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800',
-  gray: 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700',
+/** Prop `color` (heredada del inventario de KPIs) remapeada a tokens de severidad. */
+const accentClasses = {
+  blue: 'text-foreground',
+  gray: 'text-muted-foreground',
+  green: 'text-severity-ok',
+  yellow: 'text-severity-moderate',
+  red: 'text-severity-critical',
 };
 
-const iconColorClasses = {
-  blue: 'text-blue-600 dark:text-blue-400',
-  green: 'text-green-600 dark:text-green-400',
-  yellow: 'text-yellow-600 dark:text-yellow-400',
-  red: 'text-red-600 dark:text-red-400',
-  gray: 'text-gray-600 dark:text-gray-400',
+const borderClasses = {
+  blue: 'ring-foreground/10',
+  gray: 'ring-foreground/10',
+  green: 'ring-severity-ok/30',
+  yellow: 'ring-severity-moderate/30',
+  red: 'ring-severity-critical/30',
 };
 
 export function KPICard({
@@ -41,50 +43,38 @@ export function KPICard({
   className,
 }: KPICardProps) {
   return (
-    <div
-      className={cn(
-        'rounded-lg border-2 p-6 transition-all hover:shadow-lg',
-        colorClasses[color],
-        className
-      )}
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            {title}
-          </p>
-          <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
-            {value}
-          </p>
-          {subtitle && (
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {subtitle}
+    <Card className={cn('ring-2 transition-all hover:shadow-lg', borderClasses[color], className)}>
+      <CardContent>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className={cn('mt-2 font-data text-3xl font-bold text-foreground')}>
+              {value}
             </p>
-          )}
+            {subtitle && (
+              <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
+          {icon && <div className={cn('text-2xl', accentClasses[color])}>{icon}</div>}
         </div>
-        {icon && (
-          <div className={cn('text-2xl', iconColorClasses[color])}>
-            {icon}
+
+        {trend && (
+          <div className="mt-4">
+            <span
+              className={cn(
+                'inline-flex items-center text-sm font-medium',
+                trend === 'up' && 'text-severity-ok',
+                trend === 'down' && 'text-severity-critical',
+                trend === 'neutral' && 'text-muted-foreground'
+              )}
+            >
+              {trend === 'up' && '↑'}
+              {trend === 'down' && '↓'}
+              {trend === 'neutral' && '→'}
+            </span>
           </div>
         )}
-      </div>
-
-      {trend && (
-        <div className="mt-4">
-          <span
-            className={cn(
-              'inline-flex items-center text-sm font-medium',
-              trend === 'up' && 'text-green-600 dark:text-green-400',
-              trend === 'down' && 'text-red-600 dark:text-red-400',
-              trend === 'neutral' && 'text-gray-600 dark:text-gray-400'
-            )}
-          >
-            {trend === 'up' && '↑'}
-            {trend === 'down' && '↓'}
-            {trend === 'neutral' && '→'}
-          </span>
-        </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

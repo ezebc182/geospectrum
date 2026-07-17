@@ -1,4 +1,4 @@
-# Seismic Monitor Dashboard
+# GeoSpectrum Dashboard
 
 **Next.js 15 + TypeScript + Tailwind CSS + Recharts + Leaflet**
 
@@ -187,9 +187,9 @@ dashboard:
   ports:
     - "3000:3000"
   environment:
-    NEXT_PUBLIC_API_URL: http://seismic-monitor:8000
+    NEXT_PUBLIC_API_URL: http://geospectrum:8000
   depends_on:
-    - seismic-monitor
+    - geospectrum
 ```
 
 ---

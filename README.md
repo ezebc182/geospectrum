@@ -1,4 +1,4 @@
-# Seismic Monitor Service
+# GeoSpectrum Service
 
 **Production-grade seismic monitoring system** integrating USGS ComCat and INPRES Argentina.
 
@@ -197,7 +197,7 @@ High human impact, potential for public concern and emergency response needs.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│            Seismic Monitor Service              │
+│               GeoSpectrum Service                │
 │                                                 │
 │  ┌──────────────┐      ┌──────────────┐        │
 │  │  USGS API    │      │   INPRES     │        │
@@ -246,9 +246,9 @@ High human impact, potential for public concern and emergency response needs.
 kubectl apply -k deploy/k8s/
 
 # Verify
-kubectl get pods -n seismic-monitor
-kubectl get svc -n seismic-monitor
-kubectl logs -f -n seismic-monitor -l app=seismic-monitor
+kubectl get pods -n geospectrum
+kubectl get svc -n geospectrum
+kubectl logs -f -n geospectrum -l app=geospectrum
 ```
 
 See [deploy/k8s/README.md](deploy/k8s/README.md) for detailed K8s deployment guide.
@@ -358,7 +358,7 @@ mypy src/
 
 Check logs:
 ```bash
-docker-compose -f deploy/docker/docker-compose.yml logs seismic-monitor
+docker-compose -f deploy/docker/docker-compose.yml logs geospectrum
 ```
 
 Common issues:

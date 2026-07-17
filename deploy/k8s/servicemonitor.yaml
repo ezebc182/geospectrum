@@ -3,15 +3,15 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: seismic-monitor
-  namespace: seismic-monitor
+  name: geospectrum
+  namespace: geospectrum
   labels:
-    app: seismic-monitor
+    app: geospectrum
     release: prometheus  # Ajustar según tu release de Prometheus
 spec:
   selector:
     matchLabels:
-      app: seismic-monitor
+      app: geospectrum
   endpoints:
     - port: http
       path: /metrics

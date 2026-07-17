@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SeismicEvent } from '@/lib/types';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
+import { countEventsInBounds } from '@/lib/map-bounds';
 import { Layers, Eye, EyeOff } from 'lucide-react';
 
 interface AdvancedSeismicMapProps {
@@ -16,25 +17,89 @@ interface AdvancedSeismicMapProps {
   className?: string;
   showCities?: boolean;
   defaultLayer?: keyof typeof BASE_LAYERS;
+  /** Renderiza los límites de placas tectónicas reales (GeoJSON PB2002). Default: false (comportamiento actual sin cambios). */
+  showPlateBoundaries?: boolean;
+  /** Id del evento seleccionado externamente (p. ej. click en fila de tabla). Default: undefined (sin selección). */
+  selectedEventId?: string | null;
+  /** Callback invocado al hacer click sobre un marcador de evento en el mapa. Default: undefined (sin listener). */
+  onEventClick?: (id: string) => void;
+  /** Callback invocado con (visibleCount, totalCount) cada vez que cambian los bounds visibles o el set de eventos. Default: undefined. */
+  onBoundsChange?: (visibleCount: number, totalCount: number) => void;
 }
 
-const MAJOR_CITIES = [
-  { name: 'Buenos Aires', lat: -34.6037, lon: -58.3816, population: 15000000 },
-  { name: 'Santiago', lat: -33.4489, lon: -70.6693, population: 7000000 },
-  { name: 'Lima', lat: -12.0464, lon: -77.0428, population: 10000000 },
-  { name: 'Bogotá', lat: 4.7110, lon: -74.0721, population: 10000000 },
-  { name: 'Caracas', lat: 10.4806, lon: -66.9036, population: 3000000 },
-  { name: 'Quito', lat: -0.1807, lon: -78.4678, population: 2800000 },
-  { name: 'La Paz', lat: -16.5000, lon: -68.1500, population: 2300000 },
-  { name: 'Asunción', lat: -25.2637, lon: -57.5759, population: 2500000 },
-  { name: 'Montevideo', lat: -34.9011, lon: -56.1645, population: 1900000 },
+interface MajorCity {
+  name: string;
+  lat: number;
+  lon: number;
+  population: number;
+  country: string;
+}
+
+// Listado unificado (Decisión 7 de design.md): 9 ciudades originales de este componente
+// + 27 de SeismicMapWithCities, deduplicadas por coincidencia de coordenadas (6 en común).
+// Total: 30 ciudades, todas con `country` para consistencia de tipo.
+const MAJOR_CITIES: MajorCity[] = [
+  // Argentina
+  { name: 'Buenos Aires', lat: -34.6037, lon: -58.3816, population: 15000000, country: 'Argentina' },
+  { name: 'Córdoba', lat: -31.4201, lon: -64.1888, population: 1500000, country: 'Argentina' },
+  { name: 'Rosario', lat: -32.9468, lon: -60.6393, population: 1300000, country: 'Argentina' },
+  { name: 'Mendoza', lat: -32.8895, lon: -68.8458, population: 1100000, country: 'Argentina' },
+  { name: 'San Juan', lat: -31.5375, lon: -68.5364, population: 500000, country: 'Argentina' },
+  { name: 'San Miguel de Tucumán', lat: -26.8083, lon: -65.2176, population: 900000, country: 'Argentina' },
+  { name: 'Salta', lat: -24.7859, lon: -65.4117, population: 600000, country: 'Argentina' },
+  { name: 'Mar del Plata', lat: -38.0055, lon: -57.5426, population: 650000, country: 'Argentina' },
+  { name: 'Neuquén', lat: -38.9516, lon: -68.0591, population: 350000, country: 'Argentina' },
+
+  // Chile
+  { name: 'Santiago', lat: -33.4489, lon: -70.6693, population: 7000000, country: 'Chile' },
+  { name: 'Valparaíso', lat: -33.0472, lon: -71.6127, population: 900000, country: 'Chile' },
+  { name: 'Concepción', lat: -36.8201, lon: -73.0444, population: 730000, country: 'Chile' },
+  { name: 'Antofagasta', lat: -23.6509, lon: -70.3975, population: 400000, country: 'Chile' },
+  { name: 'Temuco', lat: -38.7359, lon: -72.5904, population: 300000, country: 'Chile' },
+  { name: 'Iquique', lat: -20.2307, lon: -70.1355, population: 200000, country: 'Chile' },
+  { name: 'Valdivia', lat: -39.8142, lon: -73.2459, population: 170000, country: 'Chile' },
+  { name: 'Coquimbo', lat: -29.9533, lon: -71.3436, population: 200000, country: 'Chile' },
+
+  // Perú
+  { name: 'Lima', lat: -12.0464, lon: -77.0428, population: 10000000, country: 'Perú' },
+  { name: 'Arequipa', lat: -16.4090, lon: -71.5375, population: 1000000, country: 'Perú' },
+  { name: 'Cusco', lat: -13.5319, lon: -71.9675, population: 430000, country: 'Perú' },
+  { name: 'Trujillo', lat: -8.1116, lon: -79.0288, population: 920000, country: 'Perú' },
+
+  // Bolivia
+  { name: 'La Paz', lat: -16.5000, lon: -68.1500, population: 2300000, country: 'Bolivia' },
+  { name: 'Santa Cruz', lat: -17.8146, lon: -63.1561, population: 1900000, country: 'Bolivia' },
+  { name: 'Cochabamba', lat: -17.3895, lon: -66.1568, population: 1200000, country: 'Bolivia' },
+
+  // Paraguay
+  { name: 'Asunción', lat: -25.2637, lon: -57.5759, population: 2500000, country: 'Paraguay' },
+
+  // Uruguay
+  { name: 'Montevideo', lat: -34.9011, lon: -56.1645, population: 1900000, country: 'Uruguay' },
+
+  // Exclusivas de las 9 originales de AdvancedSeismicMap (fuera de la cobertura AR/CL/PE/BO/PY/UY)
+  { name: 'Bogotá', lat: 4.7110, lon: -74.0721, population: 10000000, country: 'Colombia' },
+  { name: 'Caracas', lat: 10.4806, lon: -66.9036, population: 3000000, country: 'Venezuela' },
+  { name: 'Quito', lat: -0.1807, lon: -78.4678, population: 2800000, country: 'Ecuador' },
 ];
 
-export function AdvancedSeismicMap({ eventos, className = '', showCities = true, defaultLayer = 'terrain' }: AdvancedSeismicMapProps) {
+export function AdvancedSeismicMap({
+  eventos,
+  className = '',
+  showCities = true,
+  defaultLayer = 'terrain',
+  showPlateBoundaries = false,
+  selectedEventId = null,
+  onEventClick,
+  onBoundsChange,
+}: AdvancedSeismicMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const layersRef = useRef<any>({});
   const overlaysRef = useRef<any>({});
+  const plateBoundariesLayerRef = useRef<any>(null);
+  // Lookup de marcador de evento por id, para centrar/resaltar vía selectedEventId (Decisión 2/3 de design.md).
+  const eventMarkersRef = useRef<Map<string, any>>(new Map());
 
   const [currentLayer, setCurrentLayer] = useState<keyof typeof BASE_LAYERS>(defaultLayer);
   const [activeOverlays, setActiveOverlays] = useState<string[]>([]);
@@ -97,6 +162,7 @@ export function AdvancedSeismicMap({ eventos, className = '', showCities = true,
               .bindPopup(`
                 <div class="text-sm">
                   <p class="font-bold">${city.name}</p>
+                  <p class="text-xs text-gray-600">${city.country}</p>
                   <p class="text-xs">Población: ${(city.population / 1000000).toFixed(1)}M</p>
                 </div>
               `)
@@ -188,6 +254,7 @@ export function AdvancedSeismicMap({ eventos, className = '', showCities = true,
             leafletMapRef.current.removeLayer(layer);
           }
         });
+        eventMarkersRef.current.clear();
 
         // Agregar nuevos eventos
         eventos.forEach((evento) => {
@@ -199,7 +266,7 @@ export function AdvancedSeismicMap({ eventos, className = '', showCities = true,
                            evento.fuentes.includes('INPRES') ? '🇦🇷' :
                            '🇺🇸';
 
-          L.circleMarker([evento.lat, evento.lon], {
+          const marker = L.circleMarker([evento.lat, evento.lon], {
             radius,
             fillColor: color,
             color: '#ffffff',
@@ -222,10 +289,82 @@ export function AdvancedSeismicMap({ eventos, className = '', showCities = true,
               </div>
             `)
             .addTo(leafletMapRef.current);
+
+          // Sincronización mapa→tabla es opcional/bonus (Decisión 3 de design.md);
+          // no afecta la sincronización principal tabla→mapa, que es unidireccional.
+          if (onEventClick) {
+            marker.on('click', () => onEventClick(evento.id));
+          }
+
+          eventMarkersRef.current.set(evento.id, marker);
         });
       });
     }
-  }, [eventos]);
+  }, [eventos, onEventClick]);
+
+  // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado).
+  // Efecto separado del de inicialización del mapa: async, no bloqueante (Decisión 1 de design.md).
+  useEffect(() => {
+    if (!leafletMapRef.current || !showPlateBoundaries) return;
+
+    let cancelled = false;
+
+    import('leaflet').then((L) => {
+      fetch('/geo/plate-boundaries.json')
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((data) => {
+          if (cancelled || !leafletMapRef.current) return;
+          const layer = L.geoJSON(data, {
+            style: { color: '#dc2626', weight: 1.5, opacity: 0.7 },
+          });
+          layer.addTo(leafletMapRef.current);
+          plateBoundariesLayerRef.current = layer;
+        })
+        .catch((err) => {
+          // Falla de red/parseo no debe romper el resto del mapa (spec Requirement 2).
+          console.error('No se pudo cargar el GeoJSON de placas tectónicas:', err);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      if (plateBoundariesLayerRef.current && leafletMapRef.current) {
+        leafletMapRef.current.removeLayer(plateBoundariesLayerRef.current);
+        plateBoundariesLayerRef.current = null;
+      }
+    };
+  }, [showPlateBoundaries]);
+
+  // Centrar/resaltar el evento seleccionado externamente (sincronización tabla→mapa, Decisión 3).
+  useEffect(() => {
+    if (!leafletMapRef.current || !selectedEventId) return;
+    const marker = eventMarkersRef.current.get(selectedEventId);
+    if (!marker) return;
+
+    const latLng = marker.getLatLng();
+    leafletMapRef.current.panTo(latLng);
+    marker.openPopup();
+  }, [selectedEventId]);
+
+  // Contador "N of M events in map area" (Decisión 4 de design.md).
+  useEffect(() => {
+    if (!leafletMapRef.current || !onBoundsChange) return;
+    const map = leafletMapRef.current;
+
+    const recompute = () => {
+      const { visible, total } = countEventsInBounds(eventos, map.getBounds());
+      onBoundsChange(visible, total);
+    };
+
+    recompute();
+    map.on('moveend zoomend', recompute);
+    return () => {
+      map.off('moveend zoomend', recompute);
+    };
+  }, [eventos, onBoundsChange]);
 
   const toggleOverlay = (overlayKey: string) => {
     setActiveOverlays(prev =>
@@ -240,7 +379,6 @@ export function AdvancedSeismicMap({ eventos, className = '', showCities = true,
       <div
         ref={mapRef}
         className="h-full w-full rounded-lg border-2 border-gray-300 dark:border-gray-700 shadow-lg"
-        style={{ minHeight: '600px' }}
       />
 
       <link
@@ -306,23 +444,25 @@ export function AdvancedSeismicMap({ eventos, className = '', showCities = true,
       </div>
 
       {/* Leyenda */}
-      <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 dark:bg-gray-900/90 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-lg p-3">
-        <div className="flex flex-wrap gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white"></div>
-            <span className="text-gray-900 dark:text-white">M &lt; 4.0</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-yellow-500 border-2 border-white"></div>
-            <span className="text-gray-900 dark:text-white">M 4.0-5.0</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-orange-500 border-2 border-white"></div>
-            <span className="text-gray-900 dark:text-white">M 5.0-6.0</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-red-500 border-2 border-white"></div>
-            <span className="text-gray-900 dark:text-white">M &gt; 6.0</span>
+      <div className="absolute bottom-4 left-4 right-4 z-[1000] flex justify-center pointer-events-none sm:right-auto sm:justify-start">
+        <div className="pointer-events-auto bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-lg p-3">
+          <div className="flex flex-wrap gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white"></div>
+              <span className="text-gray-900 dark:text-white">M &lt; 4.0</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full bg-yellow-500 border-2 border-white"></div>
+              <span className="text-gray-900 dark:text-white">M 4.0-5.0</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-orange-500 border-2 border-white"></div>
+              <span className="text-gray-900 dark:text-white">M 5.0-6.0</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-red-500 border-2 border-white"></div>
+              <span className="text-gray-900 dark:text-white">M &gt; 6.0</span>
+            </div>
           </div>
         </div>
       </div>

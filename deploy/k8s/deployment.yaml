@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: seismic-monitor
-  namespace: seismic-monitor
+  name: geospectrum
+  namespace: geospectrum
   labels:
-    app: seismic-monitor
+    app: geospectrum
     version: v1
 spec:
   replicas: 2
@@ -15,11 +15,11 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: seismic-monitor
+      app: geospectrum
   template:
     metadata:
       labels:
-        app: seismic-monitor
+        app: geospectrum
         version: v1
       annotations:
         prometheus.io/scrape: "true"
@@ -33,8 +33,8 @@ spec:
         fsGroup: 1000
 
       containers:
-        - name: seismic-monitor
-          image: seismic-monitor:latest  # Cambiar a tu registry
+        - name: geospectrum
+          image: geospectrum:latest  # Cambiar a tu registry
           imagePullPolicy: IfNotPresent
 
           ports:
@@ -45,9 +45,9 @@ spec:
           # Environment desde ConfigMap y Secrets
           envFrom:
             - configMapRef:
-                name: seismic-monitor-config
+                name: geospectrum-config
             - secretRef:
-                name: seismic-monitor-secrets
+                name: geospectrum-secrets
 
           # Resources
           resources:
@@ -107,5 +107,5 @@ spec:
                     - key: app
                       operator: In
                       values:
-                        - seismic-monitor
+                        - geospectrum
                 topologyKey: kubernetes.io/hostname

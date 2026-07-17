@@ -1,12 +1,12 @@
 # =============================================================================
-# Multi-stage Dockerfile para Seismic Monitor Service
+# Multi-stage Dockerfile para GeoSpectrum Service
 # Imagen production-ready con security hardening
 # =============================================================================
 
 FROM python:3.11-slim AS base
 
 # Metadata
-LABEL maintainer="seismic-ops@example.com"
+LABEL maintainer="geospectrum-ops@example.com"
 LABEL description="Production-grade seismic monitoring service"
 
 # Security: usuario no root

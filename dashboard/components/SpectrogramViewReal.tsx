@@ -48,13 +48,16 @@ export function SpectrogramViewReal({
         24 // 24 horas de datos
       );
 
-      if (result.success && result.image) {
+      if (result.success && result.image && result.metadata?.network !== 'SYNTHETIC') {
         setSpectrogramImage(result.image);
         setMetadata(result.metadata);
         setError(null);
       } else {
-        setError(result.error || 'No se pudo generar el espectrograma');
+        // El backend cayó a datos sintéticos (sin estación FDSN real cercana).
+        // No mostramos ruido simulado como si fuera señal real: se marca como error.
+        setError('Sin estación sísmica real cercana a esta ubicación');
         setSpectrogramImage(null);
+        setMetadata(null);
       }
     } catch (err) {
       console.error(`Error fetching spectrogram for ${city.name}:`, err);
@@ -68,10 +71,11 @@ export function SpectrogramViewReal({
   useEffect(() => {
     fetchSpectrogram();
 
-    // Recargar cada 5 minutos
+    // El backend cachea cada espectrograma real por ~45s (spectrogram_cache_ttl_seconds),
+    // así que refrescar cada 30s trae imagen nueva sin recalcular FFT en cada ciclo.
     const interval = setInterval(() => {
       fetchSpectrogram();
-    }, 5 * 60 * 1000);
+    }, 30 * 1000);
 
     return () => clearInterval(interval);
   }, [city.id, useRealData]);
@@ -84,12 +88,12 @@ export function SpectrogramViewReal({
   return (
     <div className="relative bg-black rounded border-2 border-gray-700 overflow-hidden" style={{ height: `${height}px` }}>
       {showLabel && (
-        <div className="absolute top-1 left-2 z-10 flex items-center gap-2 bg-black/80 px-2 py-1 rounded text-xs">
-          <Activity className="h-3 w-3 text-green-400" />
-          <span className="text-white font-semibold">{city.name}</span>
-          <span className="text-gray-400">{city.country}</span>
-          {metadata && (
-            <span className="text-xs text-blue-400 ml-1">
+        <div className="absolute top-1 left-2 right-2 z-10 flex items-center gap-2 bg-black/80 px-2 py-1 rounded text-xs overflow-hidden">
+          <Activity className="h-3 w-3 text-green-400 shrink-0" />
+          <span className="text-white font-semibold shrink-0">{city.name}</span>
+          <span className="text-gray-400 truncate">{city.country}</span>
+          {metadata && metadata.network !== 'SYNTHETIC' && (
+            <span className="text-xs text-blue-400 ml-1 shrink-0">
               [{metadata.network}.{metadata.station}]
             </span>
           )}
@@ -143,7 +147,11 @@ export function SpectrogramViewReal({
       {/* Metadata overlay */}
       {metadata && spectrogramImage && (
         <div className="absolute bottom-1 left-2 z-10 bg-black/60 px-2 py-1 rounded text-[9px] text-gray-300">
-          <div>Estación: {metadata.network}.{metadata.station}</div>
+          <div>
+            {metadata.network === 'SYNTHETIC'
+              ? 'Datos simulados (sin estación real cercana)'
+              : `Estación: ${metadata.network}.${metadata.station}`}
+          </div>
           <div>Actualizado: {new Date(metadata.generated_at).toLocaleTimeString()}</div>
         </div>
       )}

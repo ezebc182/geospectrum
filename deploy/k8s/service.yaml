@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: seismic-monitor-service
-  namespace: seismic-monitor
+  name: geospectrum-service
+  namespace: geospectrum
   labels:
-    app: seismic-monitor
+    app: geospectrum
 spec:
   type: ClusterIP
   ports:
@@ -13,14 +13,14 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: seismic-monitor
+    app: geospectrum
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: inpres-adapter-service
-  namespace: seismic-monitor
+  namespace: geospectrum
   labels:
     app: inpres-adapter
 spec:

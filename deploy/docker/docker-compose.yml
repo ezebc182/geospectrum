@@ -1,10 +1,10 @@
 version: '3.8'
 
 # =============================================================================
-# Docker Compose para Seismic Monitor
+# Docker Compose para GeoSpectrum
 #
 # Servicios:
-# - seismic-monitor: API principal
+# - geospectrum: API principal
 # - inpres-adapter: Scraper INPRES (opcional)
 # - prometheus: Métricas (opcional)
 # - grafana: Dashboard (opcional)
@@ -15,12 +15,12 @@ services:
   # ===========================================================================
   # Servicio principal
   # ===========================================================================
-  seismic-monitor:
+  geospectrum:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-    image: seismic-monitor:latest
-    container_name: seismic-monitor
+    image: geospectrum:latest
+    container_name: geospectrum
     ports:
       - "8000:8000"
     environment:
@@ -58,7 +58,7 @@ services:
       - inpres-adapter
     restart: unless-stopped
     networks:
-      - seismic-net
+      - geospectrum-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -78,7 +78,7 @@ services:
       - "8001:8001"
     restart: unless-stopped
     networks:
-      - seismic-net
+      - geospectrum-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -102,7 +102,7 @@ services:
       - '--storage.tsdb.retention.time=30d'
     restart: unless-stopped
     networks:
-      - seismic-net
+      - geospectrum-net
     profiles:
       - observability
 
@@ -124,7 +124,7 @@ services:
       - prometheus
     restart: unless-stopped
     networks:
-      - seismic-net
+      - geospectrum-net
     profiles:
       - observability
 
@@ -135,7 +135,7 @@ services:
     image: timescale/timescaledb:latest-pg15
     container_name: timescaledb
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: seismic
       POSTGRES_USER: seismic
@@ -144,12 +144,12 @@ services:
       - timescaledb-data:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
-      - seismic-net
+      - geospectrum-net
     profiles:
       - storage
 
 networks:
-  seismic-net:
+  geospectrum-net:
     driver: bridge
 
 volumes:

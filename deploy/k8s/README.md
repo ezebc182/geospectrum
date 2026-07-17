@@ -31,16 +31,16 @@ kubectl apply -f deploy/k8s/ingress.yaml
 
 ```bash
 # Pods
-kubectl get pods -n seismic-monitor
+kubectl get pods -n geospectrum
 
 # Services
-kubectl get svc -n seismic-monitor
+kubectl get svc -n geospectrum
 
 # Ingress
-kubectl get ingress -n seismic-monitor
+kubectl get ingress -n geospectrum
 
 # Logs
-kubectl logs -f -n seismic-monitor -l app=seismic-monitor
+kubectl logs -f -n geospectrum -l app=geospectrum
 ```
 
 ## Configuración
@@ -51,16 +51,16 @@ Antes de deploy, actualizar `secret.yaml` con credenciales reales o usar:
 
 ```bash
 # Crear secret desde archivo
-kubectl create secret generic seismic-monitor-secrets \
+kubectl create secret generic geospectrum-secrets \
   --from-literal=TIMESCALEDB_PASSWORD=your-password \
   --from-literal=SENTRY_DSN=your-dsn \
-  -n seismic-monitor
+  -n geospectrum
 ```
 
 ### Ingress
 
 Editar `ingress.yaml` y cambiar:
-- `seismic.example.com` → tu dominio real
+- `geospectrum.org` → tu dominio real
 - Anotar con tu ingress controller específico
 
 ### Images

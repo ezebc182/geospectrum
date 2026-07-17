@@ -1,1 +1,1 @@
-"""Test suite for Seismic Monitor."""
+"""Test suite for GeoSpectrum."""

@@ -43,6 +43,19 @@ NETWORK_CODES = {
     'IR': 'IR',      # Iranian Seismic Network
 }
 
+# Canales SEED completos (con location code) para las ciudades que además
+# tienen streaming en vivo vía SeedLink (ver src/services/seedlink_ingestor.py,
+# DEFAULT_CHANNELS). El location code no se puede derivar de antemano —
+# ObsPy lo resuelve recién con el primer paquete real — así que estos valores
+# están verificados a mano contra /ws/spectrogram (2026-07-10). city_id debe
+# coincidir con dashboard/lib/seismic-cities.ts y con KNOWN_STATIONS abajo.
+LIVE_CHANNELS_BY_CITY = {
+    "tokyo": "IU.MAJO.00.BHZ",
+    "osaka": "II.ERM.00.BHZ",
+    "seattle": "UW.LON..HHZ",
+}
+
+
 class SpectrogramService:
     """Servicio para generar espectrogramas desde datos FDSN"""
 
@@ -57,32 +70,57 @@ class SpectrogramService:
     ]
 
     # Estaciones pre-configuradas para ciudades importantes (para acelerar búsqueda)
+    # Verificadas contra IRIS (get_waveforms, ventana 24h) el 2026-07-08.
+    # Las originales (JP.TNPH, JP.TKSB, C.GO01, C1.PB01, PE.LIMA, NZ.WEL, MX.PPIG, etc.)
+    # no devolvían datos (HTTP 204) — estaciones dadas de baja o códigos incorrectos.
     KNOWN_STATIONS = {
-        # Japón - Red muy densa
-        "tokyo": [{"network": "JP", "station": "TNPH", "channel": "BHZ"},
-                  {"network": "JP", "station": "TKSB", "channel": "BHZ"}],
-        "osaka": [{"network": "JP", "station": "OSKH", "channel": "BHZ"}],
+        # Japón - red GSN (IU) e II, más confiables que la red nacional JP en IRIS
+        "tokyo": [{"network": "IU", "station": "MAJO", "channel": "BHZ"},
+                  {"network": "IU", "station": "TATO", "channel": "BHZ"}],
+        "osaka": [{"network": "II", "station": "ERM", "channel": "BHZ"}],
 
         # USA - USGS/IRIS excelente cobertura
-        "los_angeles": [{"network": "CI", "station": "PAS", "channel": "BHZ"},
-                        {"network": "CI", "station": "USC", "channel": "BHZ"}],
-        "san_francisco": [{"network": "BK", "station": "BRIB", "channel": "BHZ"},
-                          {"network": "NC", "station": "BKS", "channel": "BHZ"}],
+        # NOTA: los IDs deben coincidir con dashboard/lib/seismic-cities.ts (sin guión bajo)
+        "losangeles": [{"network": "CI", "station": "USC", "channel": "BHZ"},
+                      {"network": "AZ", "station": "FRD", "channel": "BHZ"}],
+        "sanfrancisco": [{"network": "BK", "station": "CMB", "channel": "BHZ"},
+                         {"network": "BK", "station": "SAO", "channel": "BHZ"}],
         "seattle": [{"network": "UW", "station": "LON", "channel": "HHZ"}],
 
         # Chile - Red nacional
-        "santiago": [{"network": "C", "station": "GO01", "channel": "HHZ"},
-                     {"network": "C1", "station": "PB01", "channel": "HHZ"}],
+        "santiago": [{"network": "C1", "station": "CO01", "channel": "HHZ"},
+                     {"network": "IU", "station": "LCO", "channel": "BHZ"}],
 
-        # Perú
-        "lima": [{"network": "PE", "station": "LIMA", "channel": "HHZ"}],
+        # Perú - II.NNA (verificado, reemplaza al IU.NNA original que fallaba)
+        "lima": [{"network": "II", "station": "NNA", "channel": "BHZ"}],
+        "arequipa": [{"network": "BV", "station": "SOEP", "channel": "EHZ"}],
 
-        # Nueva Zelanda - GeoNet
-        "wellington": [{"network": "NZ", "station": "WEL", "channel": "HHZ"}],
-        "christchurch": [{"network": "NZ", "station": "CHC", "channel": "HHZ"}],
+        # Nueva Zelanda - GeoNet (vía IU/GSN, la red nacional NZ no respondía)
+        "wellington": [{"network": "IU", "station": "SNZO", "channel": "BHZ"}],
+        "christchurch": [{"network": "IU", "station": "SNZO", "channel": "BHZ"}],
+        "auckland": [{"network": "NZ", "station": "BKZ", "channel": "HHZ"}],
 
         # México
-        "mexico_city": [{"network": "MX", "station": "PPIG", "channel": "BHZ"}],
+        "mexicocity": [{"network": "IU", "station": "TEIG", "channel": "BHZ"},
+                       {"network": "G", "station": "UNM", "channel": "BHZ"}],
+
+        # Resto de ciudades de alto riesgo (dashboard/lib/seismic-cities.ts).
+        # Sin estación verificada con datos recientes -> quedan en fallback sintético:
+        # manila, jakarta, tehran, valparaiso.
+        "taipei": [{"network": "IU", "station": "TATO", "channel": "BHZ"}],
+        "quito": [{"network": "EC", "station": "ANTS", "channel": "HHZ"}],
+        "bogota": [{"network": "CM", "station": "HEL", "channel": "HHZ"}],
+        "vancouver": [{"network": "AM", "station": "R195D", "channel": "EHZ"}],
+        "istanbul": [{"network": "HL", "station": "RDO", "channel": "HHZ"}],
+        "kathmandu": [{"network": "IO", "station": "EVN", "channel": "BHZ"}],
+        "anchorage": [{"network": "AK", "station": "BAE", "channel": "BHZ"}],
+        "antofagasta": [{"network": "C", "station": "GO02", "channel": "BHZ"}],
+        "guam": [{"network": "IU", "station": "GUMO", "channel": "BHZ"}],
+        "portauprince": [{"network": "AY", "station": "CAPH", "channel": "HHZ"}],
+        "sandiego": [{"network": "AE", "station": "113A", "channel": "HHZ"}],
+        "portland": [{"network": "AM", "station": "R195D", "channel": "EHZ"}],
+        "managua": [{"network": "CU", "station": "TGUH", "channel": "BHZ"}],
+        "sanjose": [{"network": "G", "station": "HDC", "channel": "BHZ"}],
     }
 
     def __init__(self, fdsn_servers: Optional[list] = None):
@@ -352,8 +390,9 @@ class SpectrogramService:
             return None
 
         try:
-            # Usar el primer trace
-            trace = stream[0]
+            # Un stream puede venir partido en varios traces si hay gaps de datos.
+            # Usamos el más largo para maximizar la ventana de señal continua.
+            trace = max(stream, key=lambda tr: tr.stats.npts)
 
             # Preprocesamiento
             trace.detrend('demean')
@@ -365,7 +404,7 @@ class SpectrogramService:
 
             # Parámetros para la FFT
             nperseg = int(fs * 60)  # Ventana de 60 segundos
-            noverlap = int(nperseg * 0.9)  # 90% overlap
+            noverlap = int(nperseg * 0.5)  # 50% overlap (suficiente resolución temporal)
 
             f, t, Sxx = signal.spectrogram(
                 data,
@@ -379,6 +418,15 @@ class SpectrogramService:
             # Convertir a dB
             Sxx_db = 10 * np.log10(Sxx + 1e-10)
 
+            # Reducir columnas de tiempo a lo que la imagen puede mostrar:
+            # graficar miles de columnas en un ancho de pocos cientos de px
+            # con shading='gouraud' es el cuello de botella real de matplotlib.
+            max_time_bins = width * 2
+            if Sxx_db.shape[1] > max_time_bins:
+                step = Sxx_db.shape[1] // max_time_bins
+                Sxx_db = Sxx_db[:, ::step]
+                t = t[::step]
+
             # Crear figura
             fig, ax = plt.subplots(figsize=(width/100, height/100), dpi=100)
 
@@ -388,7 +436,7 @@ class SpectrogramService:
                 f,
                 Sxx_db,
                 cmap='viridis',
-                shading='gouraud',
+                shading='auto',
                 vmin=np.percentile(Sxx_db, 5),
                 vmax=np.percentile(Sxx_db, 95)
             )
@@ -507,8 +555,11 @@ class SpectrogramService:
         city_id: Optional[str] = None
     ) -> Dict:
         """
-        Generar espectrograma para una ubicación geográfica
-        ACTUALMENTE USA SOLO SINTÉTICOS para garantizar respuesta rápida
+        Generar espectrograma para una ubicación geográfica.
+
+        Intenta datos reales vía FDSN (estaciones conocidas para city_id,
+        si no hay match usa búsqueda por radio). Si falla o no hay datos,
+        cae a espectrograma sintético.
 
         Args:
             latitude: Latitud
@@ -520,9 +571,13 @@ class SpectrogramService:
         Returns:
             Dict con espectrogram base64 y metadata
         """
-        # POR AHORA: Solo generar espectrogramas sintéticos
-        # TODO: Implementar FDSN en background workers para no bloquear
-        logger.info(f"Generating synthetic spectrogram for {city_id or 'location'}")
+        real_result = await self._try_real_spectrogram(
+            latitude, longitude, network_code, duration_hours, city_id
+        )
+        if real_result:
+            return real_result
+
+        logger.info(f"Falling back to synthetic spectrogram for {city_id or 'location'}")
         synthetic_image = self.generate_synthetic_spectrogram(
             latitude, longitude, city_id
         )
@@ -548,6 +603,68 @@ class SpectrogramService:
             "image": None,
             "metadata": None
         }
+
+    async def _try_real_spectrogram(
+        self,
+        latitude: float,
+        longitude: float,
+        network_code: Optional[str],
+        duration_hours: int,
+        city_id: Optional[str]
+    ) -> Optional[Dict]:
+        """
+        Intenta generar un espectrograma con datos reales de FDSN.
+        Devuelve None si no hay estaciones/datos disponibles (caller cae a sintético).
+        """
+        candidates = self.KNOWN_STATIONS.get(city_id, []) if city_id else []
+
+        if not candidates:
+            # Ubicación libre (no está en KNOWN_STATIONS): buscar estaciones
+            # cercanas en vivo. Más lento (get_stations + get_waveforms) pero
+            # cubre cualquier lat/lon en vez de limitarse a la lista fija.
+            nearby = await self.get_stations_near_location(
+                latitude, longitude, max_radius=3.0, network=network_code
+            )
+            candidates = [
+                {"network": s["network"], "station": s["station"], "channel": s["channels"][0]}
+                for s in nearby[:5]
+                if s.get("channels")
+            ]
+
+        for candidate in candidates:
+            stream = await self.get_waveform_data(
+                network=candidate["network"],
+                station=candidate["station"],
+                channel=candidate["channel"],
+                duration_hours=duration_hours,
+            )
+            if stream is None or len(stream) == 0:
+                continue
+
+            loop = asyncio.get_event_loop()
+            image = await loop.run_in_executor(
+                _executor, self.generate_spectrogram_image, stream
+            )
+            if not image:
+                continue
+
+            trace = max(stream, key=lambda tr: tr.stats.npts)
+            return {
+                "success": True,
+                "image": image,
+                "metadata": {
+                    "network": trace.stats.network,
+                    "station": trace.stats.station,
+                    "channel": trace.stats.channel,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "duration_hours": duration_hours,
+                    "generated_at": datetime.utcnow().isoformat(),
+                    "data_type": "real",
+                }
+            }
+
+        return None
 
 
 # Singleton

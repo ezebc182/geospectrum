@@ -3,7 +3,7 @@
 
 set -e
 
-echo "🚀 Starting Seismic Monitor (local development)"
+echo "🚀 Starting GeoSpectrum (local development)"
 
 # Verificar Python 3.11
 if command -v python3.11 &> /dev/null; then

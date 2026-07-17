@@ -1,4 +1,4 @@
-# Seismic Monitor Service - Operational Runbook
+# GeoSpectrum Service - Operational Runbook
 
 **For on-call engineers and SREs**
 
@@ -12,14 +12,14 @@
 
 **SLA**: 99.9% uptime, <10s p99 latency
 
-**On-call**: #seismic-ops Slack channel
+**On-call**: #geospectrum-ops Slack channel
 
 ---
 
 ## Architecture Summary
 
 ```
-External APIs → Seismic Monitor → Prometheus/Alerts → PagerDuty
+External APIs → GeoSpectrum → Prometheus/Alerts → PagerDuty
      ↓               ↓
   USGS INPRES   Dashboard/CLI
 ```
@@ -39,20 +39,20 @@ External APIs → Seismic Monitor → Prometheus/Alerts → PagerDuty
 
 | Metric                                      | Alert Threshold       |
 |---------------------------------------------|-----------------------|
-| `seismic_monitor_requests_total`            | Rate of API requests  |
-| `seismic_monitor_events_fetched_total`      | Events by source      |
-| `seismic_monitor_data_source_errors_total`  | >10/min               |
-| `seismic_monitor_request_duration_seconds`  | p99 >5s               |
-| `up{job="seismic-monitor"}`                 | 0 (down)              |
+| `geospectrum_requests_total`                | Rate of API requests  |
+| `geospectrum_events_fetched_total`          | Events by source      |
+| `geospectrum_data_source_errors_total`      | >10/min               |
+| `geospectrum_request_duration_seconds`      | p99 >5s               |
+| `up{job="geospectrum"}`                     | 0 (down)              |
 
 ### Dashboards
 
-- **Grafana**: `https://grafana.example.com/d/seismic-monitor`
+- **Grafana**: `https://grafana.example.com/d/geospectrum`
 - **Prometheus**: `https://prometheus.example.com`
 
 ### Log Aggregation
 
-- **Kibana/CloudWatch/Loki**: Search `namespace:seismic-monitor`
+- **Kibana/CloudWatch/Loki**: Search `namespace:geospectrum`
 
 ---
 
@@ -61,7 +61,7 @@ External APIs → Seismic Monitor → Prometheus/Alerts → PagerDuty
 ### 1. Service Down / Pod CrashLooping
 
 **Symptoms**:
-- PagerDuty alert: "Seismic Monitor Down"
+- PagerDuty alert: "GeoSpectrum Down"
 - `/health` returning 503
 - Pods in CrashLoopBackOff
 
@@ -69,37 +69,37 @@ External APIs → Seismic Monitor → Prometheus/Alerts → PagerDuty
 
 ```bash
 # Check pod status
-kubectl get pods -n seismic-monitor
+kubectl get pods -n geospectrum
 
 # Check logs
-kubectl logs -n seismic-monitor -l app=seismic-monitor --tail=100
+kubectl logs -n geospectrum -l app=geospectrum --tail=100
 
 # Describe pod for events
-kubectl describe pod <pod-name> -n seismic-monitor
+kubectl describe pod <pod-name> -n geospectrum
 ```
 
 **Common Causes**:
 
 a) **Config error** (bad env var)
    - Fix: Check ConfigMap/Secret
-   - `kubectl edit configmap seismic-monitor-config -n seismic-monitor`
+   - `kubectl edit configmap geospectrum-config -n geospectrum`
 
 b) **Dependency unreachable** (INPRES adapter down)
-   - Check: `kubectl get pods -n seismic-monitor | grep inpres`
-   - Restart: `kubectl rollout restart deployment/inpres-adapter -n seismic-monitor`
+   - Check: `kubectl get pods -n geospectrum | grep inpres`
+   - Restart: `kubectl rollout restart deployment/inpres-adapter -n geospectrum`
 
 c) **OOMKilled** (out of memory)
    - Increase memory limit in deployment.yaml
-   - `kubectl set resources deployment/seismic-monitor --limits=memory=1Gi -n seismic-monitor`
+   - `kubectl set resources deployment/geospectrum --limits=memory=1Gi -n geospectrum`
 
 **Resolution**:
 
 ```bash
 # Restart deployment
-kubectl rollout restart deployment/seismic-monitor -n seismic-monitor
+kubectl rollout restart deployment/geospectrum -n geospectrum
 
 # Monitor rollout
-kubectl rollout status deployment/seismic-monitor -n seismic-monitor
+kubectl rollout status deployment/geospectrum -n geospectrum
 ```
 
 **Escalation**: If restart doesn't fix, escalate to platform team.
@@ -116,10 +116,10 @@ kubectl rollout status deployment/seismic-monitor -n seismic-monitor
 
 ```bash
 # Check error rate in Prometheus
-# Query: rate(seismic_monitor_data_source_errors_total[5m])
+# Query: rate(geospectrum_data_source_errors_total[5m])
 
 # Check service logs
-kubectl logs -n seismic-monitor -l app=seismic-monitor | grep ERROR
+kubectl logs -n geospectrum -l app=geospectrum | grep ERROR
 ```
 
 **Common Causes**:
@@ -147,26 +147,26 @@ b) **INPRES scraper broken** (site structure changed)
 
 **Symptoms**:
 - Slow API responses
-- Prometheus alert: "Seismic Monitor High Latency"
+- Prometheus alert: "GeoSpectrum High Latency"
 
 **Diagnosis**:
 
 ```bash
 # Check request duration
-# Prometheus query: histogram_quantile(0.99, rate(seismic_monitor_request_duration_seconds_bucket[5m]))
+# Prometheus query: histogram_quantile(0.99, rate(geospectrum_request_duration_seconds_bucket[5m]))
 
 # Check pod CPU/memory
-kubectl top pods -n seismic-monitor
+kubectl top pods -n geospectrum
 
 # Check HPA status
-kubectl get hpa -n seismic-monitor
+kubectl get hpa -n geospectrum
 ```
 
 **Common Causes**:
 
 a) **High load** (spike in requests)
    - HPA should auto-scale
-   - Verify: `kubectl get hpa seismic-monitor-hpa -n seismic-monitor`
+   - Verify: `kubectl get hpa geospectrum-hpa -n geospectrum`
    - If not scaling → check HPA config
 
 b) **Slow external API** (USGS/INPRES timeout)
@@ -174,17 +174,17 @@ b) **Slow external API** (USGS/INPRES timeout)
    - Increase timeout: `USGS_TIMEOUT_S`, `INPRES_TIMEOUT_S`
 
 c) **Resource contention** (CPU throttling)
-   - Check: `kubectl describe pod <pod-name> -n seismic-monitor`
+   - Check: `kubectl describe pod <pod-name> -n geospectrum`
    - Increase CPU limits
 
 **Resolution**:
 
 ```bash
 # Manual scale (if HPA not working)
-kubectl scale deployment/seismic-monitor --replicas=5 -n seismic-monitor
+kubectl scale deployment/geospectrum --replicas=5 -n geospectrum
 
 # Increase timeouts (if external APIs slow)
-kubectl set env deployment/seismic-monitor USGS_TIMEOUT_S=10 -n seismic-monitor
+kubectl set env deployment/geospectrum USGS_TIMEOUT_S=10 -n geospectrum
 ```
 
 ---
@@ -207,10 +207,10 @@ Adjust thresholds:
 
 ```bash
 # Increase minimum magnitude
-kubectl set env deployment/seismic-monitor MIN_MAG_ALERT=4.0 -n seismic-monitor
+kubectl set env deployment/geospectrum MIN_MAG_ALERT=4.0 -n geospectrum
 
 # Decrease window
-kubectl set env deployment/seismic-monitor WINDOW_MINUTES=30 -n seismic-monitor
+kubectl set env deployment/geospectrum WINDOW_MINUTES=30 -n geospectrum
 ```
 
 Coordinate with stakeholders on acceptable thresholds.
@@ -233,7 +233,7 @@ curl https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=$
 curl http://<adapter-url>:8001/recent
 
 # Check service logs
-kubectl logs -n seismic-monitor -l app=seismic-monitor | grep -i "events"
+kubectl logs -n geospectrum -l app=geospectrum | grep -i "events"
 ```
 
 **Common Causes**:
@@ -242,7 +242,7 @@ a) **Legitimately no seismic activity** (good news!)
    - Verify with external sources (USGS website, news)
 
 b) **Region misconfigured** (bbox wrong)
-   - Check: `kubectl get configmap seismic-monitor-config -n seismic-monitor -o yaml`
+   - Check: `kubectl get configmap geospectrum-config -n geospectrum -o yaml`
    - Verify lat/lon bounds
 
 c) **Data sources failing silently**
@@ -261,33 +261,33 @@ c) **Data sources failing silently**
 
 ```bash
 # Update image
-kubectl set image deployment/seismic-monitor seismic-monitor=<new-image> -n seismic-monitor
+kubectl set image deployment/geospectrum geospectrum=<new-image> -n geospectrum
 
 # Monitor rollout
-kubectl rollout status deployment/seismic-monitor -n seismic-monitor
+kubectl rollout status deployment/geospectrum -n geospectrum
 
 # Rollback if issues
-kubectl rollout undo deployment/seismic-monitor -n seismic-monitor
+kubectl rollout undo deployment/geospectrum -n geospectrum
 ```
 
 ### Configuration Change
 
 ```bash
 # Edit config
-kubectl edit configmap seismic-monitor-config -n seismic-monitor
+kubectl edit configmap geospectrum-config -n geospectrum
 
 # Restart to pick up changes
-kubectl rollout restart deployment/seismic-monitor -n seismic-monitor
+kubectl rollout restart deployment/geospectrum -n geospectrum
 ```
 
 ### Scaling
 
 ```bash
 # Manual scale
-kubectl scale deployment/seismic-monitor --replicas=5 -n seismic-monitor
+kubectl scale deployment/geospectrum --replicas=5 -n geospectrum
 
 # Adjust HPA
-kubectl edit hpa seismic-monitor-hpa -n seismic-monitor
+kubectl edit hpa geospectrum-hpa -n geospectrum
 ```
 
 ---
@@ -296,16 +296,16 @@ kubectl edit hpa seismic-monitor-hpa -n seismic-monitor
 
 ### Planned Maintenance
 
-1. Announce in #seismic-ops Slack 24h in advance
+1. Announce in #geospectrum-ops Slack 24h in advance
 2. Schedule during low-activity hours (if possible)
 3. Put service in maintenance mode (optional):
    ```bash
-   kubectl scale deployment/seismic-monitor --replicas=0 -n seismic-monitor
+   kubectl scale deployment/geospectrum --replicas=0 -n geospectrum
    ```
 4. Perform maintenance
 5. Restore:
    ```bash
-   kubectl scale deployment/seismic-monitor --replicas=2 -n seismic-monitor
+   kubectl scale deployment/geospectrum --replicas=2 -n geospectrum
    ```
 6. Verify health: `curl https://seismic.example.com/health`
 
@@ -327,7 +327,7 @@ kubectl edit hpa seismic-monitor-hpa -n seismic-monitor
 
 3. **Verify services**:
    ```bash
-   kubectl get all -n seismic-monitor
+   kubectl get all -n geospectrum
    curl https://seismic.example.com/health
    ```
 
@@ -345,8 +345,8 @@ If using TimescaleDB:
 
 | Issue Type                | Contact                      | Response SLA |
 |---------------------------|------------------------------|--------------|
-| Service down              | #seismic-ops → PagerDuty     | Immediate    |
-| Data source issue         | #seismic-ops                 | 1 hour       |
+| Service down              | #geospectrum-ops → PagerDuty | Immediate    |
+| Data source issue         | #geospectrum-ops             | 1 hour       |
 | INPRES adapter broken     | Platform team                | 4 hours      |
 | Feature request/bug       | GitHub issues                | Best effort  |
 | Kubernetes cluster issue  | Platform team → PagerDuty    | Immediate    |
