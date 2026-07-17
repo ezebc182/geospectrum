@@ -16,9 +16,11 @@ resources:
   # - servicemonitor.yaml  # Descomentar si usas Prometheus Operator
 
 # Labels comunes
-commonLabels:
-  project: geospectrum
-  managed-by: kustomize
+labels:
+  - includeSelectors: true
+    pairs:
+      project: geospectrum
+      managed-by: kustomize
 
 # Images (personalizar según tu registry)
 images:
