@@ -4,15 +4,19 @@
 
 ### 1. Dashboard de Espectrogramas Sísmicos en Tiempo Real
 
-**Página:** `/spectrograms`
-**Acceso:** http://localhost:3008/spectrograms
+**Página:** `/spectrograms-live` (reemplaza a la antigua `/spectrograms`,
+eliminada al fusionarse ambas vistas)
+**Acceso:** http://localhost:3008/spectrograms-live
 
 #### Características:
 - **Visualización tipo PNSN** (Pacific Northwest Seismic Network)
 - **30 ciudades de alto riesgo sísmico** preconfiguradas
-- **Actualización en tiempo real** (cada 2 segundos)
+- **Toggle Vivo/24h por tarjeta**: "Vivo" usa streaming SeedLink real vía
+  WebSocket (solo disponible en ciudades con estación pública activa); "24h"
+  muestra el histórico estático (imagen FDSN vía matplotlib)
 - **Layout configurable**: 2, 3, 4 o 6 columnas
-- **Gestión dinámica de ciudades**: agregar/eliminar ciudades al vuelo
+- **Gestión dinámica de ciudades**: agregar/eliminar ciudades al vuelo,
+  con drag & drop para reordenar tarjetas
 
 #### Ciudades Monitoreadas:
 **Asia-Pacífico:**
@@ -303,14 +307,14 @@ windowMinutes=10080"  # 7 días
    ```
    /events/{id}/detail → Obtener parámetros completos
    /events/{id}/rupture → Analizar modelo de ruptura
-   /spectrograms → Verificar señales en estaciones cercanas
+   /spectrograms-live → Verificar señales en estaciones cercanas
    ```
 
 2. **Monitoreo de Región:**
    ```
    /events/search → Filtrar por región y magnitud
    /explore → Visualizar en mapa interactivo
-   /spectrograms → Monitorear actividad continua
+   /spectrograms-live → Monitorear actividad continua
    ```
 
 ### Para Investigadores:
@@ -389,7 +393,13 @@ CACHE_TTL_SECONDS=300
 
 ## 📈 Métricas y Monitoreo
 
-**Métricas Prometheus disponibles:**
+**⚠️ ROADMAP — NO IMPLEMENTADO AÚN.** Las métricas listadas abajo documentan
+un diseño futuro (endpoint de detalle de evento por ID + modelos de ruptura
+EMSC); no existen hoy en `src/`. Las métricas Prometheus reales y activas
+están en `src/observability/metrics.py` (prefijos `seismic_emsc_*`,
+`seismic_dispatcher_*`, `seismic_sse_*`, `geospectrum_source_*`).
+
+**Métricas Prometheus planeadas:**
 
 ```
 # Eventos consultados por ID
