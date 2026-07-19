@@ -66,6 +66,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_password: Optional[str] = None
 
+    # Auth (multi-user-auth). auth_secret_key es Optional[str] = None por
+    # convención (mismo patrón que timescaledb_password), pero a diferencia
+    # de TimescaleDB (opcional/best-effort) NO tiene un modo degradado
+    # aceptable: si es None al arrancar, main.py debe fail-fast (ver
+    # openspec/changes/multi-user-auth/design.md, Decision sobre lifespan).
+    # No se le pone un default no-vacío acá — eso disfrazaría la falta de
+    # configuración como una clave real y permitiría forjar tokens válidos.
+    auth_secret_key: Optional[str] = None
+    auth_token_expire_minutes: int = 1440
+
     # SSE
     max_sse_clients: int = 200
     sse_heartbeat_seconds: int = 30
