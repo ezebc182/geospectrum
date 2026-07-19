@@ -64,6 +64,98 @@ Firma del JWT: `python-jose[cryptography]==3.3.0` (librería usada en el tutoria
 
 **Rationale**: Esto es consecuencia directa de la Decisión 2, no una decisión independiente. Se declara explícitamente acá porque el proposal pide una respuesta clara sobre "período de transición" en el Success Criteria y en Dependencies.
 
+### Decision 6: Migración a jerarquía estricta descendente de 4 roles (superadmin/admin/moderador/viewer)
+
+**Contexto**: Decisiones 1-5 y las Fases 1-3 de `tasks.md` ya se implementaron y commitearon (`48cf2e4`, `28425ad`) con el modelo original de 2 roles planos (`admin`/`viewer`, sin jerarquía, `require_role` de igualdad exacta). Durante ese trabajo quedó un hallazgo de seguridad explícitamente documentado en el docstring de `POST /auth/register` en `src/main.py`: **cualquier caller no autenticado puede pedir `role="admin"` en el payload de registro y el sistema lo concede sin ningún control de quién puede hacer esa elevación**. Este hallazgo no se resolvía en el batch original porque `design.md`/`tasks.md` no definían el mecanismo de control. El usuario tomó una decisión de producto posterior que amplía el modelo de roles y resuelve ese hallazgo en el mismo movimiento: **no es una decisión técnica abierta a evaluación, es un requisito de producto ya fijado** — este Decision documenta el CÓMO, no el QUÉ.
+
+**Choice — modelo de roles**: 4 roles con jerarquía estricta descendente, en vez de 2 roles planos:
+
+| Rol | Nivel |
+|-----|-------|
+| `superadmin` | 3 |
+| `admin` | 2 |
+| `moderador` | 1 |
+| `viewer` | 0 |
+
+**Regla de gestión**: un usuario con rol de nivel N solo puede crear/gestionar (asignar rol a) usuarios con rol de nivel **estrictamente menor** que N. `superadmin` gestiona `admin`+`moderador`+`viewer`; `admin` gestiona `moderador`+`viewer`; `moderador` gestiona solo `viewer`; `viewer` no gestiona a nadie. Nadie gestiona su propio nivel ni niveles iguales o superiores — un `admin` NO puede crear otro `admin` ni tocar a un `superadmin`. Esta regla es la generalización natural de "estrictamente por debajo", no "distinto de": con 2 roles planos "por debajo de admin" y "distinto de admin" coincidían (ambos significan "es viewer"); con 4 roles dejan de coincidir, por eso `require_role` (igualdad exacta) ya no alcanza y se necesita una comparación de **nivel**.
+
+**Choice — mecanismo de comparación de nivel**: `UserRole` se mantiene como `str, Enum` (NO se migra a `IntEnum`). Se agrega una función/dict de nivel separado, `ROLE_LEVEL: dict[UserRole, int]`, y una función `role_level(role: UserRole) -> int`.
+
+**Alternatives considered**:
+- `IntEnum` con valores 0-3 y `Enum.value` como el nivel directamente.
+- `str, Enum` + `ROLE_LEVEL` dict separado (elegido).
+
+**Rationale**: Ya existe un contrato de API firmado en `specs/auth/spec.md` y ejercitado por tests/clientes: los endpoints serializan `role` como el string `"admin"`/`"viewer"` (ver `UserPublic`, `CurrentUser`, JWT claim `role`). Si `UserRole` pasara a `IntEnum`, `role.value` sería un `int` (ej. `2`), y todo el código que hoy asume `role.value == "admin"` (JSON responses, claim del JWT, el propio `CHECK` constraint de la tabla que compara contra los strings `'admin'`/`'viewer'`) se rompería salvo que se overridee `__str__`/serialización en Pydantic en varios puntos — más superficie de cambio y más riesgo de que un serializador (FastAPI `response_model`, `jose.jwt.encode` con un `dict` de claims) tome el valor numérico en algún path no cubierto por tests. Mantener `str, Enum` para el valor semántico (el string ya es el contrato de API, de JWT y de DB) y separar la noción de "nivel jerárquico" en un dict aparte (`ROLE_LEVEL`) desacopla dos preocupaciones distintas — serialización externa vs. lógica interna de comparación — y es un cambio aditivo: no toca ningún call site existente que ya use `role.value` o `UserRole("admin")`.
+
+```python
+class UserRole(str, Enum):
+    SUPERADMIN = "superadmin"
+    ADMIN = "admin"
+    MODERADOR = "moderador"
+    VIEWER = "viewer"
+
+ROLE_LEVEL: dict[UserRole, int] = {
+    UserRole.SUPERADMIN: 3,
+    UserRole.ADMIN: 2,
+    UserRole.MODERADOR: 1,
+    UserRole.VIEWER: 0,
+}
+
+def role_level(role: UserRole) -> int:
+    return ROLE_LEVEL[role]
+```
+
+**Choice — autorización en `deps.py`**: se agrega `require_min_role(role: UserRole)`, que rechaza con 403 si `role_level(current_user.role) < role_level(role)` (nivel INFERIOR al mínimo exigido — no "distinto"). El `require_role` existente (igualdad exacta) **se mantiene sin cambios** porque sigue siendo semánticamente correcto para casos donde se necesita EXACTAMENTE un rol y no "ese rol o superior" (no hay un caso de uso concreto para eso en este batch, pero no hay motivo para borrar una primitiva ya testeada y potencialmente útil — ej. una función futura de gestión de usuarios que solo `superadmin` puede tocar, ahí `require_min_role(UserRole.SUPERADMIN)` es lo correcto, no `require_role`). Documentado en el docstring de cada función en `deps.py` cuál usar cuándo.
+
+**Choice — bootstrap del primer superadmin**: problema huevo-gallina — si nadie puede autoasignarse un rol superior a `viewer` vía `/auth/register`, no puede existir el primer `superadmin`. Resolución: `POST /auth/register` cuenta las filas de `users` (`SELECT COUNT(*) FROM users`) antes de insertar.
+- Si la tabla está vacía (`COUNT = 0`): el registro se fuerza a `role=superadmin`, **ignorando cualquier `role` que venga en el payload**.
+- Si la tabla NO está vacía (`COUNT > 0`): el registro se fuerza a `role=viewer`, **ignorando cualquier `role` que venga en el payload**.
+
+Esto resuelve el hallazgo de seguridad pendiente de forma definitiva dentro del alcance de este batch: ya no existe ningún path por el cual un caller no autenticado pueda obtener `role != viewer` (salvo el caso especial y único del primer usuario del sistema, que es award intencional, no una vulnerabilidad — es literalmente el mecanismo de bootstrap). Cualquier asignación de rol superior a `viewer` después del primer usuario requiere que la haga un usuario ya autenticado con nivel suficiente, vía un endpoint de gestión de usuarios **que no se implementa en este batch** (queda fuera de alcance, ver Open Questions) pero que ya tiene su mecanismo de autorización listo (`require_min_role`) para cuando se construya.
+
+**Alternatives considered**:
+- Variable de entorno/flag `BOOTSTRAP_SUPERADMIN_EMAIL` verificada en el registro. Descartado: agrega una variable de configuración nueva para un caso de uso (bootstrap, ocurre una vez en la vida del sistema) que ya se resuelve sin configuración adicional con la regla "tabla vacía → primer registro es superadmin", más simple de operar y de auditar (no depende de que alguien setee la env var correctamente antes del primer deploy).
+- Comando CLI/script separado para crear el primer superadmin fuera de la API HTTP. Descartado por ahora: agrega superficie nueva (script, posible drift con `AuthService`) para resolver algo que la regla de "tabla vacía" ya cubre sin código adicional; queda como alternativa a reconsiderar si en el futuro se decide que el registro público (`/auth/register`) deja de existir del todo.
+
+**Riesgo operativo documentado**: la regla "tabla vacía → superadmin" implica que si la tabla `users` alguna vez queda vacía en producción (ej. un `DELETE FROM users` accidental, o un rollback mal ejecutado), el siguiente `POST /auth/register` — de cualquiera que llegue primero — se vuelve superadmin. Es el mismo riesgo inherente a cualquier bootstrap "primer usuario = admin" (lo comparten Django, WordPress, etc.) y se acepta como tal; se documenta acá para que quede trazable y no como una sorpresa en un incident post-mortem.
+
+**Choice — migración de la tabla `users`**: la migración `001_create_users_table.sql` YA fue aplicada contra el Postgres real (`docker exec timescaledb`, confirmado: `CHECK (role = ANY (ARRAY['admin'::text, 'viewer'::text]))` existe hoy en la tabla). No se edita ese archivo — es historia ya aplicada, editarlo retroactivamente rompería la trazabilidad de qué se ejecutó cuándo (y en un entorno con más de un ambiente, un archivo "ya aplicado" que cambia de contenido es exactamente la clase de bug de migraciones que este proyecto ya evita no usando un ORM con migraciones mágicas). Se agrega `002_add_role_hierarchy.sql`: `ALTER TABLE users DROP CONSTRAINT users_role_check` + `ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('superadmin','admin','moderador','viewer'))`. Rollback documentado en el propio archivo: revertir el constraint a los 2 valores originales — pero ANOTADO explícitamente que ese rollback falla si ya existen filas con `role` en (`superadmin`,`moderador`), porque el `ALTER TABLE ADD CONSTRAINT` fallaría con filas que lo violan; el rollback real en ese caso requiere primero reasignar o eliminar esas filas, no es un simple `DROP`+`ADD` inverso libre de datos.
+
+### Interfaces / Contracts — actualización de `UserRole` (reemplaza el enum de la Decision original)
+
+```python
+class UserRole(str, Enum):
+    SUPERADMIN = "superadmin"
+    ADMIN = "admin"
+    MODERADOR = "moderador"
+    VIEWER = "viewer"
+
+ROLE_LEVEL: dict[UserRole, int] = {
+    UserRole.SUPERADMIN: 3,
+    UserRole.ADMIN: 2,
+    UserRole.MODERADOR: 1,
+    UserRole.VIEWER: 0,
+}
+```
+
+`UserCreate.role` dejó de ser un campo con efecto directo en el rol final persistido (ver bootstrap arriba): sigue existiendo en el modelo Pydantic por compatibilidad de shape del payload (aceptar el campo sin 422 si el cliente lo manda), pero `POST /auth/register` lo ignora deliberadamente y calcula el rol real server-side según la regla de la tabla vacía.
+
+### DDL de `users` — actualización (reemplaza el DDL de la Decision 3 original; ver migración 002 arriba)
+
+```sql
+-- Estado tras aplicar 001 + 002:
+CREATE TABLE IF NOT EXISTS users (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('superadmin', 'admin', 'moderador', 'viewer')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+```
+
 ## Data Flow
 
 ```
@@ -125,6 +217,7 @@ Firma del JWT: `python-jose[cryptography]==3.3.0` (librería usada en el tutoria
 | `requirements.txt` | Modify | Agrega `passlib[bcrypt]==1.7.4`, `bcrypt==4.2.0`, `python-jose[cryptography]==3.3.0` |
 | `deploy/docker/docker-compose.yml` | Modify | Agrega `AUTH_SECRET_KEY` (comentado con placeholder, mismo estilo que `TIMESCALEDB_PASSWORD`) al servicio `geospectrum`; la tabla `users` vive en el `timescaledb` ya definido (perfil `storage`), sin nuevo servicio |
 | `deploy/sql/` o `scripts/migrations/` (verificar convención existente en `sdd-tasks`) | Create | Script SQL de creación de tabla `users` (con `DROP TABLE` de rollback documentado, ver Migration/Rollout) |
+| `deploy/sql/migrations/002_add_role_hierarchy.sql` | Create | ALTER del `CHECK` constraint de `role` a los 4 valores jerárquicos (ver Decision 6) — NO edita `001_create_users_table.sql`, que ya fue aplicado |
 | `dashboard/lib/auth.ts` | Create | Cliente de auth: `login()`, `logout()`, `getMe()` — usan `fetch` con `credentials: 'include'` (imprescindible para que el browser mande/reciba la cookie httpOnly cross-origin) |
 | `dashboard/app/providers.tsx` | Modify | Agrega `AuthProvider` (context con `{ user, login, logout, loading }`), compuesto junto a `ThemeProvider`/`TooltipProvider` ya existentes |
 | `dashboard/app/login/page.tsx` | Create | Página de login (form email/password) |
@@ -241,3 +334,8 @@ Ninguna bloqueante para pasar a `sdd-spec`/`sdd-tasks`. Dos puntos de bajo riesg
 
 - [ ] Confirmar si el proyecto ya tiene algún mecanismo de migraciones SQL (se buscó y no se encontró Alembic ni carpeta de migraciones formal; se asume script SQL manual como ya ocurre con `spectrogram_columns`) — si `sdd-tasks` encuentra uno, usarlo en vez de un script suelto.
 - [ ] Confirmar si el dashboard ya tiene Playwright u otra infra de E2E configurada, para decidir si el test E2E de login/logout se automatiza en este change o queda como verificación manual en `sdd-verify`.
+
+Agregado por Decision 6 (migración a 4 roles jerárquicos), no bloqueante para este batch pero explícitamente diferido:
+
+- [ ] Endpoint de gestión de usuarios (asignar rol a otro usuario, protegido con `require_min_role`) — el modelo de datos y el mecanismo de autorización quedan listos en este batch, pero el endpoint en sí NO se implementa acá. Queda como el change natural que sigue a este.
+- [ ] Qué pasa si la tabla `users` queda vacía después de tener usuarios (ej. borrado accidental) — documentado como riesgo operativo aceptado en Decision 6, no se agrega mitigación adicional (ej. flag manual) en este batch.

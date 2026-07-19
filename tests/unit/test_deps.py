@@ -8,14 +8,24 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from src.api.deps import SESSION_COOKIE_NAME, get_current_user, require_role
+from src.api.deps import SESSION_COOKIE_NAME, get_current_user, require_min_role, require_role
 from src.models.user import CurrentUser, UserRole
 from src.services.auth_service import InvalidTokenError, TokenExpiredError
 
+SUPERADMIN_USER = CurrentUser(
+    id="3f9a2b1c-1111-2222-3333-444455556665",
+    email="root@example.com",
+    role=UserRole.SUPERADMIN,
+)
 ADMIN_USER = CurrentUser(
     id="3f9a2b1c-1111-2222-3333-444455556666",
     email="ana@example.com",
     role=UserRole.ADMIN,
+)
+MODERADOR_USER = CurrentUser(
+    id="3f9a2b1c-1111-2222-3333-444455556668",
+    email="carla@example.com",
+    role=UserRole.MODERADOR,
 )
 VIEWER_USER = CurrentUser(
     id="3f9a2b1c-1111-2222-3333-444455556667",
@@ -51,6 +61,12 @@ def _build_app(auth_service: _FakeAuthService) -> FastAPI:
     async def admin_only(current_user: CurrentUser = Depends(require_role(UserRole.ADMIN))):
         return {"id": str(current_user.id), "role": current_user.role.value}
 
+    @app.get("/moderador-or-above")
+    async def moderador_or_above(
+        current_user: CurrentUser = Depends(require_min_role(UserRole.MODERADOR)),
+    ):
+        return {"id": str(current_user.id), "role": current_user.role.value}
+
     return app
 
 
@@ -64,6 +80,22 @@ def client_with_valid_admin_token():
 @pytest.fixture
 def client_with_valid_viewer_token():
     fake_service = _FakeAuthService({"valid-viewer-token": VIEWER_USER})
+    app = _build_app(fake_service)
+    return TestClient(app)
+
+
+@pytest.fixture
+def client_with_all_role_tokens():
+    """Un solo cliente con un token válido por cada uno de los 4 roles,
+    para testear require_min_role sin repetir el armado de la app."""
+    fake_service = _FakeAuthService(
+        {
+            "valid-superadmin-token": SUPERADMIN_USER,
+            "valid-admin-token": ADMIN_USER,
+            "valid-moderador-token": MODERADOR_USER,
+            "valid-viewer-token": VIEWER_USER,
+        }
+    )
     app = _build_app(fake_service)
     return TestClient(app)
 
@@ -135,5 +167,62 @@ def test_require_role_rejects_with_401_when_no_session():
     client = TestClient(app)
 
     response = client.get("/admin-only")
+
+    assert response.status_code == 401
+
+
+def test_require_role_rejects_superior_role_because_it_requires_exact_equality(
+    client_with_all_role_tokens,
+):
+    """require_role exige IGUALDAD exacta, no jerarquía: un superadmin
+    intentando pasar require_role(ADMIN) también recibe 403 (design.md
+    Decision 6 — este es el caso que motiva require_min_role aparte)."""
+    client_with_all_role_tokens.cookies.set(SESSION_COOKIE_NAME, "valid-superadmin-token")
+
+    response = client_with_all_role_tokens.get("/admin-only")
+
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# require_min_role — comparación por NIVEL, no por igualdad (Phase 3.5)
+# ---------------------------------------------------------------------------
+
+
+def test_require_min_role_allows_when_role_matches_minimum_exactly(client_with_all_role_tokens):
+    client_with_all_role_tokens.cookies.set(SESSION_COOKIE_NAME, "valid-moderador-token")
+
+    response = client_with_all_role_tokens.get("/moderador-or-above")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["valid-admin-token", "valid-superadmin-token"],
+)
+def test_require_min_role_allows_roles_above_minimum(client_with_all_role_tokens, token):
+    client_with_all_role_tokens.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client_with_all_role_tokens.get("/moderador-or-above")
+
+    assert response.status_code == 200
+
+
+def test_require_min_role_rejects_with_403_when_role_is_below_minimum(client_with_all_role_tokens):
+    client_with_all_role_tokens.cookies.set(SESSION_COOKIE_NAME, "valid-viewer-token")
+
+    response = client_with_all_role_tokens.get("/moderador-or-above")
+
+    assert response.status_code == 403
+    assert "insufficient role" in response.json()["detail"]
+
+
+def test_require_min_role_rejects_with_401_when_no_session():
+    fake_service = _FakeAuthService({})
+    app = _build_app(fake_service)
+    client = TestClient(app)
+
+    response = client.get("/moderador-or-above")
 
     assert response.status_code == 401

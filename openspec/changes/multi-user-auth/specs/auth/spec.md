@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Especifica el comportamiento del sistema de autenticación multi-usuario introducido por este change: registro, login, logout, consulta del perfil propio (`/auth/me`), semántica de roles (`admin`/`viewer`), expiración de sesión (JWT en cookie httpOnly) y la garantía explícita de no-regresión sobre los endpoints existentes de `src/main.py`, que permanecen públicos.
+Especifica el comportamiento del sistema de autenticación multi-usuario introducido por este change: registro, login, logout, consulta del perfil propio (`/auth/me`), semántica de roles jerárquicos (`superadmin`/`admin`/`moderador`/`viewer`, ver Requirement: Roles jerárquicos), expiración de sesión (JWT en cookie httpOnly) y la garantía explícita de no-regresión sobre los endpoints existentes de `src/main.py`, que permanecen públicos.
 
 No existe un `openspec/specs/auth/spec.md` previo (dominio nuevo, confirmado por inspección: no hay concepto de usuario, sesión ni autenticación en el sistema hoy). Este documento se redacta como spec completa (no delta) del dominio `auth`, acotada al alcance de este change según `proposal.md` y a las decisiones técnicas fijadas en `design.md`.
 
@@ -10,22 +10,22 @@ No existe un `openspec/specs/auth/spec.md` previo (dominio nuevo, confirmado por
 
 ### Requirement: Registro de usuario
 
-El sistema MUST exponer `POST /auth/register` que reciba `email`, `password` y `role` (`admin` | `viewer`, default `viewer`), valide unicidad de `email`, hashee el password con bcrypt antes de persistirlo y devuelva el usuario creado sin el hash del password.
+El sistema MUST exponer `POST /auth/register` que reciba `email`, `password` y opcionalmente `role`, valide unicidad de `email`, hashee el password con bcrypt antes de persistirlo y devuelva el usuario creado sin el hash del password. El `role` recibido en el payload MUST ser ignorado a efectos de qué rol se persiste — el rol real lo determina exclusivamente la regla de bootstrap (ver Requirement: Bootstrap del primer superadmin); este requirement especifica el contrato de forma/errores del endpoint, no la asignación de rol en sí.
 
 El sistema MUST NOT persistir el password en texto plano bajo ninguna circunstancia.
 
-#### Scenario: Registro exitoso con rol explícito
+#### Scenario: Registro exitoso devuelve el usuario creado sin datos sensibles
 
-- GIVEN que no existe ningún usuario con `email="ana@example.com"`
-- WHEN se hace `POST /auth/register` con `{"email": "ana@example.com", "password": "Sismo2026!", "role": "admin"}`
+- GIVEN que no existe ningún usuario con `email="ana@example.com"` y que la tabla `users` ya tiene al menos una fila (caso no-bootstrap)
+- WHEN se hace `POST /auth/register` con `{"email": "ana@example.com", "password": "Sismo2026!"}`
 - THEN la respuesta HTTP es 201
-- AND el body contiene `{"id": <uuid>, "email": "ana@example.com", "role": "admin"}`
+- AND el body contiene `{"id": <uuid>, "email": "ana@example.com", "role": "viewer"}` (rol determinado por la regla de bootstrap, ver Requirement: Bootstrap del primer superadmin)
 - AND el body NO contiene el password ni ningún campo de hash
-- AND en la tabla `users` existe una fila con ese `email`, `role="admin"` y `password_hash` distinto del password original
+- AND en la tabla `users` existe una fila con ese `email` y `password_hash` distinto del password original
 
-#### Scenario: Registro exitoso sin rol explícito usa el default viewer
+#### Scenario: Registro exitoso sin rol explícito en el payload
 
-- GIVEN que no existe ningún usuario con `email="bruno@example.com"`
+- GIVEN que no existe ningún usuario con `email="bruno@example.com"` y que la tabla `users` ya tiene al menos una fila (caso no-bootstrap)
 - WHEN se hace `POST /auth/register` con `{"email": "bruno@example.com", "password": "OtraClave123!"}` (sin `role`)
 - THEN la respuesta HTTP es 201
 - AND el `role` del usuario creado es `"viewer"`
@@ -33,7 +33,7 @@ El sistema MUST NOT persistir el password en texto plano bajo ninguna circunstan
 #### Scenario: Registro rechazado por email duplicado
 
 - GIVEN que ya existe un usuario con `email="ana@example.com"`
-- WHEN se hace `POST /auth/register` con `{"email": "ana@example.com", "password": "OtraClave456!", "role": "viewer"}`
+- WHEN se hace `POST /auth/register` con `{"email": "ana@example.com", "password": "OtraClave456!"}`
 - THEN la respuesta HTTP es 409
 - AND el body indica que el email ya está registrado
 - AND no se crea ninguna fila nueva en `users`
@@ -126,23 +126,33 @@ El sistema MUST exponer `GET /auth/me`, protegido por `Depends(get_current_user)
 - THEN la respuesta HTTP es 401
 - AND no se levanta ninguna excepción no controlada (500)
 
-### Requirement: Roles admin y viewer
+### Requirement: Roles jerárquicos (superadmin, admin, moderador, viewer)
 
-El sistema MUST soportar exactamente dos roles: `admin` y `viewer`. El sistema MUST proveer un mecanismo reusable (`require_role`) capaz de restringir un endpoint a un rol específico, para que endpoints futuros de gestión de usuarios y de las iniciativas dependientes (regiones, dashboards personalizados) puedan exigir `role="admin"` donde corresponda. En el alcance de este change, ningún endpoint de datos existente aplica esta restricción — se especifica el comportamiento del mecanismo en sí, listo para uso futuro.
+El sistema MUST soportar exactamente cuatro roles con jerarquía estricta descendente, de mayor a menor nivel: `superadmin` (nivel 3), `admin` (nivel 2), `moderador` (nivel 1), `viewer` (nivel 0).
 
-Un usuario con rol `viewer` MUST poder autenticarse, cerrar sesión y consultar su propio perfil (`/auth/me`) igual que un `admin`. El sistema MUST NOT permitir que un `viewer` se autoasigne el rol `admin` vía `/auth/register` sin que exista un control de quién puede invocar ese registro con `role="admin"` (ver escenario de restricción de auto-registro).
+El sistema MUST aplicar la regla de gestión "estrictamente por debajo": un usuario con rol de nivel N solo puede crear/gestionar (asignar rol a otro usuario) roles de nivel **estrictamente menor** a N. `superadmin` gestiona `admin`+`moderador`+`viewer`; `admin` gestiona `moderador`+`viewer`; `moderador` gestiona solo `viewer`; `viewer` no gestiona a nadie. El sistema MUST NOT permitir que un usuario gestione su propio nivel ni un nivel igual o superior (ej. un `admin` NO puede crear otro `admin`, ni modificar a un `superadmin`).
 
-#### Scenario: require_role permite el acceso cuando el rol coincide
+El sistema MUST proveer dos mecanismos reusables de autorización:
+- `require_role(role)`: restringe un endpoint a un rol EXACTO (igualdad, no jerarquía) — se mantiene sin cambios de comportamiento respecto a la versión de 2 roles, para casos donde se necesita ese rol específico y ningún otro.
+- `require_min_role(role)`: restringe un endpoint al rol dado O CUALQUIER ROL DE NIVEL SUPERIOR (comparación por nivel, no por igualdad) — mecanismo nuevo, base de autorización para endpoints futuros de gestión de usuarios y de las iniciativas dependientes (regiones, dashboards personalizados).
+
+En el alcance de este change, ningún endpoint de datos existente aplica estas restricciones — se especifica el comportamiento de los mecanismos en sí, listos para uso futuro (incluyendo un futuro endpoint de gestión de usuarios, fuera de alcance de este batch).
+
+Un usuario de cualquier rol MUST poder autenticarse, cerrar sesión y consultar su propio perfil (`/auth/me`) igual que los demás — no hay restricción de jerarquía sobre las operaciones de la propia sesión.
+
+El sistema MUST NOT permitir que `POST /auth/register` (endpoint público, sin autenticación) resulte en la creación de un usuario con rol distinto de `viewer`, con la única excepción del bootstrap del primer usuario del sistema (ver Requirement: Bootstrap del primer superadmin). Cualquier `role` presente en el payload de `/auth/register` MUST ser ignorado por el sistema fuera del caso de bootstrap — asignar un rol superior a `viewer` requiere un mecanismo distinto, protegido con `require_min_role`, que no se especifica en este documento (endpoint de gestión de usuarios, fuera de alcance de este change).
+
+#### Scenario: require_role permite el acceso cuando el rol coincide exactamente
 
 - GIVEN un endpoint protegido con `require_role("admin")` y un cliente autenticado como `admin`
 - WHEN el cliente invoca ese endpoint
 - THEN la request se procesa normalmente (no se levanta 403)
 
-#### Scenario: require_role rechaza con 403 cuando el rol no coincide
+#### Scenario: require_role rechaza con 403 cuando el rol no coincide exactamente
 
-- GIVEN un endpoint protegido con `require_role("admin")` y un cliente autenticado como `viewer`
+- GIVEN un endpoint protegido con `require_role("admin")` y un cliente autenticado como `superadmin`
 - WHEN el cliente invoca ese endpoint
-- THEN la respuesta HTTP es 403
+- THEN la respuesta HTTP es 403 (require_role exige igualdad exacta; ser de nivel superior NO alcanza)
 - AND el body indica que el rol del usuario no tiene permiso suficiente
 
 #### Scenario: require_role rechaza con 401 cuando no hay sesión
@@ -151,11 +161,64 @@ Un usuario con rol `viewer` MUST poder autenticarse, cerrar sesión y consultar 
 - WHEN el cliente invoca ese endpoint
 - THEN la respuesta HTTP es 401 (falta de autenticación se resuelve antes que falta de autorización)
 
-#### Scenario: Viewer puede usar /auth/me igual que admin
+#### Scenario: require_min_role permite el acceso cuando el rol coincide con el mínimo
 
-- GIVEN un usuario con `role="viewer"` autenticado con una cookie `session` válida
+- GIVEN un endpoint protegido con `require_min_role("moderador")` y un cliente autenticado como `moderador`
+- WHEN el cliente invoca ese endpoint
+- THEN la request se procesa normalmente (no se levanta 403)
+
+#### Scenario: require_min_role permite el acceso cuando el rol es de nivel superior al mínimo
+
+- GIVEN un endpoint protegido con `require_min_role("moderador")` y un cliente autenticado como `superadmin`
+- WHEN el cliente invoca ese endpoint
+- THEN la request se procesa normalmente (no se levanta 403) — nivel 3 (`superadmin`) es superior al mínimo exigido, nivel 1 (`moderador`)
+
+#### Scenario: require_min_role rechaza con 403 cuando el rol es de nivel inferior al mínimo
+
+- GIVEN un endpoint protegido con `require_min_role("admin")` y un cliente autenticado como `moderador`
+- WHEN el cliente invoca ese endpoint
+- THEN la respuesta HTTP es 403
+- AND el body indica que el rol del usuario no tiene permiso suficiente
+
+#### Scenario: require_min_role rechaza con 401 cuando no hay sesión
+
+- GIVEN un endpoint protegido con `require_min_role("admin")` y un cliente sin cookie `session`
+- WHEN el cliente invoca ese endpoint
+- THEN la respuesta HTTP es 401 (falta de autenticación se resuelve antes que falta de autorización)
+
+#### Scenario: Cualquier rol puede usar /auth/me igual que los demás
+
+- GIVEN un usuario con `role="moderador"` autenticado con una cookie `session` válida
 - WHEN se hace `GET /auth/me`
-- THEN la respuesta HTTP es 200 y el body refleja `role="viewer"`, sin ninguna restricción adicional respecto a un `admin`
+- THEN la respuesta HTTP es 200 y el body refleja `role="moderador"`, sin ninguna restricción adicional respecto a otro rol
+
+### Requirement: Bootstrap del primer superadmin
+
+El sistema MUST resolver el problema de arranque (nadie puede autoasignarse un rol superior a `viewer` vía `/auth/register`, pero debe existir un primer usuario con privilegios para poder gestionar al resto) forzando el `role` del usuario creado según el estado de la tabla `users` en el momento del registro:
+- Si la tabla `users` está vacía (`COUNT(*) = 0`) al momento del registro, el usuario creado MUST tener `role="superadmin"`, sin importar qué `role` haya sido enviado en el payload (incluida su ausencia).
+- Si la tabla `users` NO está vacía, el usuario creado MUST tener `role="viewer"`, sin importar qué `role` haya sido enviado en el payload.
+
+#### Scenario: El primer registro del sistema se convierte en superadmin sin importar el payload
+
+- GIVEN que la tabla `users` no tiene ninguna fila
+- WHEN se hace `POST /auth/register` con `{"email": "primer-admin@example.com", "password": "Sismo2026!", "role": "viewer"}` (payload pide explícitamente `viewer`)
+- THEN la respuesta HTTP es 201
+- AND el `role` del usuario creado en el body y en la fila de `users` es `"superadmin"`, no `"viewer"`
+
+#### Scenario: El primer registro sin campo role también se convierte en superadmin
+
+- GIVEN que la tabla `users` no tiene ninguna fila
+- WHEN se hace `POST /auth/register` con `{"email": "primer-admin@example.com", "password": "Sismo2026!"}` (sin `role`)
+- THEN la respuesta HTTP es 201
+- AND el `role` del usuario creado es `"superadmin"`
+
+#### Scenario: Un registro posterior siempre crea viewer, incluso si pide un rol superior
+
+- GIVEN que la tabla `users` ya tiene al menos una fila (ej. el `superadmin` del bootstrap)
+- WHEN se hace `POST /auth/register` con `{"email": "otro@example.com", "password": "Sismo2026!", "role": "superadmin"}` (payload pide explícitamente `superadmin`)
+- THEN la respuesta HTTP es 201
+- AND el `role` del usuario creado en el body y en la fila de `users` es `"viewer"`, no `"superadmin"`
+- AND esto aplica igual sin importar qué valor de `role` se haya pedido (`admin`, `moderador` o `superadmin` todos resultan en `viewer`)
 
 ### Requirement: Expiración de sesión
 
@@ -218,7 +281,7 @@ Ningún endpoint existente de `src/main.py` (`/health`, `/metrics`, `/report`, `
 ## Out of Scope (heredado de la propuesta, no se especifica aquí)
 
 - Recuperación de password por email, verificación de email, 2FA, SSO/OAuth con proveedores externos — no forman parte de este change.
-- Roles más granulares que `admin`/`viewer` (por ciudad, por fuente de datos) — quedan fuera de alcance.
+- Roles más granulares que los 4 jerárquicos (`superadmin`/`admin`/`moderador`/`viewer`) — por ciudad, por fuente de datos, etc. — quedan fuera de alcance.
 - Protección de endpoints existentes de datos sísmicos (`/report`, `/events`, `/alerts`, etc.) — decisión explícita del `design.md` (Decisión 2) de mantenerlos públicos; cualquier cambio futuro a esta decisión requiere un change nuevo.
 - Rate limiting sobre `/auth/login` — no fue definido en `design.md` como parte del alcance de este change; no se especifica aquí porque no hay decisión técnica que testear. Si se agrega en una iteración futura, requiere su propio requirement con Given/When/Then.
-- Endpoints de gestión de usuarios por parte de un admin (listar, editar rol, deshabilitar usuarios) — no están en el alcance de `design.md`; solo se especifica el mecanismo `require_role` como base reusable para cuando esos endpoints existan.
+- Endpoints de gestión de usuarios (listar usuarios, asignar/cambiar rol de otro usuario respetando la jerarquía, deshabilitar usuarios) — no se implementan en este batch (ver `design.md` Decision 6). Solo se especifican y quedan implementados los mecanismos de autorización (`require_role`, `require_min_role`) y el modelo de datos (4 roles con nivel) que ese endpoint futuro va a necesitar.

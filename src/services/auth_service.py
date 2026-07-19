@@ -80,19 +80,40 @@ class AuthService:
     # -------------------------------------------------------------------
 
     async def create_user(self, email: str, password: str, role: UserRole) -> UserPublic:
+        """Crea un usuario respetando la regla de bootstrap (design.md Decision 6).
+
+        El `role` recibido se IGNORA deliberadamente — nunca se persiste el
+        rol pedido por el caller de POST /auth/register (endpoint público,
+        sin control de quién puede pedir un rol superior). El rol real se
+        decide server-side según el estado de la tabla en el momento del
+        registro:
+          - tabla vacía (COUNT = 0)  -> role = superadmin
+          - tabla no vacía (COUNT > 0) -> role = viewer
+
+        El COUNT y el INSERT corren dentro de la MISMA transacción
+        (conn.transaction()) para que sean atómicos: si dos registros
+        concurrentes llegaran a la vez con la tabla vacía, la transacción
+        serializa el acceso y solo uno puede observar COUNT = 0 (el otro ve
+        la fila recién commiteada y cae en la rama `viewer`) — evita el
+        race condition de "dos superadmin de bootstrap" bajo concurrencia.
+        """
         password_hash = self.hash_password(password)
         try:
             async with self._pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO users (email, password_hash, role)
-                    VALUES ($1, $2, $3)
-                    RETURNING id, email, role
-                    """,
-                    email,
-                    password_hash,
-                    role.value,
-                )
+                async with conn.transaction():
+                    existing_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+                    actual_role = UserRole.SUPERADMIN if existing_count == 0 else UserRole.VIEWER
+
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO users (email, password_hash, role)
+                        VALUES ($1, $2, $3)
+                        RETURNING id, email, role
+                        """,
+                        email,
+                        password_hash,
+                        actual_role.value,
+                    )
         except asyncpg.UniqueViolationError as exc:
             raise EmailAlreadyRegisteredError(email) from exc
 

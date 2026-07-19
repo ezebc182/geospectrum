@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request, status
 
-from src.models.user import CurrentUser, UserRole
+from src.models.user import CurrentUser, UserRole, role_level
 from src.services.auth_service import (
     AuthService,
     InvalidTokenError,
@@ -62,10 +62,18 @@ async def get_current_user(
 
 
 def require_role(role: UserRole):
-    """Factory de dependencia: exige sesión válida Y rol exacto.
+    """Factory de dependencia: exige sesión válida Y rol EXACTO (igualdad).
 
-    Cubre los 3 escenarios de [Requirement: Roles admin y viewer]: permite
-    si el rol coincide, 403 si no coincide, 401 si no hay sesión (la falta
+    Usar cuando un endpoint necesita ese rol específico y ningún otro (ni
+    siquiera uno de nivel superior en la jerarquía) — caso de uso acotado.
+    Para "este rol o cualquiera por encima en la jerarquía" usar
+    require_min_role() en su lugar (ver design.md Decision 6).
+
+    Cubre [Requirement: Roles jerárquicos / Scenario: require_role permite
+    el acceso cuando el rol coincide exactamente], [Scenario: require_role
+    rechaza con 403 cuando el rol no coincide exactamente] (incluye el caso
+    de un rol de nivel superior, que tampoco matchea por igualdad) y
+    [Scenario: require_role rechaza con 401 cuando no hay sesión] (la falta
     de autenticación se resuelve antes que la de autorización, porque
     get_current_user ya corrió como Depends antes de este chequeo).
     """
@@ -81,3 +89,35 @@ def require_role(role: UserRole):
         return current_user
 
     return _require_role
+
+
+def require_min_role(role: UserRole):
+    """Factory de dependencia: exige sesión válida Y rol de nivel >= al mínimo.
+
+    A diferencia de require_role() (igualdad exacta), esta compara NIVEL
+    jerárquico (ver src/models/user.py ROLE_LEVEL/role_level()): acepta el
+    rol pedido o cualquier rol de nivel superior. Es el mecanismo pensado
+    para endpoints futuros de gestión de usuarios y de las iniciativas
+    dependientes (regiones, dashboards personalizados) — ej.
+    require_min_role(UserRole.MODERADOR) deja pasar a moderador, admin y
+    superadmin, pero no a viewer.
+
+    Cubre [Requirement: Roles jerárquicos / Scenario: require_min_role
+    permite el acceso cuando el rol coincide con el mínimo], [Scenario:
+    require_min_role permite el acceso cuando el rol es de nivel superior
+    al mínimo], [Scenario: require_min_role rechaza con 403 cuando el rol
+    es de nivel inferior al mínimo] y [Scenario: require_min_role rechaza
+    con 401 cuando no hay sesión].
+    """
+
+    async def _require_min_role(
+        current_user: CurrentUser = Depends(get_current_user),
+    ) -> CurrentUser:
+        if role_level(current_user.role) < role_level(role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="insufficient role",
+            )
+        return current_user
+
+    return _require_min_role

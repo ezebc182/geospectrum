@@ -492,17 +492,19 @@ async def register(
     auth_service: AuthService = Depends(_get_auth_service),
 ) -> UserPublic:
     """
-    Registro de usuario. Sin self-signup público más allá de este MVP: hoy
-    cualquier caller puede elegir `role`, incluyendo "admin" — ver Open
-    Questions / desviación reportada al orquestador (specs/auth/spec.md
-    documenta la restricción como pendiente de control de quién puede
-    invocar el registro con role="admin"; ese control no está definido en
-    design.md/tasks.md Fase 3 y no se inventa acá).
+    Registro de usuario. RESUELTO (design.md Decision 6, Phase 3.5): el
+    `role` recibido en el payload se IGNORA — AuthService.create_user()
+    decide el rol real server-side según la regla de bootstrap (tabla
+    `users` vacía -> primer registro es superadmin; no vacía -> siempre
+    viewer). Ya no existe ningún path por el cual un caller no autenticado
+    obtenga un rol superior a viewer vía este endpoint público, salvo el
+    caso intencional del primer usuario del sistema. Ver
+    [Requirement: Bootstrap del primer superadmin] en specs/auth/spec.md.
 
-    Cubre [Requirement: Registro de usuario] — éxito con rol explícito,
-    éxito con default viewer, y rechazo 409 por email duplicado. La
-    validación 422 (password corto, email inválido) la resuelve Pydantic
-    vía UserCreate antes de que este código corra.
+    Cubre [Requirement: Registro de usuario] — éxito con rol determinado
+    server-side, y rechazo 409 por email duplicado. La validación 422
+    (password corto, email inválido) la resuelve Pydantic vía UserCreate
+    antes de que este código corra.
     """
     try:
         user = await auth_service.create_user(
