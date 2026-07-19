@@ -17,7 +17,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, List
 
-from fastapi import FastAPI, Response, status, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Response, status, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -27,6 +27,7 @@ from src.observability.glitchtip import init_glitchtip
 from src.observability.logging_config import configure_logging
 from src.observability.request_context import request_id_ctx
 from src.models.event import MonitorReport, SeismicEvent, Alert
+from src.models.user import CurrentUser, UserCreate, UserPublic
 from src.services.usgs_service import fetch_usgs_events
 from src.services.inpres_service import fetch_inpres_events
 from src.services.emsc_service import fetch_emsc_events
@@ -36,6 +37,8 @@ from src.services.report_service import build_report, count_by_source, CANONICAL
 from src.services.spectrogram_service import get_spectrogram_service, LIVE_CHANNELS_BY_CITY
 from src.services.event_bus import RedisPubSubBus
 from src.services.timescale_service import TimescaleColumnWriter
+from src.services.auth_service import AuthService, EmailAlreadyRegisteredError
+from src.api.deps import SESSION_COOKIE_NAME, get_current_user
 from src.services import cache
 
 # =============================================================================
@@ -130,11 +133,47 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("TimescaleDB no configurado (TIMESCALEDB_HOST vacío) — sin historial persistido")
 
+    # --------------------------------------------------------------------
+    # Auth (multi-user-auth, Fase 3) — FAIL-FAST, deliberadamente NO
+    # best-effort como event_bus/column_writer arriba.
+    #
+    # Decisión explícita del usuario (ver tasks.md 3.1 y design.md): si
+    # AUTH_SECRET_KEY no está configurada, el proceso NO debe aceptar
+    # requests. Una clave de firma JWT ausente o predecible permite a
+    # cualquiera forjar tokens válidos (incluyendo tokens de rol "admin"),
+    # lo que es una vulnerabilidad crítica de autenticación — no una
+    # degradación aceptable de servicio como "no hay historial" (Timescale)
+    # o "no hay espectrograma en vivo" (Redis). Por eso se levanta acá,
+    # dentro de lifespan(), y no se atrapa: debe abortar el arranque.
+    if not settings.auth_secret_key:
+        raise RuntimeError(
+            "AUTH_SECRET_KEY is required — refusing to start with an "
+            "unsigned/predictable JWT secret (a missing signing key allows "
+            "forging valid auth tokens, including admin-role tokens)"
+        )
+
+    dsn = settings.timescaledb_dsn
+    if dsn is None:
+        raise RuntimeError(
+            "TimescaleDB/Postgres connection is required for the `users` "
+            "table (auth_service) — configure TIMESCALEDB_HOST/USER/PASSWORD"
+        )
+
+    auth_service = AuthService(
+        dsn=dsn,
+        secret_key=settings.auth_secret_key,
+        token_expire_minutes=settings.auth_token_expire_minutes,
+    )
+    await auth_service.connect()
+    app.state.auth_service = auth_service
+    logger.info("AuthService conectado (tabla users en TimescaleDB/Postgres)")
+
     yield
 
     await event_bus.close()
     if column_writer is not None:
         await column_writer.close()
+    await auth_service.close()
     logger.info("GeoSpectrum Service shutting down")
 
 
@@ -431,6 +470,122 @@ async def search_events(
 
         requests_total.labels(endpoint="/events/search", status="200").inc()
         return filtered
+
+
+# =============================================================================
+# Auth (multi-user-auth) — superficie nueva únicamente.
+#
+# Ningún endpoint existente de este archivo gana Depends() de auth en este
+# change (ver design.md Decisión 2 y specs/auth/spec.md "No regresión sobre
+# endpoints existentes"): /report, /events, /alerts, /events/search, etc.
+# siguen 100% públicos. Solo /auth/me está protegido, porque no tiene
+# sentido sin sesión.
+# =============================================================================
+
+def _get_auth_service(request: Request) -> AuthService:
+    return request.app.state.auth_service
+
+
+@app.post("/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED, tags=["auth"])
+async def register(
+    payload: UserCreate,
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> UserPublic:
+    """
+    Registro de usuario. Sin self-signup público más allá de este MVP: hoy
+    cualquier caller puede elegir `role`, incluyendo "admin" — ver Open
+    Questions / desviación reportada al orquestador (specs/auth/spec.md
+    documenta la restricción como pendiente de control de quién puede
+    invocar el registro con role="admin"; ese control no está definido en
+    design.md/tasks.md Fase 3 y no se inventa acá).
+
+    Cubre [Requirement: Registro de usuario] — éxito con rol explícito,
+    éxito con default viewer, y rechazo 409 por email duplicado. La
+    validación 422 (password corto, email inválido) la resuelve Pydantic
+    vía UserCreate antes de que este código corra.
+    """
+    try:
+        user = await auth_service.create_user(
+            email=payload.email, password=payload.password, role=payload.role
+        )
+    except EmailAlreadyRegisteredError:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "email already registered"},
+        )
+
+    requests_total.labels(endpoint="/auth/register", status="201").inc()
+    return user
+
+
+@app.post("/auth/login", tags=["auth"])
+async def login(
+    payload: dict,
+    response: Response,
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    Login. Mensaje de error genérico e indistinguible entre "email no
+    existe" y "password incorrecto" — [Requirement: Login].
+
+    NOTA: se recibe `payload: dict` (no un modelo Pydantic dedicado) porque
+    el shape {email, password} no tiene reglas de validación propias más
+    allá de "son strings" — a diferencia de UserCreate (que sí valida
+    min_length/EmailStr para /auth/register), login no debe revelar vía 422
+    si el email tiene formato inválido con un mensaje distinto al de
+    credenciales incorrectas, para no filtrar información. Se valida
+    manualmente abajo y cualquier fallo cae en el mismo 401 genérico.
+    """
+    email = payload.get("email")
+    password = payload.get("password")
+
+    user = await auth_service.get_user_by_email(email) if email else None
+    password_ok = (
+        auth_service.verify_password(password, user.password_hash)
+        if user is not None and password
+        else False
+    )
+
+    if user is None or not password_ok:
+        requests_total.labels(endpoint="/auth/login", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "invalid credentials"},
+        )
+
+    token = auth_service.create_access_token(user)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.auth_token_expire_minutes * 60,
+    )
+
+    requests_total.labels(endpoint="/auth/login", status="200").inc()
+    return UserPublic(id=user.id, email=user.email, role=user.role)
+
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
+async def logout(response: Response) -> None:
+    """
+    Logout. NO depende de get_current_user a propósito — debe funcionar
+    incluso sin sesión activa [Requirement: Logout / Scenario: Logout sin
+    sesión activa no falla].
+    """
+    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax")
+    requests_total.labels(endpoint="/auth/logout", status="204").inc()
+
+
+@app.get("/auth/me", response_model=CurrentUser, tags=["auth"])
+async def get_me(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """
+    Perfil del usuario autenticado. Protegido con Depends(get_current_user)
+    — [Requirement: Perfil del usuario autenticado].
+    """
+    requests_total.labels(endpoint="/auth/me", status="200").inc()
+    return current_user
 
 
 # =============================================================================
