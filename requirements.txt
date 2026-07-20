@@ -35,6 +35,12 @@ email-validator==2.2.0
 # cryptography y joserfc), por lo que no hay conflicto de pines con
 # fastapi==0.115.0 ya fijado arriba.
 Authlib==1.7.2
+# itsdangerous: dependencia de starlette.middleware.sessions.SessionMiddleware
+# (firma la cookie "oauth_state" que usa Authlib para el `state`/`nonce` del
+# handshake OAuth — ver design.md Decision 2). Starlette la trae como extra
+# opcional (no instalada por fastapi/starlette por defecto porque
+# SessionMiddleware es un módulo opcional), así que se fija explícita acá.
+itsdangerous==2.2.0
 
 # Utils
 python-dateutil==2.9.0

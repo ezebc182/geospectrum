@@ -17,10 +17,13 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, List
 
+from authlib.integrations.starlette_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
 from fastapi import Depends, FastAPI, Response, status, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from starlette.middleware.sessions import SessionMiddleware
 
 from src.config.settings import settings
 from src.observability.glitchtip import init_glitchtip
@@ -97,6 +100,14 @@ column_writer: Optional[TimescaleColumnWriter] = (
     TimescaleColumnWriter(settings.timescaledb_dsn) if settings.timescaledb_dsn else None
 )
 
+# Google OAuth (google-oauth, Phase 3). Instancia module-level, igual que
+# event_bus/column_writer arriba — el registro real del provider "google"
+# (client_id/secret/discovery) ocurre en lifespan(), condicionado a
+# settings.google_oauth_configured (ver design.md Decision 1: fail-fast
+# CONDICIONAL, no total — a diferencia de AUTH_SECRET_KEY, el servidor
+# arranca igual si faltan las credenciales de Google).
+oauth = OAuth()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -168,6 +179,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.auth_service = auth_service
     logger.info("AuthService conectado (tabla users en TimescaleDB/Postgres)")
 
+    # --------------------------------------------------------------------
+    # Google OAuth (google-oauth, Phase 3) — registro CONDICIONAL, NO
+    # fail-fast (ver design.md Decision 1). A diferencia del bloque de
+    # AUTH_SECRET_KEY arriba, la ausencia de credenciales de Google NO
+    # aborta el arranque: solo deshabilita /auth/google/* (responden 503),
+    # el login por password sigue intacto.
+    if settings.google_oauth_configured:
+        oauth.register(
+            "google",
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+        app.state.google_oauth_enabled = True
+        logger.info("Google OAuth habilitado (/auth/google/*)")
+    else:
+        app.state.google_oauth_enabled = False
+        logger.warning(
+            "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI no "
+            "configurados — /auth/google/* responderá 503, login por "
+            "password no afectado"
+        )
+
     yield
 
     await event_bus.close()
@@ -200,6 +235,24 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# =============================================================================
+# Session Middleware (google-oauth) — SOLO para el `state`/`nonce` transitorio
+# de Authlib durante el handshake OAuth, ver design.md Decision 2.
+#
+# CRÍTICO: session_cookie="oauth_state" está seteado explícitamente porque el
+# default de Starlette es "session", que colisiona textualmente con
+# SESSION_COOKIE_NAME = "session" (src/api/deps.py:30), la cookie del JWT de
+# sesión de usuario ya emitida por /auth/login. Son dos cookies HTTP
+# completamente distintas y sin relación: "oauth_state" vive solo los
+# segundos que dura el flujo de Google; "session" es la sesión de usuario de
+# larga duración. Reutiliza auth_secret_key (ya fail-fast garantizado arriba
+# en lifespan()) en vez de introducir una key de firma nueva.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.auth_secret_key,
+    session_cookie="oauth_state",
 )
 
 
@@ -588,6 +641,152 @@ async def get_me(current_user: CurrentUser = Depends(get_current_user)) -> Curre
     """
     requests_total.labels(endpoint="/auth/me", status="200").inc()
     return current_user
+
+
+# -----------------------------------------------------------------------
+# Auth vía Google OAuth (google-oauth) — ver design.md/tasks.md Phase 3.
+#
+# Convención de redirects (tasks.md 3.12, resuelve la Open Question de
+# design.md sobre destino exacto): en éxito, 302 a "/" (raíz del dashboard
+# — no existe una convención de "/dashboard" explícita en
+# dashboard/app/login/page.tsx al momento de este change; "/" es la ruta
+# que la app usa como home autenticado). En error (las 4 ramas de
+# 3.6-3.10), 302 a "/login?error=<código-legible>", consistente en las 5
+# ramas (4 de error + 1 de éxito) de este bloque. Los códigos de error son
+# valores cortos, estables y legibles por el frontend (no mensajes libres),
+# para que dashboard/app/login/page.tsx pueda mapearlos a copy localizado
+# sin parsear texto libre.
+# -----------------------------------------------------------------------
+
+_GOOGLE_LOGIN_ERROR_REDIRECT = "/login?error={code}"
+_GOOGLE_LOGIN_SUCCESS_REDIRECT = "/"
+
+
+def _google_error_redirect(code: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=_GOOGLE_LOGIN_ERROR_REDIRECT.format(code=code),
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@app.get("/auth/google/login", tags=["auth"])
+async def google_login(request: Request):
+    """
+    Inicia el flujo OAuth 2.0 Authorization Code con Google — redirige al
+    navegador al endpoint de autorización de Google con `client_id`,
+    `redirect_uri`, `scope` y un `state` generado y persistido por Authlib
+    (cookie `oauth_state`, ver SessionMiddleware arriba) —
+    [Requirement: Endpoints OAuth de Google / Scenario: GET
+    /auth/google/login redirige a Google con los parámetros correctos].
+
+    503 si Google OAuth no está configurado (design.md Decision 1) — no es
+    un fail-fast de arranque, es una condición de runtime consultada acá.
+    """
+    if not request.app.state.google_oauth_enabled:
+        requests_total.labels(endpoint="/auth/google/login", status="503").inc()
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": "Google OAuth not configured"},
+        )
+
+    requests_total.labels(endpoint="/auth/google/login", status="302").inc()
+    return await oauth.google.authorize_redirect(request, settings.google_redirect_uri)
+
+
+@app.get("/auth/google/callback", tags=["auth"])
+async def google_callback(
+    request: Request,
+    response: Response,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    Callback de Google tras el consentimiento del usuario. Resuelve/crea el
+    usuario y emite la MISMA cookie `session` httpOnly que `/auth/login`
+    (reutilización estricta de `AuthService.create_access_token()` — ver
+    design.md Decision 5). En cualquier rama de error: redirect a
+    `/login?error=<código>`, sin `Set-Cookie`, sin tocar `users`, nunca 500
+    — [Requirement: Manejo de errores del flujo OAuth de Google].
+
+    503 si Google OAuth no está configurado (mismo criterio que
+    /auth/google/login).
+    """
+    if not request.app.state.google_oauth_enabled:
+        requests_total.labels(endpoint="/auth/google/callback", status="503").inc()
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": "Google OAuth not configured"},
+        )
+
+    # (3.6) Usuario canceló el consentimiento: Google redirige sin `code`.
+    if error is not None:
+        # (3.7) Google devuelve un parámetro de error explícito
+        # (access_denied u otro) — mismo tratamiento que "sin code".
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_" + error)
+
+    if code is None:
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_cancelled")
+
+    # (3.8) Intercambio code -> token contra Google. Authlib valida el
+    # `state` internamente (compara contra la cookie "oauth_state" seteada
+    # por authorize_redirect) y levanta MismatchingStateError si no
+    # coincide (state ausente/reutilizado/manipulado) — no se reimplementa
+    # esa comparación a mano (design.md Decision 2). OAuthError es la clase
+    # base de Authlib para MismatchingStateError y para cualquier otro
+    # fallo del intercambio código->token (timeout, código expirado,
+    # client_id/client_secret inválidos) — se captura acá para nunca dejar
+    # escapar un 500 no controlado.
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except OAuthError:
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_token_exchange_failed")
+
+    # (3.9) La validación de firma/claims (iss, aud, exp) del ID token la
+    # hace Authlib internamente al parsear `token["userinfo"]`, contra las
+    # JWKS publicadas por Google (server_metadata_url de oauth.register) —
+    # no se reimplementa acá. Si esa validación falla, Authlib levanta una
+    # excepción (subclase de OAuthError o, en casos de JWT malformado, un
+    # error de la librería jose subyacente) antes de que el flujo llegue a
+    # esta línea; el try/except de arriba ya cubre authorize_access_token,
+    # que es donde ocurre el parseo+validación del ID token.
+    userinfo = token.get("userinfo")
+    if userinfo is None:
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_invalid_id_token")
+
+    # (3.10) email_verified vive en el endpoint, NO en AuthService
+    # (design.md Decision 4) — AuthService.resolve_or_create_google_user()
+    # no conoce el concepto de "email_verified", es un claim específico de
+    # OpenID Connect/Google, no un concepto genérico de "usuario".
+    if not userinfo.get("email_verified"):
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_email_not_verified")
+
+    # (3.11) Resolución/creación de usuario + emisión de la MISMA cookie
+    # "session" que usa /auth/login (mismo create_access_token(), mismos
+    # atributos de cookie).
+    user = await auth_service.resolve_or_create_google_user(
+        google_id=userinfo["sub"], email=userinfo["email"]
+    )
+    access_token = auth_service.create_access_token(user)
+
+    redirect = RedirectResponse(url=_GOOGLE_LOGIN_SUCCESS_REDIRECT, status_code=status.HTTP_302_FOUND)
+    redirect.set_cookie(
+        SESSION_COOKIE_NAME,
+        access_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.auth_token_expire_minutes * 60,
+    )
+
+    requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+    return redirect
 
 
 # =============================================================================
