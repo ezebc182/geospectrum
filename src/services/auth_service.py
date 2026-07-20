@@ -86,30 +86,47 @@ class AuthService:
     # proposal.md sobre SQL injection sin ORM)
     # -------------------------------------------------------------------
 
+    @staticmethod
+    async def _determine_bootstrap_role(conn: asyncpg.Connection) -> UserRole:
+        """Decide el rol de bootstrap según el estado de la tabla `users`.
+
+        Extraído de `create_user()` (ver openspec/changes/google-oauth/design.md,
+        Decision 3) para que `resolve_or_create_google_user()` reutilice la
+        MISMA regla sin duplicar lógica en un branch paralelo:
+          - tabla vacía (COUNT = 0)  -> role = superadmin
+          - tabla no vacía (COUNT > 0) -> role = viewer
+
+        El caller es responsable de invocar este método DENTRO de la misma
+        `conn.transaction()` que hace el INSERT posterior — el COUNT y el
+        INSERT deben ver el mismo snapshot transaccional para evitar el
+        race condition de "doble bootstrap de superadmin" bajo concurrencia
+        (ver docstring histórico de `create_user()`).
+        """
+        existing_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+        return UserRole.SUPERADMIN if existing_count == 0 else UserRole.VIEWER
+
     async def create_user(self, email: str, password: str, role: UserRole) -> UserPublic:
         """Crea un usuario respetando la regla de bootstrap (design.md Decision 6).
 
         El `role` recibido se IGNORA deliberadamente — nunca se persiste el
         rol pedido por el caller de POST /auth/register (endpoint público,
         sin control de quién puede pedir un rol superior). El rol real se
-        decide server-side según el estado de la tabla en el momento del
-        registro:
-          - tabla vacía (COUNT = 0)  -> role = superadmin
-          - tabla no vacía (COUNT > 0) -> role = viewer
+        decide server-side vía `_determine_bootstrap_role()` según el estado
+        de la tabla en el momento del registro.
 
-        El COUNT y el INSERT corren dentro de la MISMA transacción
-        (conn.transaction()) para que sean atómicos: si dos registros
-        concurrentes llegaran a la vez con la tabla vacía, la transacción
-        serializa el acceso y solo uno puede observar COUNT = 0 (el otro ve
-        la fila recién commiteada y cae en la rama `viewer`) — evita el
-        race condition de "dos superadmin de bootstrap" bajo concurrencia.
+        El COUNT (dentro de `_determine_bootstrap_role`) y el INSERT corren
+        dentro de la MISMA transacción (conn.transaction()) para que sean
+        atómicos: si dos registros concurrentes llegaran a la vez con la
+        tabla vacía, la transacción serializa el acceso y solo uno puede
+        observar COUNT = 0 (el otro ve la fila recién commiteada y cae en la
+        rama `viewer`) — evita el race condition de "dos superadmin de
+        bootstrap" bajo concurrencia.
         """
         password_hash = self.hash_password(password)
         try:
             async with self._pool.acquire() as conn:
                 async with conn.transaction():
-                    existing_count = await conn.fetchval("SELECT COUNT(*) FROM users")
-                    actual_role = UserRole.SUPERADMIN if existing_count == 0 else UserRole.VIEWER
+                    actual_role = await self._determine_bootstrap_role(conn)
 
                     row = await conn.fetchrow(
                         """
@@ -140,6 +157,69 @@ class AuthService:
             password_hash=row["password_hash"],
             role=UserRole(row["role"]),
         )
+
+    async def resolve_or_create_google_user(self, google_id: str, email: str) -> UserPublic:
+        """Resuelve un usuario a partir de un login de Google, dentro de UNA
+        transacción atómica (mismo patrón que create_user(), líneas 82-120):
+          1. SELECT por google_id -> si existe, YA está vinculado: retornar.
+          2. Si no existe por google_id, SELECT por email:
+             a. Si existe una fila con password_hash IS NOT NULL y google_id
+                IS NULL -> auto-link: UPDATE users SET google_id = $1
+                WHERE email = $2, retornar esa fila (Risk #1 del proposal,
+                RESUELTO: opción auto-link por email, ya con email_verified
+                validado por el caller ANTES de invocar este método — ver
+                endpoint /auth/google/callback).
+             b. Si no existe ninguna fila con ese email -> crear usuario nuevo,
+                reutilizando la MISMA regla de bootstrap que create_user():
+                COUNT(*) FROM users dentro de la misma transacción decide
+                superadmin (tabla vacía) o viewer (no vacía). password_hash
+                se inserta NULL.
+          Todo el bloque corre en un único conn.transaction() — el COUNT, el
+          SELECT por google_id, el SELECT por email y el INSERT/UPDATE final
+          ven el mismo snapshot transaccional, evitando el mismo race
+          condition de "doble bootstrap de superadmin" que ya documenta
+          create_user().
+
+        Precondición: el caller (endpoint) YA validó email_verified=true del
+        ID token de Google antes de invocar este método (design.md Decision 4).
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT id, email, role FROM users WHERE google_id = $1",
+                    google_id,
+                )
+                if row is not None:
+                    return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
+
+                existing = await conn.fetchrow(
+                    "SELECT id, email, role, password_hash, google_id FROM users WHERE email = $1",
+                    email,
+                )
+                if existing is not None and existing["password_hash"] is not None and existing["google_id"] is None:
+                    row = await conn.fetchrow(
+                        """
+                        UPDATE users SET google_id = $1
+                        WHERE email = $2
+                        RETURNING id, email, role
+                        """,
+                        google_id,
+                        email,
+                    )
+                    return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
+
+                actual_role = await self._determine_bootstrap_role(conn)
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO users (email, password_hash, role, google_id)
+                    VALUES ($1, NULL, $2, $3)
+                    RETURNING id, email, role
+                    """,
+                    email,
+                    actual_role.value,
+                    google_id,
+                )
+                return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
 
     # -------------------------------------------------------------------
     # JWT
