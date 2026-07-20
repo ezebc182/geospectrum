@@ -49,6 +49,30 @@ export interface MonitorReport {
 
 export type AlertType = Alert['tipo'];
 
+/**
+ * Roles de usuario, jerarquía estricta descendente (ver
+ * openspec/changes/multi-user-auth/design.md, Decision 6). El backend
+ * serializa `role` como este mismo string en /auth/register, /auth/login
+ * y /auth/me — no hay traducción de shape entre API y frontend.
+ */
+export type UserRole = 'superadmin' | 'admin' | 'moderador' | 'viewer';
+
+/** Nivel jerárquico de cada rol (mayor = más privilegios). Espejo de
+ * ROLE_LEVEL en src/models/user.py, solo para uso de UI condicional. */
+export const ROLE_LEVEL: Record<UserRole, number> = {
+  superadmin: 3,
+  admin: 2,
+  moderador: 1,
+  viewer: 0,
+};
+
+/** Shape de usuario devuelto por /auth/register, /auth/login y /auth/me. */
+export interface UserPublic {
+  id: string;
+  email: string;
+  role: UserRole;
+}
+
 export interface ChartDataPoint {
   timestamp: number;
   mag: number;

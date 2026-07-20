@@ -33,6 +33,12 @@ Editar `.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Debe coincidir EXACTAMENTE con AUTH_SECRET_KEY del backend (src/config/settings.py).
+# Usada por dashboard/middleware.ts (Edge) para validar la firma HS256 del JWT de
+# sesión sin round-trip a /auth/me. NO llevar el prefijo NEXT_PUBLIC_ — no debe
+# llegar nunca al bundle del cliente.
+AUTH_SECRET_KEY=
 ```
 
 ### Ejecutar desarrollo

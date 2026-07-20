@@ -54,6 +54,21 @@ services:
       # TIMESCALEDB_USER: "seismic"
       # TIMESCALEDB_PASSWORD: "changeme"
 
+      # Auth (multi-user-auth) — descomentar y setear un valor real para
+      # habilitar /auth/*. Requiere TIMESCALEDB_* arriba también descomentado
+      # y apuntando al servicio `timescaledb` (perfil `storage`), porque la
+      # tabla `users` vive ahí, NO en un servicio nuevo. Antes de levantar
+      # este servicio con AUTH_SECRET_KEY seteado, aplicar manualmente contra
+      # ese Postgres las migraciones deploy/sql/migrations/001_create_users_table.sql
+      # y deploy/sql/migrations/002_add_role_hierarchy.sql (no hay Alembic ni
+      # migrador automático en este proyecto) — sin eso, AuthService falla en
+      # cualquier query contra `users`. Generar un valor real con
+      # `openssl rand -hex 32`; DEBE coincidir exactamente con
+      # AUTH_SECRET_KEY en dashboard/.env.local (mismo secreto compartido
+      # para firmar/verificar el JWT, ver dashboard/middleware.ts).
+      # AUTH_SECRET_KEY: "change-me-in-production"
+      # AUTH_TOKEN_EXPIRE_MINUTES: "1440"
+
     depends_on:
       - inpres-adapter
     restart: unless-stopped
