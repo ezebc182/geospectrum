@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     auth_secret_key: Optional[str] = None
     auth_token_expire_minutes: int = 1440
 
+    # Google OAuth (opcional — ver openspec/changes/google-oauth/design.md
+    # Decision 1). A diferencia de auth_secret_key, la AUSENCIA de estas tres
+    # variables NO impide el arranque del servidor: solo deshabilita la vía
+    # de login por Google (endpoints /auth/google/* responden 503), el login
+    # por password sigue intacto. google_redirect_uri no se deriva de otra
+    # config existente (ej. cors_allowed_origins) porque el redirect_uri debe
+    # coincidir EXACTAMENTE, carácter a carácter, con el valor registrado en
+    # Google Cloud Console — derivarlo implícitamente de otra variable sería
+    # frágil ante un mismatch silencioso.
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    google_redirect_uri: Optional[str] = None
+
     # SSE
     max_sse_clients: int = 200
     sse_heartbeat_seconds: int = 30
@@ -121,6 +134,16 @@ class Settings(BaseSettings):
             f"postgresql://{self.timescaledb_user}:{self.timescaledb_password}"
             f"@{self.timescaledb_host}:{self.timescaledb_port}/{self.timescaledb_db}"
         )
+
+    @property
+    def google_oauth_configured(self) -> bool:
+        """True si hay credenciales suficientes para habilitar /auth/google/*.
+
+        Ver design.md Decision 1 — a diferencia de auth_secret_key (fail-fast
+        total), esta es una condición de habilitación parcial, consultada por
+        lifespan() y por los propios endpoints /auth/google/* en runtime.
+        """
+        return bool(self.google_client_id and self.google_client_secret and self.google_redirect_uri)
 
 
 # Singleton

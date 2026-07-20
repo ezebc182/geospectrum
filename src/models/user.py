@@ -2,6 +2,7 @@
 Modelos de datos para autenticación multi-usuario con roles.
 """
 from enum import Enum
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -67,6 +68,9 @@ class UserPublic(BaseModel):
     id: UUID
     email: EmailStr
     role: UserRole
+    # google_id: Optional (ver openspec/changes/google-oauth/design.md) —
+    # None si el usuario nunca vinculó una cuenta de Google (solo password).
+    google_id: Optional[str] = None
 
 
 class UserInDB(BaseModel):
@@ -74,8 +78,14 @@ class UserInDB(BaseModel):
 
     id: UUID
     email: EmailStr
-    password_hash: str
+    # Optional (ver openspec/changes/google-oauth/design.md, migración 003):
+    # un usuario que se registró exclusivamente vía Google no tiene password.
+    # AuthService.verify_password() tiene un guard explícito para None — ver
+    # verify_password() abajo.
+    password_hash: Optional[str] = None
     role: UserRole
+    # None si el usuario nunca vinculó una cuenta de Google (solo password).
+    google_id: Optional[str] = None
 
 
 class CurrentUser(BaseModel):

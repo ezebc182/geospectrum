@@ -27,6 +27,15 @@ python-jose[cryptography]==3.3.0
 # tests/unit/test_auth_service.py falla con ImportError.
 email-validator==2.2.0
 
+# Auth (google-oauth) — cliente OAuth2/OIDC para login con Google (ver
+# openspec/changes/google-oauth/design.md). 1.7.2 es la última versión
+# estable en PyPI al momento de esta tarea (design.md refería 1.3.2 como
+# conocida al momento del diseño; se fija la versión real disponible).
+# Authlib no depende directamente de fastapi/starlette (solo de
+# cryptography y joserfc), por lo que no hay conflicto de pines con
+# fastapi==0.115.0 ya fijado arriba.
+Authlib==1.7.2
+
 # Utils
 python-dateutil==2.9.0
 pytz==2024.1

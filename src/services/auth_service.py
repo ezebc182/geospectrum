@@ -71,7 +71,14 @@ class AuthService:
     def hash_password(self, password: str) -> str:
         return _pwd_context.hash(password)
 
-    def verify_password(self, password: str, password_hash: str) -> bool:
+    def verify_password(self, password: str, password_hash: Optional[str]) -> bool:
+        # Guard (ver openspec/changes/google-oauth/design.md, Interfaces /
+        # Contracts -> AuthService.verify_password): un usuario que se
+        # registró exclusivamente vía Google tiene password_hash=None (ver
+        # migración 003). Pasarle None a passlib levanta una excepción no
+        # controlada (TypeError) — se retorna False explícitamente antes.
+        if password_hash is None:
+            return False
         return _pwd_context.verify(password, password_hash)
 
     # -------------------------------------------------------------------
