@@ -146,7 +146,8 @@ class AuthService:
     async def get_user_by_email(self, email: str) -> Optional[UserInDB]:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, email, password_hash, role FROM users WHERE email = $1",
+                "SELECT id, email, password_hash, role, google_id, name, avatar_url "
+                "FROM users WHERE email = $1",
                 email,
             )
         if row is None:
@@ -156,12 +157,22 @@ class AuthService:
             email=row["email"],
             password_hash=row["password_hash"],
             role=UserRole(row["role"]),
+            google_id=row["google_id"],
+            name=row["name"],
+            avatar_url=row["avatar_url"],
         )
 
-    async def resolve_or_create_google_user(self, google_id: str, email: str) -> UserPublic:
+    async def resolve_or_create_google_user(
+        self,
+        google_id: str,
+        email: str,
+        name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+    ) -> UserPublic:
         """Resuelve un usuario a partir de un login de Google, dentro de UNA
         transacción atómica (mismo patrón que create_user(), líneas 82-120):
-          1. SELECT por google_id -> si existe, YA está vinculado: retornar.
+          1. UPDATE (name/avatar_url) WHERE google_id -> si matchea una fila,
+             YA está vinculado: refresca perfil y retorna.
           2. Si no existe por google_id, SELECT por email:
              a. Si existe una fila con password_hash IS NOT NULL y google_id
                 IS NULL -> auto-link: UPDATE users SET google_id = $1
@@ -182,15 +193,39 @@ class AuthService:
 
         Precondición: el caller (endpoint) YA validó email_verified=true del
         ID token de Google antes de invocar este método (design.md Decision 4).
+
+        `name`/`avatar_url` (extensión migración 004): claims OpenID Connect
+        `name`/`picture` del ID token de Google, extraídos por el caller
+        (src/main.py google_callback()). Se persisten y REFRESCAN en las 3
+        ramas — incluida la de "ya vinculado" (rama 1) — porque Google es la
+        fuente de verdad de estos datos de perfil en CADA login, no solo en
+        la vinculación inicial: si el usuario cambia su foto/nombre en
+        Google, o si (caso real detectado en verificación manual) la fila ya
+        existía con estos campos en NULL por haberse vinculado antes de que
+        esta migración existiera, el próximo login por Google los sincroniza
+        sin requerir intervención manual en la base.
         """
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
-                    "SELECT id, email, role FROM users WHERE google_id = $1",
+                    """
+                    UPDATE users SET name = $1, avatar_url = $2
+                    WHERE google_id = $3
+                    RETURNING id, email, role
+                    """,
+                    name,
+                    avatar_url,
                     google_id,
                 )
                 if row is not None:
-                    return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
+                    return UserPublic(
+                        id=row["id"],
+                        email=row["email"],
+                        role=UserRole(row["role"]),
+                        google_id=google_id,
+                        name=name,
+                        avatar_url=avatar_url,
+                    )
 
                 existing = await conn.fetchrow(
                     "SELECT id, email, role, password_hash, google_id FROM users WHERE email = $1",
@@ -199,27 +234,45 @@ class AuthService:
                 if existing is not None and existing["password_hash"] is not None and existing["google_id"] is None:
                     row = await conn.fetchrow(
                         """
-                        UPDATE users SET google_id = $1
-                        WHERE email = $2
+                        UPDATE users SET google_id = $1, name = $2, avatar_url = $3
+                        WHERE email = $4
                         RETURNING id, email, role
                         """,
                         google_id,
+                        name,
+                        avatar_url,
                         email,
                     )
-                    return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
+                    return UserPublic(
+                        id=row["id"],
+                        email=row["email"],
+                        role=UserRole(row["role"]),
+                        google_id=google_id,
+                        name=name,
+                        avatar_url=avatar_url,
+                    )
 
                 actual_role = await self._determine_bootstrap_role(conn)
                 row = await conn.fetchrow(
                     """
-                    INSERT INTO users (email, password_hash, role, google_id)
-                    VALUES ($1, NULL, $2, $3)
+                    INSERT INTO users (email, password_hash, role, google_id, name, avatar_url)
+                    VALUES ($1, NULL, $2, $3, $4, $5)
                     RETURNING id, email, role
                     """,
                     email,
                     actual_role.value,
                     google_id,
+                    name,
+                    avatar_url,
                 )
-                return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
+                return UserPublic(
+                    id=row["id"],
+                    email=row["email"],
+                    role=UserRole(row["role"]),
+                    google_id=google_id,
+                    name=name,
+                    avatar_url=avatar_url,
+                )
 
     # -------------------------------------------------------------------
     # JWT
@@ -232,6 +285,13 @@ class AuthService:
             "sub": str(user.id),
             "email": user.email,
             "role": user.role.value,
+            # name/avatar_url (migración 004): claims opcionales, ausentes
+            # (None) en usuarios de password. Se incluyen en el JWT para que
+            # get_current_user()/CurrentUser no dependan de un round-trip
+            # extra a Postgres solo para pintar el avatar/nombre en el
+            # dropdown del frontend.
+            "name": user.name,
+            "avatar_url": user.avatar_url,
             "iat": now,
             "exp": expire,
         }
@@ -250,6 +310,11 @@ class AuthService:
                 id=UUID(payload["sub"]),
                 email=payload["email"],
                 role=UserRole(payload["role"]),
+                # .get(...): tokens emitidos ANTES de esta extensión (o
+                # firmados por otro path) no tienen estos claims — se tratan
+                # como None, no como error de token inválido.
+                name=payload.get("name"),
+                avatar_url=payload.get("avatar_url"),
             )
         except (KeyError, ValueError) as exc:
             raise InvalidTokenError() from exc

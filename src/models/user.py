@@ -71,6 +71,13 @@ class UserPublic(BaseModel):
     # google_id: Optional (ver openspec/changes/google-oauth/design.md) —
     # None si el usuario nunca vinculó una cuenta de Google (solo password).
     google_id: Optional[str] = None
+    # name/avatar_url: Optional (migración 004, extensión de google-oauth).
+    # Solo se completan para usuarios que se loguearon vía Google (claims
+    # OpenID Connect `name`/`picture`); un usuario exclusivamente de password
+    # los tiene en None a propósito — el frontend resuelve un fallback de
+    # iniciales derivadas del email cuando avatar_url es None.
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class UserInDB(BaseModel):
@@ -86,6 +93,9 @@ class UserInDB(BaseModel):
     role: UserRole
     # None si el usuario nunca vinculó una cuenta de Google (solo password).
     google_id: Optional[str] = None
+    # Ver UserPublic.name/avatar_url arriba (migración 004).
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class CurrentUser(BaseModel):
@@ -94,3 +104,8 @@ class CurrentUser(BaseModel):
     id: UUID
     email: EmailStr
     role: UserRole
+    # Ver UserPublic.name/avatar_url arriba (migración 004) — el JWT emitido
+    # por AuthService.create_access_token() incluye estos claims para que
+    # get_current_user() no dependa de un round-trip extra a Postgres.
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None

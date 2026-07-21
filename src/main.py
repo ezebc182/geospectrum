@@ -619,7 +619,14 @@ async def login(
     )
 
     requests_total.labels(endpoint="/auth/login", status="200").inc()
-    return UserPublic(id=user.id, email=user.email, role=user.role)
+    return UserPublic(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        google_id=user.google_id,
+        name=user.name,
+        avatar_url=user.avatar_url,
+    )
 
 
 @app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
@@ -774,8 +781,17 @@ async def google_callback(
     # (3.11) Resolución/creación de usuario + emisión de la MISMA cookie
     # "session" que usa /auth/login (mismo create_access_token(), mismos
     # atributos de cookie).
+    #
+    # name/picture (extensión google-oauth, migración 004): claims estándar
+    # OpenID Connect que Google entrega dado el scope "openid email profile"
+    # (ver oauth.register() en lifespan()). A diferencia de sub/email/
+    # email_verified, son OPCIONALES en el ID token — .get() con default None,
+    # nunca deben bloquear el login si Google no los envía por algún motivo.
     user = await auth_service.resolve_or_create_google_user(
-        google_id=userinfo["sub"], email=userinfo["email"]
+        google_id=userinfo["sub"],
+        email=userinfo["email"],
+        name=userinfo.get("name"),
+        avatar_url=userinfo.get("picture"),
     )
     access_token = auth_service.create_access_token(user)
 

@@ -333,6 +333,56 @@ async def test_resolve_or_create_google_user_new_user_empty_table_becomes_supera
 
 
 @pytest.mark.asyncio
+async def test_resolve_or_create_google_user_new_user_persists_name_and_avatar():
+    """[Extensión google-oauth, migración 004] Un usuario nuevo vía Google
+    persiste name/avatar_url tomados de los claims OpenID Connect
+    name/picture del ID token (pasados por el caller, ver
+    src/main.py google_callback())."""
+    svc = _service()
+    user_id = uuid4()
+    pool, conn = _fake_pool_for_google(
+        google_id_row=None,
+        email_row=None,
+        final_row={"id": user_id, "email": "nuevo@example.com", "role": "viewer"},
+    )
+    conn.fetchval = AsyncMock(return_value=1)  # tabla no vacía -> viewer
+    svc._pool = pool
+
+    result = await svc.resolve_or_create_google_user(
+        google_id="google-sub-124",
+        email="nuevo@example.com",
+        name="Nueva Persona",
+        avatar_url="https://lh3.googleusercontent.com/a/avatar123",
+    )
+
+    assert result.name == "Nueva Persona"
+    assert result.avatar_url == "https://lh3.googleusercontent.com/a/avatar123"
+
+
+@pytest.mark.asyncio
+async def test_resolve_or_create_google_user_new_user_without_name_or_avatar_stays_none():
+    """Google no siempre entrega name/picture (son claims opcionales del ID
+    token) — el caller pasa None y el usuario nuevo queda con esos campos en
+    NULL, sin romper el flujo."""
+    svc = _service()
+    user_id = uuid4()
+    pool, conn = _fake_pool_for_google(
+        google_id_row=None,
+        email_row=None,
+        final_row={"id": user_id, "email": "sinperfil@example.com", "role": "viewer"},
+    )
+    conn.fetchval = AsyncMock(return_value=1)
+    svc._pool = pool
+
+    result = await svc.resolve_or_create_google_user(
+        google_id="google-sub-125", email="sinperfil@example.com"
+    )
+
+    assert result.name is None
+    assert result.avatar_url is None
+
+
+@pytest.mark.asyncio
 async def test_resolve_or_create_google_user_new_user_nonempty_table_becomes_viewer():
     """[Requirement: Bootstrap del primer superadmin vía Google / Scenario:
     Un registro posterior vía Google siempre crea viewer]"""
@@ -388,26 +438,72 @@ async def test_resolve_or_create_google_user_auto_links_existing_password_accoun
 
 
 @pytest.mark.asyncio
-async def test_resolve_or_create_google_user_second_login_returns_same_row_without_relinking():
-    """[Requirement: Login indistinto por password o Google para cuentas
-    vinculadas / Scenario: Usuario vinculado se loguea por Google después de
-    haberse logueado antes por password] — segundo login del mismo google_id
-    retorna la misma fila sin duplicar ni re-vincular."""
+async def test_resolve_or_create_google_user_auto_link_updates_name_and_avatar():
+    """[Extensión google-oauth, migración 004 — decisión de diseño] En la
+    rama de auto-link, name/avatar_url SE actualizan con lo que traiga
+    Google en ese momento, incluso si el usuario ya existía (por password)
+    sin esos campos. Google es la fuente de verdad del perfil una vez
+    vinculada la cuenta."""
     svc = _service()
     user_id = uuid4()
     pool, conn = _fake_pool_for_google(
-        google_id_row={"id": user_id, "email": "vinculado@example.com", "role": "admin"},
+        google_id_row=None,
+        email_row={
+            "id": user_id,
+            "email": "conpassword2@example.com",
+            "role": "viewer",
+            "password_hash": "$2b$12$hashexistente",
+            "google_id": None,
+        },
+        final_row={"id": user_id, "email": "conpassword2@example.com", "role": "viewer"},
     )
     svc._pool = pool
 
     result = await svc.resolve_or_create_google_user(
-        google_id="google-sub-ya-vinculado", email="vinculado@example.com"
+        google_id="google-sub-790",
+        email="conpassword2@example.com",
+        name="Persona Autolinkeada",
+        avatar_url="https://lh3.googleusercontent.com/a/avatar456",
+    )
+
+    assert result.name == "Persona Autolinkeada"
+    assert result.avatar_url == "https://lh3.googleusercontent.com/a/avatar456"
+
+
+@pytest.mark.asyncio
+async def test_resolve_or_create_google_user_second_login_returns_same_row_without_relinking():
+    """[Requirement: Login indistinto por password o Google para cuentas
+    vinculadas / Scenario: Usuario vinculado se loguea por Google después de
+    haberse logueado antes por password] — segundo login del mismo google_id
+    retorna la misma fila sin duplicar ni re-vincular. `name`/`avatar_url` se
+    refrescan con lo que traiga el ID token en ESTE login (Google es la
+    fuente de verdad de estos datos en cada login, no solo en la
+    vinculación inicial — ver docstring de resolve_or_create_google_user)."""
+    svc = _service()
+    user_id = uuid4()
+    pool, conn = _fake_pool_for_google(
+        google_id_row={
+            "id": user_id,
+            "email": "vinculado@example.com",
+            "role": "admin",
+        },
+    )
+    svc._pool = pool
+
+    result = await svc.resolve_or_create_google_user(
+        google_id="google-sub-ya-vinculado",
+        email="vinculado@example.com",
+        name="Persona Vinculada",
+        avatar_url="https://lh3.googleusercontent.com/a/avatar789",
     )
 
     assert result.id == user_id
     assert result.role == UserRole.ADMIN
-    # Solo un fetchrow (el SELECT por google_id) — no hubo SELECT por email
-    # ni INSERT/UPDATE, confirmando que no se duplica ni se re-vincula.
+    assert result.name == "Persona Vinculada"
+    assert result.avatar_url == "https://lh3.googleusercontent.com/a/avatar789"
+    # Un solo fetchrow (el UPDATE por google_id, que también retorna la fila)
+    # — no hubo SELECT por email ni INSERT, confirmando que no se duplica ni
+    # se re-vincula.
     assert conn.fetchrow.await_count == 1
 
 

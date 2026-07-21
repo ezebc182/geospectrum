@@ -66,11 +66,19 @@ export const ROLE_LEVEL: Record<UserRole, number> = {
   viewer: 0,
 };
 
-/** Shape de usuario devuelto por /auth/register, /auth/login y /auth/me. */
+/** Shape de usuario devuelto por /auth/register, /auth/login y /auth/me.
+ *
+ * name/avatar_url (extensión google-oauth, migración 004): solo presentes
+ * (no null) para usuarios que se loguearon vía Google — un usuario
+ * registrado exclusivamente por password los recibe en `null`. La UI
+ * (AppSidebar) resuelve un fallback de iniciales derivadas del email cuando
+ * avatar_url es null. */
 export interface UserPublic {
   id: string;
   email: string;
   role: UserRole;
+  name?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface ChartDataPoint {

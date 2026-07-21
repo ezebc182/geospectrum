@@ -143,6 +143,13 @@ def test_password_login_unaffected_by_google_oauth_disabled(client):
     fake_user_in_db.email = "existente@example.com"
     fake_user_in_db.role = UserRole.VIEWER
     fake_user_in_db.password_hash = "irrelevant-hash"
+    # Usuario de password puro: sin google_id/name/avatar_url (ver
+    # migraciones 003/004) — explícitos en None para no depender del
+    # comportamiento por default de MagicMock (que devolvería otro Mock,
+    # no serializable por UserPublic/JSON).
+    fake_user_in_db.google_id = None
+    fake_user_in_db.name = None
+    fake_user_in_db.avatar_url = None
 
     fake_auth_service = MagicMock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
@@ -224,6 +231,8 @@ def test_google_callback_success_new_user_invokes_resolve_and_sets_cookie(client
                 "sub": "google-sub-123",
                 "email": "nuevo-google@example.com",
                 "email_verified": True,
+                "name": "Nueva Persona",
+                "picture": "https://lh3.googleusercontent.com/a/avatar123",
             }
         ),
         raising=False,
@@ -238,8 +247,14 @@ def test_google_callback_success_new_user_invokes_resolve_and_sets_cookie(client
     assert response.status_code == 302
     assert response.headers["location"] == settings.dashboard_url
     assert response.cookies.get("session") == "fake-google-jwt"
+    # name/avatar_url (extensión google-oauth, migración 004): el endpoint
+    # extrae los claims OpenID Connect name/picture del userinfo y los pasa
+    # a resolve_or_create_google_user() junto con sub/email.
     fake_auth_service.resolve_or_create_google_user.assert_awaited_once_with(
-        google_id="google-sub-123", email="nuevo-google@example.com"
+        google_id="google-sub-123",
+        email="nuevo-google@example.com",
+        name="Nueva Persona",
+        avatar_url="https://lh3.googleusercontent.com/a/avatar123",
     )
     fake_auth_service.create_access_token.assert_called_once_with(resolved_user)
 
@@ -272,6 +287,9 @@ def test_google_callback_auto_link_invokes_resolve_and_sets_cookie(client, monke
                 "sub": "google-sub-456",
                 "email": "ya-registrado@example.com",
                 "email_verified": True,
+                # Sin name/picture en este caso: Google no siempre los
+                # entrega (claims opcionales) — el endpoint debe pasar None
+                # sin romper, y auto-link sigue funcionando igual.
             }
         ),
         raising=False,
@@ -286,7 +304,10 @@ def test_google_callback_auto_link_invokes_resolve_and_sets_cookie(client, monke
     assert response.status_code == 302
     assert response.cookies.get("session") == "fake-google-jwt"
     fake_auth_service.resolve_or_create_google_user.assert_awaited_once_with(
-        google_id="google-sub-456", email="ya-registrado@example.com"
+        google_id="google-sub-456",
+        email="ya-registrado@example.com",
+        name=None,
+        avatar_url=None,
     )
 
 
@@ -349,6 +370,11 @@ def test_linked_user_can_login_via_password_and_via_google_same_identity(client,
     fake_user_in_db.email = same_email
     fake_user_in_db.role = same_role
     fake_user_in_db.password_hash = "some-bcrypt-hash"
+    # Explícitos en None (ver comentario equivalente arriba en
+    # test_password_login_unaffected_by_google_oauth_disabled).
+    fake_user_in_db.google_id = "google-sub-999"
+    fake_user_in_db.name = None
+    fake_user_in_db.avatar_url = None
 
     fake_auth_service = MagicMock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
