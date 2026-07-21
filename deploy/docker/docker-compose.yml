@@ -88,6 +88,14 @@ services:
       # GOOGLE_CLIENT_SECRET: "your-client-secret"
       # GOOGLE_REDIRECT_URI: "http://localhost:8000/auth/google/callback"
 
+      # URL pública del dashboard — a diferencia de las 3 vars de arriba,
+      # ESTA SÍ es obligatoria para que el login por Google no rompa: es el
+      # destino final del 302 de /auth/google/callback (éxito y error). Sin
+      # setearla explícitamente en producción, cae en el default de código
+      # (http://localhost:3008, solo válido en dev local) y el usuario
+      # termina viendo la respuesta JSON de esta API en vez de su sesión.
+      # DASHBOARD_URL: "https://tu-dashboard.example.com"
+
     depends_on:
       - inpres-adapter
     restart: unless-stopped

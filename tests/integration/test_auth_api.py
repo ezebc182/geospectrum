@@ -39,6 +39,7 @@ import pytest
 from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 
+from src.config.settings import settings
 from src.main import app, oauth
 from src.models.user import UserPublic, UserRole
 
@@ -235,7 +236,7 @@ def test_google_callback_success_new_user_invokes_resolve_and_sets_cookie(client
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/"
+    assert response.headers["location"] == settings.dashboard_url
     assert response.cookies.get("session") == "fake-google-jwt"
     fake_auth_service.resolve_or_create_google_user.assert_awaited_once_with(
         google_id="google-sub-123", email="nuevo-google@example.com"
@@ -320,7 +321,7 @@ def test_google_callback_rejects_unverified_email_before_calling_auth_service(cl
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login?error=google_oauth_email_not_verified"
+    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_email_not_verified"
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -398,7 +399,7 @@ def test_google_callback_without_code_redirects_to_login_cancelled(client, monke
     response = client.get("/auth/google/callback", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login?error=google_oauth_cancelled"
+    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_cancelled"
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -416,7 +417,7 @@ def test_google_callback_with_access_denied_redirects_without_500(client, monkey
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login?error=google_oauth_access_denied"
+    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_access_denied"
     assert "session" not in response.cookies
 
 
@@ -446,7 +447,7 @@ def test_google_callback_invalid_state_redirects_to_token_exchange_failed(client
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login?error=google_oauth_token_exchange_failed"
+    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_token_exchange_failed"
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -484,7 +485,7 @@ def test_google_callback_token_exchange_network_failure_redirects_without_500(cl
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login?error=google_oauth_token_exchange_failed"
+    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_token_exchange_failed"
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -507,6 +508,6 @@ def test_google_callback_missing_userinfo_redirects_to_invalid_id_token(client, 
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/login?error=google_oauth_invalid_id_token"
+    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_invalid_id_token"
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()

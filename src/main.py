@@ -647,24 +647,28 @@ async def get_me(current_user: CurrentUser = Depends(get_current_user)) -> Curre
 # Auth vía Google OAuth (google-oauth) — ver design.md/tasks.md Phase 3.
 #
 # Convención de redirects (tasks.md 3.12, resuelve la Open Question de
-# design.md sobre destino exacto): en éxito, 302 a "/" (raíz del dashboard
-# — no existe una convención de "/dashboard" explícita en
-# dashboard/app/login/page.tsx al momento de este change; "/" es la ruta
-# que la app usa como home autenticado). En error (las 4 ramas de
-# 3.6-3.10), 302 a "/login?error=<código-legible>", consistente en las 5
-# ramas (4 de error + 1 de éxito) de este bloque. Los códigos de error son
-# valores cortos, estables y legibles por el frontend (no mensajes libres),
-# para que dashboard/app/login/page.tsx pueda mapearlos a copy localizado
-# sin parsear texto libre.
+# design.md sobre destino exacto): en éxito, 302 al dashboard (raíz). En
+# error (las 4 ramas de 3.6-3.10), 302 a "/login?error=<código-legible>" del
+# dashboard, consistente en las 5 ramas (4 de error + 1 de éxito) de este
+# bloque. Los códigos de error son valores cortos, estables y legibles por
+# el frontend (no mensajes libres), para que dashboard/app/login/page.tsx
+# pueda mapearlos a copy localizado sin parsear texto libre.
+#
+# CRÍTICO: ambos destinos usan settings.dashboard_url (URL ABSOLUTA), NUNCA
+# una ruta relativa ("/", "/login"). El navegador resuelve una ruta relativa
+# contra el ORIGEN que sirvió el 302 — que es ESTE backend (ej. :8000),
+# donde GET / devuelve el JSON de info de la API, no el dashboard de
+# Next.js (otro origen, ej. :3008). Bug real detectado en verificación
+# manual con consentimiento real de Google: sin esto, el usuario terminaba
+# viendo la respuesta de la API en vez de su sesión en el dashboard.
 # -----------------------------------------------------------------------
 
-_GOOGLE_LOGIN_ERROR_REDIRECT = "/login?error={code}"
-_GOOGLE_LOGIN_SUCCESS_REDIRECT = "/"
+_GOOGLE_LOGIN_ERROR_REDIRECT = "{dashboard_url}/login?error={code}"
 
 
 def _google_error_redirect(code: str) -> RedirectResponse:
     return RedirectResponse(
-        url=_GOOGLE_LOGIN_ERROR_REDIRECT.format(code=code),
+        url=_GOOGLE_LOGIN_ERROR_REDIRECT.format(dashboard_url=settings.dashboard_url, code=code),
         status_code=status.HTTP_302_FOUND,
     )
 
@@ -775,7 +779,7 @@ async def google_callback(
     )
     access_token = auth_service.create_access_token(user)
 
-    redirect = RedirectResponse(url=_GOOGLE_LOGIN_SUCCESS_REDIRECT, status_code=status.HTTP_302_FOUND)
+    redirect = RedirectResponse(url=settings.dashboard_url, status_code=status.HTTP_302_FOUND)
     redirect.set_cookie(
         SESSION_COOKIE_NAME,
         access_token,
