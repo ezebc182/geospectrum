@@ -57,6 +57,24 @@ kubectl create secret generic geospectrum-secrets \
   -n geospectrum
 ```
 
+### Auth / Google OAuth (pendiente — fuera de alcance)
+
+Ni `multi-user-auth` ni `google-oauth` definieron alcance de Kubernetes en sus
+respectivos `proposal.md`/`design.md`. Por eso `secret.yaml` y `configmap.yaml`
+NO incluyen `AUTH_SECRET_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` ni
+`GOOGLE_REDIRECT_URI` — el rollout de auth en K8s queda pendiente de definir
+(ver `.env.example` en la raíz del repo y `deploy/docker/docker-compose.yml`
+para el equivalente ya documentado en Docker).
+
+Riesgo si se deployea igual a K8s sin definir esto:
+- Sin `AUTH_SECRET_KEY`: el proceso falla fail-fast al arrancar (`lifespan()`
+  en `src/main.py`) → el pod entra en CrashLoopBackOff.
+- Sin `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URI`: el pod
+  arranca igual (`google_oauth_configured=False`), los endpoints
+  `/auth/google/*` responden `503` y el resto del sistema (incluido login por
+  password, si `AUTH_SECRET_KEY` está seteado) no se ve afectado — riesgo
+  menor que el de `AUTH_SECRET_KEY`.
+
 ### Ingress
 
 Editar `ingress.yaml` y cambiar:

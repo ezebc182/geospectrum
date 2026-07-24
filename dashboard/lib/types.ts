@@ -66,11 +66,19 @@ export const ROLE_LEVEL: Record<UserRole, number> = {
   viewer: 0,
 };
 
-/** Shape de usuario devuelto por /auth/register, /auth/login y /auth/me. */
+/** Shape de usuario devuelto por /auth/register, /auth/login y /auth/me.
+ *
+ * name/avatar_url (extensión google-oauth, migración 004): solo presentes
+ * (no null) para usuarios que se loguearon vía Google — un usuario
+ * registrado exclusivamente por password los recibe en `null`. La UI
+ * (AppSidebar) resuelve un fallback de iniciales derivadas del email cuando
+ * avatar_url es null. */
 export interface UserPublic {
   id: string;
   email: string;
   role: UserRole;
+  name?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface ChartDataPoint {
@@ -80,3 +88,58 @@ export interface ChartDataPoint {
   felt: boolean;
   id: string;
 }
+
+/**
+ * Perfil extendido del usuario (openspec/changes/account-settings). Vive
+ * EXCLUSIVAMENTE en `GET/PATCH /account/profile` — nunca en `/auth/me` ni en
+ * el JWT (ver design.md Decisión Cerrada #4). `full_name` es un campo
+ * DISTINTO de `UserPublic.name` (ese último viene de Google OAuth, es
+ * read-only acá): no deben mezclarse ni mostrarse como si fueran el mismo
+ * dato en ningún formulario.
+ */
+export interface UserProfile {
+  full_name: string | null;
+  address: string | null;
+  phone: string | null;
+  /** Único booleano de estado 2FA expuesto acá — nunca el secreto TOTP.
+   * Agregado como fix puntual (post-Phase 4): reemplaza el uso lateral que
+   * hacía SettingsPage de GET /account/export solo para leer este flag. */
+  totp_enabled: boolean;
+}
+
+/** Body de `PATCH /account/profile` — mismo shape que `UserProfile`, todos
+ * los campos opcionales para permitir edición parcial (campos no enviados
+ * no se tocan en el backend, ver design.md Decision Contrato AuthService). */
+export interface UserProfileUpdate {
+  full_name?: string | null;
+  address?: string | null;
+  phone?: string | null;
+}
+
+/** Respuesta de `POST /auth/2fa/setup`. `otpauth_uri` se usa para renderizar
+ * el QR client-side (el backend no genera imagen, ver design.md Decision 7).
+ * `backup_codes` viaja en texto claro UNA sola vez en este response. */
+export interface TotpSetupResponse {
+  otpauth_uri: string;
+  backup_codes: string[];
+}
+
+/** Respuesta de `GET /account/export`. `account`/`security` son objetos
+ * de shape libre definido por el backend (ver design.md Decision 5) — no se
+ * tipan campo a campo acá porque el frontend solo necesita serializarlos a
+ * un archivo `.json` descargable, no leer campos individuales. */
+export interface AccountExport {
+  account: Record<string, unknown>;
+  profile: UserProfile;
+  security: Record<string, unknown>;
+  exported_at: string;
+}
+
+/**
+ * Resultado de `login()`. Cuando el usuario tiene 2FA habilitado, el backend
+ * responde `{"requires_2fa": true}` sin otorgar sesión completa (ver
+ * spec.md Requirement: Login con 2FA habilitado requiere segundo factor) —
+ * este NO es un caso de error, es un resultado válido que el caller debe
+ * manejar mostrando el segundo paso del login.
+ */
+export type LoginResult = { requiresTwoFactor: true } | { requiresTwoFactor: false; user: UserPublic };

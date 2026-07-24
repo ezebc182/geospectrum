@@ -89,6 +89,16 @@ class Settings(BaseSettings):
     google_client_secret: Optional[str] = None
     google_redirect_uri: Optional[str] = None
 
+    # URL pública del dashboard (Next.js) al que /auth/google/callback debe
+    # redirigir tras resolver el login. Bug real detectado en verificación
+    # manual: un redirect con ruta relativa ("/") lo resuelve el browser
+    # contra el ORIGEN que sirvió el callback (este backend, puerto 8000/
+    # donde GET / devuelve el JSON de info de la API), no contra el
+    # dashboard — el usuario terminaba viendo la respuesta de la API en vez
+    # del dashboard. Debe ser una URL absoluta de otro origen. Mismo default
+    # que el primer origen de cors_allowed_origins (dashboard local en dev).
+    dashboard_url: str = "http://localhost:3008"
+
     # SSE
     max_sse_clients: int = 200
     sse_heartbeat_seconds: int = 30

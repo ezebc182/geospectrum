@@ -16,18 +16,32 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, List
+from uuid import UUID
 
+import redis.asyncio as aioredis
+from authlib.integrations.starlette_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
 from fastapi import Depends, FastAPI, Response, status, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from starlette.middleware.sessions import SessionMiddleware
 
 from src.config.settings import settings
 from src.observability.glitchtip import init_glitchtip
 from src.observability.logging_config import configure_logging
 from src.observability.request_context import request_id_ctx
 from src.models.event import MonitorReport, SeismicEvent, Alert
-from src.models.user import CurrentUser, UserCreate, UserPublic
+from src.models.user import (
+    AccountExport,
+    CurrentUser,
+    TotpSetupResponse,
+    TotpVerifyRequest,
+    UserCreate,
+    UserProfile,
+    UserProfileUpdate,
+    UserPublic,
+)
 from src.services.usgs_service import fetch_usgs_events
 from src.services.inpres_service import fetch_inpres_events
 from src.services.emsc_service import fetch_emsc_events
@@ -37,7 +51,18 @@ from src.services.report_service import build_report, count_by_source, CANONICAL
 from src.services.spectrogram_service import get_spectrogram_service, LIVE_CHANNELS_BY_CITY
 from src.services.event_bus import RedisPubSubBus
 from src.services.timescale_service import TimescaleColumnWriter
-from src.services.auth_service import AuthService, EmailAlreadyRegisteredError
+from src.services.auth_service import (
+    AuthService,
+    EmailAlreadyRegisteredError,
+    InvalidTokenError,
+    InvalidTotpCodeError,
+    LastSuperadminError,
+    Login2FAAttemptLimiter,
+    TokenExpiredError,
+    TooManyTotpAttemptsError,
+    TotpAlreadyEnabledError,
+    TotpNotAvailableForGoogleOnlyUserError,
+)
 from src.api.deps import SESSION_COOKIE_NAME, get_current_user
 from src.services import cache
 
@@ -97,6 +122,25 @@ column_writer: Optional[TimescaleColumnWriter] = (
     TimescaleColumnWriter(settings.timescaledb_dsn) if settings.timescaledb_dsn else None
 )
 
+# Cliente Redis dedicado al rate-limiting de POST /auth/2fa/login-verify
+# (account-settings, fix post-verify — ver Login2FAAttemptLimiter en
+# auth_service.py para la justificación de por qué Redis y no in-memory).
+# Deliberadamente SEPARADO de `event_bus`: son responsabilidades distintas
+# (pub/sub de espectrogramas vs. contador de intentos de login) con ciclos
+# de vida propios; acoplarlos haría que un fallo/cierre de uno arrastre al
+# otro sin necesidad.
+totp_login_attempt_redis: aioredis.Redis = aioredis.from_url(
+    settings.redis_url, decode_responses=True
+)
+
+# Google OAuth (google-oauth, Phase 3). Instancia module-level, igual que
+# event_bus/column_writer arriba — el registro real del provider "google"
+# (client_id/secret/discovery) ocurre en lifespan(), condicionado a
+# settings.google_oauth_configured (ver design.md Decision 1: fail-fast
+# CONDICIONAL, no total — a diferencia de AUTH_SECRET_KEY, el servidor
+# arranca igual si faltan las credenciales de Google).
+oauth = OAuth()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -118,6 +162,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning(
             "EventBus (Redis) no disponible — /ws/spectrogram no funcionará "
             "hasta que Redis esté arriba y se reinicie el servicio",
+            exc_info=True,
+        )
+
+    # Rate-limiting de POST /auth/2fa/login-verify (account-settings, fix
+    # post-verify) — best-effort, MISMO criterio que event_bus arriba: si
+    # Redis no está disponible al arrancar, el servicio NO aborta (a
+    # diferencia de AUTH_SECRET_KEY/Postgres abajo). Ver
+    # Login2FAAttemptLimiter.check_not_locked()/register_failure() en
+    # auth_service.py — si `totp_login_attempt_redis` no llegó a conectar,
+    # esas llamadas fallarían; se documenta como limitación conocida (ver
+    # design.md) en vez de bloquear el arranque completo del servicio por un
+    # rate-limiter, que es una mitigación de un riesgo ya aceptado, no una
+    # garantía de seguridad crítica como la firma JWT.
+    try:
+        await totp_login_attempt_redis.ping()
+        logger.info("Rate-limiter de 2FA login-verify (Redis) conectado: %s", settings.redis_url)
+    except Exception:
+        logger.warning(
+            "Redis no disponible para el rate-limiter de POST "
+            "/auth/2fa/login-verify — ese endpoint quedará SIN límite de "
+            "intentos hasta que Redis esté arriba y se reinicie el servicio",
             exc_info=True,
         )
 
@@ -168,12 +233,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.auth_service = auth_service
     logger.info("AuthService conectado (tabla users en TimescaleDB/Postgres)")
 
+    app.state.totp_login_attempt_limiter = Login2FAAttemptLimiter(totp_login_attempt_redis)
+
+    # --------------------------------------------------------------------
+    # Google OAuth (google-oauth, Phase 3) — registro CONDICIONAL, NO
+    # fail-fast (ver design.md Decision 1). A diferencia del bloque de
+    # AUTH_SECRET_KEY arriba, la ausencia de credenciales de Google NO
+    # aborta el arranque: solo deshabilita /auth/google/* (responden 503),
+    # el login por password sigue intacto.
+    if settings.google_oauth_configured:
+        oauth.register(
+            "google",
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        )
+        app.state.google_oauth_enabled = True
+        logger.info("Google OAuth habilitado (/auth/google/*)")
+    else:
+        app.state.google_oauth_enabled = False
+        logger.warning(
+            "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI no "
+            "configurados — /auth/google/* responderá 503, login por "
+            "password no afectado"
+        )
+
     yield
 
     await event_bus.close()
     if column_writer is not None:
         await column_writer.close()
     await auth_service.close()
+    await totp_login_attempt_redis.aclose()
     logger.info("GeoSpectrum Service shutting down")
 
 
@@ -200,6 +292,24 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# =============================================================================
+# Session Middleware (google-oauth) — SOLO para el `state`/`nonce` transitorio
+# de Authlib durante el handshake OAuth, ver design.md Decision 2.
+#
+# CRÍTICO: session_cookie="oauth_state" está seteado explícitamente porque el
+# default de Starlette es "session", que colisiona textualmente con
+# SESSION_COOKIE_NAME = "session" (src/api/deps.py:30), la cookie del JWT de
+# sesión de usuario ya emitida por /auth/login. Son dos cookies HTTP
+# completamente distintas y sin relación: "oauth_state" vive solo los
+# segundos que dura el flujo de Google; "session" es la sesión de usuario de
+# larga duración. Reutiliza auth_secret_key (ya fail-fast garantizado arriba
+# en lifespan()) en vez de introducir una key de firma nueva.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.auth_secret_key,
+    session_cookie="oauth_state",
 )
 
 
@@ -486,6 +596,23 @@ def _get_auth_service(request: Request) -> AuthService:
     return request.app.state.auth_service
 
 
+def _get_totp_login_attempt_limiter(request: Request) -> Login2FAAttemptLimiter:
+    """DI del rate-limiter de POST /auth/2fa/login-verify (account-settings,
+    fix post-verify) — mismo patrón que _get_auth_service arriba
+    (request.app.state, poblado en lifespan())."""
+    return request.app.state.totp_login_attempt_limiter
+
+
+# Cookie del JWT de "pre-auth" (login de 2 pasos con 2FA — account-settings,
+# design.md Decision 1). Separada de SESSION_COOKIE_NAME ("session") a
+# propósito: un cliente que ignorara el estado "pendiente" nunca podría usar
+# este token como si fuera una sesión completa simplemente por estar en la
+# cookie de siempre — defensa en profundidad barata, además del rechazo
+# explícito en get_current_user() (src/api/deps.py).
+PENDING_2FA_COOKIE_NAME = "pending_2fa_session"
+PENDING_2FA_COOKIE_MAX_AGE_SECONDS = 120
+
+
 @app.post("/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED, tags=["auth"])
 async def register(
     payload: UserCreate,
@@ -525,6 +652,7 @@ async def login(
     payload: dict,
     response: Response,
     auth_service: AuthService = Depends(_get_auth_service),
+    totp_limiter: Login2FAAttemptLimiter = Depends(_get_totp_login_attempt_limiter),
 ):
     """
     Login. Mensaje de error genérico e indistinguible entre "email no
@@ -555,6 +683,53 @@ async def login(
             content={"error": "invalid credentials"},
         )
 
+    # (account-settings, tarea 3.3, design.md Decision 1) Login de dos pasos
+    # cuando totp_enabled=true: password correcto por sí solo NO otorga
+    # sesión completa. Se emite un JWT de pre-auth de vida corta en una
+    # cookie SEPARADA de `session`, y se responde {"requires_2fa": true} sin
+    # UserPublic — el frontend usa este shape para distinguir "login
+    # completo" de "falta segundo factor" (dashboard/lib/auth.ts, Phase 4).
+    if user.totp_enabled:
+        pre_auth_token = auth_service.create_access_token(user, pending_2fa=True)
+        # Rate-limiting de login-verify (account-settings, fix post-verify):
+        # un pre-auth NUEVO reinicia el presupuesto de intentos de código
+        # para este usuario — el contador es por `sub` (ver
+        # Login2FAAttemptLimiter en auth_service.py), así que sin este reset
+        # explícito un usuario que ya agotó sus intentos en un login previo
+        # seguiría bloqueado en el login siguiente aunque el TTL no haya
+        # vencido. Best-effort: si Redis no está disponible, no debe romper
+        # el login (mismo criterio best-effort que el resto del uso de Redis
+        # en este proyecto — ver event_bus).
+        try:
+            await totp_limiter.reset(user.id)
+        except Exception:
+            logger.warning(
+                "No se pudo resetear el rate-limiter de 2FA login-verify "
+                "para user_id=%s (Redis no disponible?)", user.id, exc_info=True,
+            )
+        # NOTA: la cookie se setea sobre el JSONResponse que efectivamente
+        # se retorna, NO sobre el `response: Response` inyectado por FastAPI
+        # — un `return JSONResponse(...)` explícito reemplaza por completo
+        # la respuesta que FastAPI construiría a partir de ese `response`
+        # inyectado, así que cualquier `response.set_cookie(...)` hecho
+        # sobre él se perdería silenciosamente (bug real detectado en
+        # verificación: el test de integración de esta rama fallaba porque
+        # la cookie pending_2fa_session nunca llegaba al cliente).
+        json_response = JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"requires_2fa": True},
+        )
+        json_response.set_cookie(
+            PENDING_2FA_COOKIE_NAME,
+            pre_auth_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=PENDING_2FA_COOKIE_MAX_AGE_SECONDS,
+        )
+        requests_total.labels(endpoint="/auth/login", status="200").inc()
+        return json_response
+
     token = auth_service.create_access_token(user)
     response.set_cookie(
         SESSION_COOKIE_NAME,
@@ -566,7 +741,14 @@ async def login(
     )
 
     requests_total.labels(endpoint="/auth/login", status="200").inc()
-    return UserPublic(id=user.id, email=user.email, role=user.role)
+    return UserPublic(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        google_id=user.google_id,
+        name=user.name,
+        avatar_url=user.avatar_url,
+    )
 
 
 @app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
@@ -588,6 +770,456 @@ async def get_me(current_user: CurrentUser = Depends(get_current_user)) -> Curre
     """
     requests_total.labels(endpoint="/auth/me", status="200").inc()
     return current_user
+
+
+# =============================================================================
+# account-settings — 2FA TOTP (login de 2 pasos, setup, verify, disable)
+#
+# POST /auth/2fa/login-verify NO usa Depends(get_current_user): el token que
+# consume es de pre-auth (pending_2fa=true), que get_current_user() rechaza
+# explícitamente (design.md Decision 1, deps.py tarea 3.1). Decodifica el
+# payload crudo a mano vía decode_token_payload().
+#
+# POST /auth/2fa/setup, /verify (setup) y /disable SÍ usan
+# Depends(get_current_user) — requieren sesión COMPLETA.
+# =============================================================================
+
+
+@app.post("/auth/2fa/login-verify", tags=["auth"])
+async def login_verify_2fa(
+    payload: TotpVerifyRequest,
+    request: Request,
+    response: Response,
+    auth_service: AuthService = Depends(_get_auth_service),
+    totp_limiter: Login2FAAttemptLimiter = Depends(_get_totp_login_attempt_limiter),
+):
+    """
+    Segundo paso del login con 2FA — [Requirement: Login con 2FA habilitado
+    requiere segundo factor] + [Requirement: Uso de backup codes como
+    alternativa al código TOTP en el login].
+
+    Requiere la cookie `pending_2fa_session` (emitida por POST /auth/login
+    cuando totp_enabled=true). Si está ausente/expirada/inválida -> 401 sin
+    tocar ninguna cookie de sesión completa. Código válido (TOTP o backup
+    code) -> emite `session` completa (create_access_token estándar), borra
+    `pending_2fa_session`, responde 200 UserPublic. Código inválido -> 401.
+
+    Rate-limiting (fix post-verify, ver Login2FAAttemptLimiter en
+    auth_service.py): tras MAX_TOTP_LOGIN_ATTEMPTS intentos fallidos para el
+    mismo pre-auth (`sub`), se rechaza con 401 SIN siquiera evaluar el
+    código enviado — incluso uno correcto — forzando reiniciar el login
+    desde POST /auth/login (que emite un pre-auth nuevo y resetea el
+    contador). Best-effort: si Redis no está disponible, el endpoint
+    degrada a "sin límite de intentos" en vez de romper el login (mismo
+    criterio que el resto del uso de Redis en este proyecto).
+    """
+    pre_auth_token = request.cookies.get(PENDING_2FA_COOKIE_NAME)
+    if pre_auth_token is None:
+        requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "no pending 2FA session"},
+        )
+
+    try:
+        token_payload = auth_service.decode_token_payload(pre_auth_token)
+    except (InvalidTokenError, TokenExpiredError):
+        requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "no pending 2FA session"},
+        )
+
+    if token_payload.get("pending_2fa") is not True:
+        # Defensa en profundidad: un token que no sea de pre-auth (ej. uno
+        # de sesión completa reenviado por error) tampoco debe habilitar
+        # este flujo.
+        requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "no pending 2FA session"},
+        )
+
+    user_id = UUID(token_payload["sub"])
+
+    # Rate-limiting: se chequea ANTES de verificar el código, para que un
+    # pre-auth ya bloqueado rechace incluso un código CORRECTO (Requirement
+    # pedido: forzar reinicio del login desde POST /auth/login). Best-effort:
+    # si Redis no está disponible, se loguea y se continúa sin límite en vez
+    # de romper el login por completo.
+    try:
+        await totp_limiter.check_not_locked(user_id)
+    except TooManyTotpAttemptsError:
+        requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "invalid code"},
+        )
+    except Exception:
+        logger.warning(
+            "No se pudo consultar el rate-limiter de 2FA login-verify para "
+            "user_id=%s (Redis no disponible?) — continuando sin límite",
+            user_id, exc_info=True,
+        )
+
+    code_ok = await auth_service.verify_totp_or_backup_code(user_id, payload.code)
+    if not code_ok:
+        # Mismo criterio de no filtrar información que el login por
+        # password: no se distingue "código TOTP incorrecto" de "backup code
+        # inválido/ya usado" en el mensaje.
+        try:
+            await totp_limiter.register_failure(user_id)
+        except Exception:
+            logger.warning(
+                "No se pudo registrar el intento fallido de 2FA login-verify "
+                "para user_id=%s (Redis no disponible?)", user_id, exc_info=True,
+            )
+        requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "invalid code"},
+        )
+
+    user = await auth_service.get_user_by_id(user_id)
+    if user is None:
+        # El usuario referenciado por el claim `sub` del pre-auth token ya
+        # no existe (ej. borró su cuenta entre el login y este segundo
+        # paso) — mismo 401 genérico, sin distinguir la causa.
+        requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "invalid code"},
+        )
+
+    try:
+        await totp_limiter.reset(user_id)
+    except Exception:
+        logger.warning(
+            "No se pudo resetear el rate-limiter de 2FA login-verify tras "
+            "login exitoso para user_id=%s (Redis no disponible?)",
+            user_id, exc_info=True,
+        )
+
+    token = auth_service.create_access_token(user)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.auth_token_expire_minutes * 60,
+    )
+    response.delete_cookie(PENDING_2FA_COOKIE_NAME, samesite="lax")
+
+    requests_total.labels(endpoint="/auth/2fa/login-verify", status="200").inc()
+    return UserPublic(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        google_id=user.google_id,
+        name=user.name,
+        avatar_url=user.avatar_url,
+    )
+
+
+@app.post("/auth/2fa/setup", response_model=TotpSetupResponse, tags=["auth"])
+async def setup_2fa(
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    [Requirement: Activación de 2FA TOTP restringida a usuarios con password
+    propio] — protegido por Depends(get_current_user) (sesión completa, un
+    token pending_2fa=true ya es rechazado ahí).
+    """
+    try:
+        otpauth_uri, backup_codes = await auth_service.enable_totp(current_user.id)
+    except TotpNotAvailableForGoogleOnlyUserError:
+        requests_total.labels(endpoint="/auth/2fa/setup", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "2FA is not available for accounts without a password"},
+        )
+    except TotpAlreadyEnabledError:
+        requests_total.labels(endpoint="/auth/2fa/setup", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "2FA is already enabled — disable it before setting up again"},
+        )
+
+    requests_total.labels(endpoint="/auth/2fa/setup", status="200").inc()
+    return TotpSetupResponse(otpauth_uri=otpauth_uri, backup_codes=backup_codes)
+
+
+@app.post("/auth/2fa/verify", tags=["auth"])
+async def verify_2fa_setup(
+    payload: TotpVerifyRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    Verificación del código TOTP en el SETUP (distinto de
+    /auth/2fa/login-verify) — [Requirement: Verificación del código TOTP en
+    el setup]. Protegido por Depends(get_current_user): requiere sesión
+    completa (el setup ya se hizo con esa misma sesión en /auth/2fa/setup).
+    """
+    try:
+        await auth_service.verify_totp_setup(current_user.id, payload.code)
+    except InvalidTotpCodeError:
+        requests_total.labels(endpoint="/auth/2fa/verify", status="400").inc()
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "invalid or expired code"},
+        )
+
+    requests_total.labels(endpoint="/auth/2fa/verify", status="200").inc()
+    return {}
+
+
+@app.post("/auth/2fa/disable", tags=["auth"])
+async def disable_2fa(
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    [Requirement: Deshabilitación de 2FA] — protegido por
+    Depends(get_current_user) (sesión COMPLETA, ya que get_current_user
+    rechaza pending_2fa=true). Siempre 200 (idempotente, ver
+    AuthService.disable_totp()).
+    """
+    await auth_service.disable_totp(current_user.id)
+    requests_total.labels(endpoint="/auth/2fa/disable", status="200").inc()
+    return {}
+
+
+# =============================================================================
+# account-settings — Perfil extendido, exportación y borrado de cuenta
+# =============================================================================
+
+
+@app.get("/account/profile", response_model=UserProfile, tags=["account"])
+async def get_account_profile(
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> UserProfile:
+    """[Requirement: Consulta del perfil extendido propio]."""
+    requests_total.labels(endpoint="/account/profile", status="200").inc()
+    return await auth_service.get_profile(current_user.id)
+
+
+@app.patch("/account/profile", response_model=UserProfile, tags=["account"])
+async def update_account_profile(
+    payload: UserProfileUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> UserProfile:
+    """[Requirement: Edición del perfil extendido propio].
+
+    `payload` es `UserProfileUpdate` — no declara `role`/`email`/
+    `password_hash`, así que ningún valor de esos campos puede llegar a
+    `AuthService.update_profile()` a través de este endpoint (garantía de
+    diseño de tipos, ver src/models/user.py).
+    """
+    updated = await auth_service.update_profile(current_user.id, payload)
+    requests_total.labels(endpoint="/account/profile", status="200").inc()
+    return updated
+
+
+@app.get("/account/export", response_model=AccountExport, tags=["account"])
+async def export_account(
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> AccountExport:
+    """[Requirement: Exportación de los propios datos de cuenta]."""
+    requests_total.labels(endpoint="/account/export", status="200").inc()
+    return await auth_service.export_user_data(current_user.id)
+
+
+@app.delete("/account", tags=["account"])
+async def delete_account(
+    response: Response,
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """[Requirement: Eliminación de la propia cuenta].
+
+    Éxito -> borra también la cookie `session` del cliente (equivalente a un
+    logout forzado, ya que el usuario ya no existe). 409 si es el único
+    superadmin del sistema, sin tocar ninguna fila ni cookie.
+    """
+    try:
+        await auth_service.delete_account(current_user.id)
+    except LastSuperadminError:
+        requests_total.labels(endpoint="/account", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error": "no podés eliminar tu cuenta: sos el único superadmin del sistema"
+            },
+        )
+
+    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax")
+    requests_total.labels(endpoint="/account", status="200").inc()
+    return {}
+
+
+# -----------------------------------------------------------------------
+# Auth vía Google OAuth (google-oauth) — ver design.md/tasks.md Phase 3.
+#
+# Convención de redirects (tasks.md 3.12, resuelve la Open Question de
+# design.md sobre destino exacto): en éxito, 302 al dashboard (raíz). En
+# error (las 4 ramas de 3.6-3.10), 302 a "/login?error=<código-legible>" del
+# dashboard, consistente en las 5 ramas (4 de error + 1 de éxito) de este
+# bloque. Los códigos de error son valores cortos, estables y legibles por
+# el frontend (no mensajes libres), para que dashboard/app/login/page.tsx
+# pueda mapearlos a copy localizado sin parsear texto libre.
+#
+# CRÍTICO: ambos destinos usan settings.dashboard_url (URL ABSOLUTA), NUNCA
+# una ruta relativa ("/", "/login"). El navegador resuelve una ruta relativa
+# contra el ORIGEN que sirvió el 302 — que es ESTE backend (ej. :8000),
+# donde GET / devuelve el JSON de info de la API, no el dashboard de
+# Next.js (otro origen, ej. :3008). Bug real detectado en verificación
+# manual con consentimiento real de Google: sin esto, el usuario terminaba
+# viendo la respuesta de la API en vez de su sesión en el dashboard.
+# -----------------------------------------------------------------------
+
+_GOOGLE_LOGIN_ERROR_REDIRECT = "{dashboard_url}/login?error={code}"
+
+
+def _google_error_redirect(code: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=_GOOGLE_LOGIN_ERROR_REDIRECT.format(dashboard_url=settings.dashboard_url, code=code),
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@app.get("/auth/google/login", tags=["auth"])
+async def google_login(request: Request):
+    """
+    Inicia el flujo OAuth 2.0 Authorization Code con Google — redirige al
+    navegador al endpoint de autorización de Google con `client_id`,
+    `redirect_uri`, `scope` y un `state` generado y persistido por Authlib
+    (cookie `oauth_state`, ver SessionMiddleware arriba) —
+    [Requirement: Endpoints OAuth de Google / Scenario: GET
+    /auth/google/login redirige a Google con los parámetros correctos].
+
+    503 si Google OAuth no está configurado (design.md Decision 1) — no es
+    un fail-fast de arranque, es una condición de runtime consultada acá.
+    """
+    if not request.app.state.google_oauth_enabled:
+        requests_total.labels(endpoint="/auth/google/login", status="503").inc()
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": "Google OAuth not configured"},
+        )
+
+    requests_total.labels(endpoint="/auth/google/login", status="302").inc()
+    return await oauth.google.authorize_redirect(request, settings.google_redirect_uri)
+
+
+@app.get("/auth/google/callback", tags=["auth"])
+async def google_callback(
+    request: Request,
+    response: Response,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    Callback de Google tras el consentimiento del usuario. Resuelve/crea el
+    usuario y emite la MISMA cookie `session` httpOnly que `/auth/login`
+    (reutilización estricta de `AuthService.create_access_token()` — ver
+    design.md Decision 5). En cualquier rama de error: redirect a
+    `/login?error=<código>`, sin `Set-Cookie`, sin tocar `users`, nunca 500
+    — [Requirement: Manejo de errores del flujo OAuth de Google].
+
+    503 si Google OAuth no está configurado (mismo criterio que
+    /auth/google/login).
+    """
+    if not request.app.state.google_oauth_enabled:
+        requests_total.labels(endpoint="/auth/google/callback", status="503").inc()
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": "Google OAuth not configured"},
+        )
+
+    # (3.6) Usuario canceló el consentimiento: Google redirige sin `code`.
+    if error is not None:
+        # (3.7) Google devuelve un parámetro de error explícito
+        # (access_denied u otro) — mismo tratamiento que "sin code".
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_" + error)
+
+    if code is None:
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_cancelled")
+
+    # (3.8) Intercambio code -> token contra Google. Authlib valida el
+    # `state` internamente (compara contra la cookie "oauth_state" seteada
+    # por authorize_redirect) y levanta MismatchingStateError si no
+    # coincide (state ausente/reutilizado/manipulado) — no se reimplementa
+    # esa comparación a mano (design.md Decision 2). OAuthError es la clase
+    # base de Authlib para MismatchingStateError y para cualquier otro
+    # fallo del intercambio código->token (timeout, código expirado,
+    # client_id/client_secret inválidos) — se captura acá para nunca dejar
+    # escapar un 500 no controlado.
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except OAuthError:
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_token_exchange_failed")
+
+    # (3.9) La validación de firma/claims (iss, aud, exp) del ID token la
+    # hace Authlib internamente al parsear `token["userinfo"]`, contra las
+    # JWKS publicadas por Google (server_metadata_url de oauth.register) —
+    # no se reimplementa acá. Si esa validación falla, Authlib levanta una
+    # excepción (subclase de OAuthError o, en casos de JWT malformado, un
+    # error de la librería jose subyacente) antes de que el flujo llegue a
+    # esta línea; el try/except de arriba ya cubre authorize_access_token,
+    # que es donde ocurre el parseo+validación del ID token.
+    userinfo = token.get("userinfo")
+    if userinfo is None:
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_invalid_id_token")
+
+    # (3.10) email_verified vive en el endpoint, NO en AuthService
+    # (design.md Decision 4) — AuthService.resolve_or_create_google_user()
+    # no conoce el concepto de "email_verified", es un claim específico de
+    # OpenID Connect/Google, no un concepto genérico de "usuario".
+    if not userinfo.get("email_verified"):
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_oauth_email_not_verified")
+
+    # (3.11) Resolución/creación de usuario + emisión de la MISMA cookie
+    # "session" que usa /auth/login (mismo create_access_token(), mismos
+    # atributos de cookie).
+    #
+    # name/picture (extensión google-oauth, migración 004): claims estándar
+    # OpenID Connect que Google entrega dado el scope "openid email profile"
+    # (ver oauth.register() en lifespan()). A diferencia de sub/email/
+    # email_verified, son OPCIONALES en el ID token — .get() con default None,
+    # nunca deben bloquear el login si Google no los envía por algún motivo.
+    user = await auth_service.resolve_or_create_google_user(
+        google_id=userinfo["sub"],
+        email=userinfo["email"],
+        name=userinfo.get("name"),
+        avatar_url=userinfo.get("picture"),
+    )
+    access_token = auth_service.create_access_token(user)
+
+    redirect = RedirectResponse(url=settings.dashboard_url, status_code=status.HTTP_302_FOUND)
+    redirect.set_cookie(
+        SESSION_COOKIE_NAME,
+        access_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.auth_token_expire_minutes * 60,
+    )
+
+    requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+    return redirect
 
 
 # =============================================================================

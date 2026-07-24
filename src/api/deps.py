@@ -44,9 +44,32 @@ async def get_current_user(
     no autenticado recibe 401] y [Scenario: Cookie con JWT corrupto o con
     firma inválida recibe 401] — en ambos casos (y en el de expiración) el
     resultado público es 401, nunca una excepción no controlada (500).
+
+    [Tarea 3.1, account-settings, design.md Decision 1] Defensa en
+    profundidad: ANTES de construir el `CurrentUser`, se decodifica el
+    payload crudo (`decode_token_payload()`, que no exige el shape completo
+    de sesión) y se rechaza explícitamente con 401 cualquier token con
+    `pending_2fa=true` — un JWT de pre-auth (emitido por `POST /auth/login`
+    cuando `totp_enabled=true`, ver Phase 3) JAMÁS debe resolver una
+    identidad completa, incluso si (por bug o manipulación del cliente)
+    terminara en la cookie `session` en lugar de `pending_2fa_session`.
     """
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="not authenticated",
+        )
+
+    try:
+        payload = auth_service.decode_token_payload(token)
+    except (InvalidTokenError, TokenExpiredError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="not authenticated",
+        ) from exc
+
+    if payload.get("pending_2fa") is True:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="not authenticated",

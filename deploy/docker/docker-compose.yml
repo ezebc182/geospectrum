@@ -69,6 +69,33 @@ services:
       # AUTH_SECRET_KEY: "change-me-in-production"
       # AUTH_TOKEN_EXPIRE_MINUTES: "1440"
 
+      # Google OAuth (google-oauth) — extensión opcional de Auth arriba.
+      # Requiere que AUTH_SECRET_KEY ya esté seteado (SessionMiddleware para
+      # el state de OAuth reutiliza ese mismo secreto, ver src/main.py). Antes
+      # de desplegar el código nuevo, aplicar manualmente contra el Postgres
+      # del perfil `storage` la migración
+      # deploy/sql/migrations/003_add_google_oauth.sql (mismo mecanismo que
+      # 001/002 — no hay Alembic ni migrador automático), ya que agrega la
+      # columna `google_id` y vuelve `password_hash` nullable. A diferencia de
+      # AUTH_SECRET_KEY (fail-fast: si falta, el servidor NO arranca), estas
+      # 3 variables son OPCIONALES al arranque: si faltan, el servidor
+      # arranca igual con `google_oauth_configured=False`, los endpoints
+      # `/auth/google/*` responden 503, y el login por password sigue
+      # funcionando sin ninguna degradación. Obtener client ID/secret desde
+      # Google Cloud Console (OAuth 2.0 Client IDs) y setear GOOGLE_REDIRECT_URI
+      # apuntando a la URL pública de este servicio + `/auth/google/callback`.
+      # GOOGLE_CLIENT_ID: "your-client-id.apps.googleusercontent.com"
+      # GOOGLE_CLIENT_SECRET: "your-client-secret"
+      # GOOGLE_REDIRECT_URI: "http://localhost:8000/auth/google/callback"
+
+      # URL pública del dashboard — a diferencia de las 3 vars de arriba,
+      # ESTA SÍ es obligatoria para que el login por Google no rompa: es el
+      # destino final del 302 de /auth/google/callback (éxito y error). Sin
+      # setearla explícitamente en producción, cae en el default de código
+      # (http://localhost:3008, solo válido en dev local) y el usuario
+      # termina viendo la respuesta JSON de esta API en vez de su sesión.
+      # DASHBOARD_URL: "https://tu-dashboard.example.com"
+
     depends_on:
       - inpres-adapter
     restart: unless-stopped

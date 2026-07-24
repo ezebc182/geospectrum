@@ -1,6 +1,7 @@
 """
 Modelos de datos para autenticación multi-usuario con roles.
 """
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 from uuid import UUID
@@ -71,6 +72,13 @@ class UserPublic(BaseModel):
     # google_id: Optional (ver openspec/changes/google-oauth/design.md) —
     # None si el usuario nunca vinculó una cuenta de Google (solo password).
     google_id: Optional[str] = None
+    # name/avatar_url: Optional (migración 004, extensión de google-oauth).
+    # Solo se completan para usuarios que se loguearon vía Google (claims
+    # OpenID Connect `name`/`picture`); un usuario exclusivamente de password
+    # los tiene en None a propósito — el frontend resuelve un fallback de
+    # iniciales derivadas del email cuando avatar_url es None.
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class UserInDB(BaseModel):
@@ -86,6 +94,15 @@ class UserInDB(BaseModel):
     role: UserRole
     # None si el usuario nunca vinculó una cuenta de Google (solo password).
     google_id: Optional[str] = None
+    # Ver UserPublic.name/avatar_url arriba (migración 004).
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    # totp_enabled (migración 005, account-settings): default False para
+    # usuarios pre-existentes a la migración — get_user_by_email() siempre
+    # lo trae explícito desde `users` (columna NOT NULL DEFAULT false), pero
+    # el default acá evita romper cualquier construcción manual de UserInDB
+    # en tests que no lo especifiquen (mismo criterio que name/avatar_url).
+    totp_enabled: bool = False
 
 
 class CurrentUser(BaseModel):
@@ -94,3 +111,95 @@ class CurrentUser(BaseModel):
     id: UUID
     email: EmailStr
     role: UserRole
+    # Ver UserPublic.name/avatar_url arriba (migración 004) — el JWT emitido
+    # por AuthService.create_access_token() incluye estos claims para que
+    # get_current_user() no dependa de un round-trip extra a Postgres.
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+# --- account-settings (migración 005) --------------------------------------
+#
+# NOTA de nomenclatura (Decisión Cerrada, ver design.md Decision 2 y
+# tasks.md header): `full_name` (este bloque, editable por el usuario, vive
+# SOLO en /account/profile) y `name` (arriba, poblado exclusivamente por
+# Google OAuth, migración 004, expuesto en /auth/me/JWT/header/avatar) se
+# mantienen DELIBERADAMENTE separados. Ninguno de los modelos de abajo debe
+# mezclarse ni sobreescribirse con `UserPublic`/`CurrentUser`/`UserInDB`
+# (Decisión Cerrada #4 del proposal: el perfil extendido vive fuera del JWT).
+
+
+class UserProfile(BaseModel):
+    """Perfil extendido del usuario, expuesto SOLO vía GET /account/profile.
+
+    Todos los campos son opcionales (Decisión Cerrada #4 del proposal): un
+    usuario puede completar solo alguno de ellos, dejar el resto en blanco,
+    o no completar ninguno. Nunca aparece en /auth/me ni en los claims del
+    JWT — ver Requirement: Aislamiento del perfil extendido respecto de
+    /auth/me y del JWT (specs/account-settings/spec.md).
+
+    `totp_enabled` (fix puntual post-Phase 4, fuera del flujo de fases SDD):
+    único booleano de estado de seguridad expuesto acá — NUNCA `totp_secret`.
+    Se agrega porque ningún endpoint liviano exponía el estado de 2FA y el
+    frontend terminaba llamando a GET /account/export (pensado para exportar
+    TODOS los datos de la cuenta) solo para leer ese flag. `CurrentUser`/
+    `UserPublic` (sesión/auth) siguen sin tocarse — Decisión Cerrada #4 vigente.
+    """
+
+    full_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    totp_enabled: bool = False
+
+
+class UserProfileUpdate(BaseModel):
+    """Payload de PATCH /account/profile (actualización parcial).
+
+    Mismo shape que UserProfile a propósito: el endpoint aplica un UPDATE
+    parcial solo de los campos presentes (`exclude_unset=True`). Esta clase
+    NO incluye `role`, `email`, ni `password_hash` — la ausencia de esos
+    campos en el propio tipo ya garantiza, a nivel de diseño de tipos, que
+    este endpoint no puede tocar datos de seguridad de la cuenta (ver
+    Requirement: Edición del perfil extendido propio).
+    """
+
+    full_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class TotpSetupResponse(BaseModel):
+    """Respuesta de POST /auth/2fa/setup.
+
+    `backup_codes` viaja en texto claro únicamente en esta respuesta —
+    Decisión Cerrada #2 del proposal: se muestran UNA vez y nunca más se
+    exponen en claro por ningún otro endpoint.
+    """
+
+    otpauth_uri: str
+    backup_codes: list[str]
+
+
+class TotpVerifyRequest(BaseModel):
+    """Payload compartido por POST /auth/2fa/verify (setup) y
+    POST /auth/2fa/login-verify (login step): código TOTP de 6 dígitos o
+    backup code formateado "XXXX-XXXX" (8 caracteres + separador = 9).
+    """
+
+    code: str = Field(..., min_length=6, max_length=9)
+
+
+class AccountExport(BaseModel):
+    """Shape de GET /account/export (design.md Decision 5).
+
+    `account`/`security` son `dict` deliberadamente (no modelos Pydantic
+    dedicados): su contenido lo arma AuthService.export_user_data() a mano,
+    excluyendo explícitamente password_hash/totp_secret/backup codes por
+    construcción — ver Requirement: Exportación de los propios datos de
+    cuenta.
+    """
+
+    account: dict
+    profile: UserProfile
+    security: dict
+    exported_at: datetime
