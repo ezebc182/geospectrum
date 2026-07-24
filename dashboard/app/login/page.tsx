@@ -55,10 +55,11 @@ export default function LoginPage() {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, pendingTwoFactor, verifyTwoFactor, cancelTwoFactor } = useAuth();
 
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [code, setCode] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -76,7 +77,9 @@ function LoginPageContent() {
 
     try {
       await login(email, password);
-      router.push(DEFAULT_REDIRECT);
+      // Si el backend respondió requires_2fa, `login()` deja
+      // `pendingTwoFactor=true` sin redirigir — el segundo <form> se
+      // encarga de completar el flujo. Si no, ya hay sesión completa.
     } catch {
       // Mensaje genérico a propósito: el backend ya responde 401
       // indistinguible entre "email no existe" y "password incorrecto"
@@ -88,11 +91,94 @@ function LoginPageContent() {
     }
   }
 
+  async function handleVerifyCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      await verifyTwoFactor(code);
+      router.push(DEFAULT_REDIRECT);
+    } catch {
+      // Mismo criterio de no filtrar información que el login por password:
+      // no se distingue si el código era TOTP o backup code, ni si estaba
+      // vencido/ya usado/nunca existió (ver spec.md).
+      setError('Código inválido. Verificá el código de tu app de autenticación o backup code.');
+      setCode('');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleBackToLogin() {
+    cancelTwoFactor();
+    setPassword('');
+    setCode('');
+    setError(null);
+  }
+
   function handleGoogleLogin() {
     // Redirect completo de navegador (NO fetch/XHR): el flujo de Google es
     // Authorization Code y requiere navegación real para que el browser
     // reciba y siga el 302 a accounts.google.com.
     window.location.href = `${API_BASE_URL}/auth/google/login`;
+  }
+
+  if (pendingTwoFactor) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="items-center text-center">
+            <Activity className="mb-2 h-8 w-8 text-primary" />
+            <CardTitle>Verificación en dos pasos</CardTitle>
+            <CardDescription>
+              Ingresá el código de tu app de autenticación o un backup code
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleVerifyCode} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="code" className="text-sm font-medium text-foreground">
+                  Código
+                </label>
+                <Input
+                  id="code"
+                  name="code"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? 'Verificando…' : 'Verificar'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={handleBackToLogin}
+                disabled={submitting}
+              >
+                Volver
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

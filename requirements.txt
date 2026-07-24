@@ -42,6 +42,15 @@ Authlib==1.7.2
 # SessionMiddleware es un módulo opcional), así que se fija explícita acá.
 itsdangerous==2.2.0
 
+# Auth (account-settings) — TOTP (RFC 6238) para 2FA con QR + backup codes
+# (ver openspec/changes/account-settings/design.md, Decision 7). 2.10.0 es la
+# última versión estable en PyPI al momento de esta tarea (design.md refería
+# 2.9.0 como conocida al momento del diseño; se fija la versión real
+# disponible, mismo criterio ya aplicado a Authlib==1.7.2 en google-oauth).
+# NO se agrega `qrcode`: el QR se renderiza client-side en dashboard/ a partir
+# del otpauth:// URI (Decision 7) — el backend nunca genera una imagen PNG.
+pyotp==2.10.0
+
 # Utils
 python-dateutil==2.9.0
 pytz==2024.1
