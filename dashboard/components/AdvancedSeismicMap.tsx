@@ -10,6 +10,14 @@ import type { SeismicEvent } from '@/lib/types';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
+import {
+  partitionByKind,
+  parsePolarity,
+  styleFor,
+  SUBDUCTION_SYMBOL_SPACING_PX,
+  SUBDUCTION_SYMBOL_SIZE_PX,
+  type PlateBoundaryCollection,
+} from '@/lib/plate-boundaries';
 import { Layers, Eye, EyeOff } from 'lucide-react';
 
 interface AdvancedSeismicMapProps {
@@ -104,6 +112,10 @@ export function AdvancedSeismicMap({
   const [currentLayer, setCurrentLayer] = useState<keyof typeof BASE_LAYERS>(defaultLayer);
   const [activeOverlays, setActiveOverlays] = useState<string[]>([]);
   const [showLayerControl, setShowLayerControl] = useState(false);
+  // `showPlateBoundaries` es solo el valor INICIAL: el usuario puede togglear la capa desde el panel
+  // (Decisión 3 de 2026-07-27-plate-boundaries-usgs-style-design.md). Antes era una prop fija, así
+  // que las placas quedaban prendidas en el Dashboard y apagadas en /explore sin forma de cambiarlo.
+  const [showPlates, setShowPlates] = useState(showPlateBoundaries);
 
   // Inicializar mapa
   useEffect(() => {
@@ -302,10 +314,13 @@ export function AdvancedSeismicMap({
     }
   }, [eventos, onEventClick]);
 
-  // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado).
+  // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado), estilizados por
+  // tipo de contacto como el mapa Latest Earthquakes del USGS: las 65 zonas de subducción llevan
+  // dientes de sierra orientados según la polaridad codificada en `Name`; los 176 límites restantes,
+  // trazo simple (2026-07-27-plate-boundaries-usgs-style-design.md).
   // Efecto separado del de inicialización del mapa: async, no bloqueante (Decisión 1 de design.md).
   useEffect(() => {
-    if (!leafletMapRef.current || !showPlateBoundaries) return;
+    if (!leafletMapRef.current || !showPlates) return;
 
     let cancelled = false;
 
@@ -315,13 +330,61 @@ export function AdvancedSeismicMap({
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
         })
-        .then((data) => {
+        .then(async (data: PlateBoundaryCollection) => {
           if (cancelled || !leafletMapRef.current) return;
-          const layer = L.geoJSON(data, {
-            style: { color: '#dc2626', weight: 1.5, opacity: 0.7 },
-          });
-          layer.addTo(leafletMapRef.current);
-          plateBoundariesLayerRef.current = layer;
+
+          // Un solo LayerGroup contenedor: el cleanup sigue siendo un removeLayer, igual que antes.
+          const group = L.layerGroup();
+          const { subduction, other } = partitionByKind(data);
+
+          for (const kind of ['other', 'subduction'] as const) {
+            const features = kind === 'subduction' ? subduction : other;
+            if (features.length === 0) continue;
+            L.geoJSON(
+              { type: 'FeatureCollection', features } as any,
+              { style: styleFor(kind) }
+            ).addTo(group);
+          }
+
+          group.addTo(leafletMapRef.current);
+          plateBoundariesLayerRef.current = group;
+
+          // Dientes de sierra: se aplican solo sobre los 65 features de subducción. El decorador es
+          // opcional — si el plugin falla al cargar, las líneas ya están dibujadas y la capa degrada
+          // a "placas sin símbolos" en lugar de romper el mapa.
+          try {
+            await import('leaflet-polylinedecorator');
+            if (cancelled || !leafletMapRef.current) return;
+
+            for (const feature of subduction) {
+              const polarity = parsePolarity(feature.properties.Name);
+              if (!polarity) continue;
+              // GeoJSON es [lon, lat]; Leaflet espera [lat, lon].
+              const latLngs = feature.geometry.coordinates.map(
+                ([lon, lat]) => [lat, lon] as [number, number]
+              );
+              // `forward` (A/B) apunta en el sentido del trazado, `reverse` (A\B) en el opuesto:
+              // es la polaridad de subducción de PB2002, o sea hacia dónde se hunde la placa.
+              (L as any)
+                .polylineDecorator(latLngs, {
+                  patterns: [
+                    {
+                      offset: SUBDUCTION_SYMBOL_SPACING_PX / 2,
+                      repeat: SUBDUCTION_SYMBOL_SPACING_PX,
+                      symbol: (L as any).Symbol.arrowHead({
+                        pixelSize: SUBDUCTION_SYMBOL_SIZE_PX,
+                        headAngle: polarity === 'forward' ? 60 : -60,
+                        polygon: true,
+                        pathOptions: { ...styleFor('subduction'), fillOpacity: 0.9, weight: 1 },
+                      }),
+                    },
+                  ],
+                })
+                .addTo(group);
+            }
+          } catch (err) {
+            console.error('No se pudieron dibujar los símbolos de subducción:', err);
+          }
         })
         .catch((err) => {
           // Falla de red/parseo no debe romper el resto del mapa (spec Requirement 2).
@@ -336,7 +399,7 @@ export function AdvancedSeismicMap({
         plateBoundariesLayerRef.current = null;
       }
     };
-  }, [showPlateBoundaries]);
+  }, [showPlates]);
 
   // Centrar/resaltar el evento seleccionado externamente (sincronización tabla→mapa, Decisión 3).
   useEffect(() => {
@@ -417,6 +480,25 @@ export function AdvancedSeismicMap({
                   </label>
                 ))}
               </div>
+            </div>
+
+            {/* Capas Tectónicas: vectoriales (GeoJSON), no tiles — por eso no están en GEOLOGICAL_OVERLAYS. */}
+            <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-4 mb-4">
+              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Capas Tectónicas</h4>
+              <label className="flex items-start gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                <input
+                  type="checkbox"
+                  checked={showPlates}
+                  onChange={() => setShowPlates(prev => !prev)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">Límites de Placas</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    Zonas de subducción con dientes de sierra y otros límites tectónicos (PB2002)
+                  </div>
+                </div>
+              </label>
             </div>
 
             {/* Overlays Geológicos */}
