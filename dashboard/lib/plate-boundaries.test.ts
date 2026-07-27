@@ -6,6 +6,7 @@ import {
   parsePolarity,
   partitionByKind,
   styleFor,
+  toLatLngs,
   type PlateBoundaryCollection,
   type PlateBoundaryFeature,
 } from './plate-boundaries';
@@ -88,6 +89,85 @@ describe('partitionByKind', () => {
   it('devuelve grupos vacíos ante una colección sin features', () => {
     const groups = partitionByKind({ type: 'FeatureCollection', features: [] });
     expect(groups).toEqual({ subduction: [], other: [] });
+  });
+});
+
+describe('toLatLngs', () => {
+  it('convierte [lon, lat] de GeoJSON a [lat, lon] de Leaflet', () => {
+    const feature = makeFeature('AF-AN', '');
+    feature.geometry.coordinates = [[-70, -33], [-71, -34]];
+    expect(toLatLngs(feature)).toEqual([[-33, -70], [-34, -71]]);
+  });
+
+  it('conserva el orden de los vértices cuando la polaridad es forward', () => {
+    const feature = makeFeature('NZ/SA', 'subduction');
+    feature.geometry.coordinates = [[-70, -20], [-71, -30], [-72, -40]];
+    expect(toLatLngs(feature)).toEqual([[-20, -70], [-30, -71], [-40, -72]]);
+  });
+
+  it('invierte el orden de los vértices cuando la polaridad es reverse', () => {
+    const feature = makeFeature('NZ\\SA', 'subduction');
+    feature.geometry.coordinates = [[-70, -20], [-71, -30], [-72, -40]];
+    expect(toLatLngs(feature)).toEqual([[-40, -72], [-30, -71], [-20, -70]]);
+  });
+
+  it('no muta el feature original', () => {
+    const feature = makeFeature('NZ\\SA', 'subduction');
+    feature.geometry.coordinates = [[-70, -20], [-72, -40]];
+    toLatLngs(feature);
+    expect(feature.geometry.coordinates).toEqual([[-70, -20], [-72, -40]]);
+  });
+});
+
+/**
+ * Rumbo inicial de una traza ya convertida a [lat, lon], en grados desde el norte.
+ * Replica el cálculo con el que se validó la convención de polaridad contra la
+ * geología conocida de la zona de subducción de Chile/Perú.
+ */
+function initialBearing(latLngs: [number, number][]): number {
+  const [lat1, lon1] = latLngs[0];
+  const [lat2, lon2] = latLngs[1];
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Fija la orientación de los dientes de sierra contra un caso de geología conocida,
+ * que es lo único que ningún test de tipos puede cubrir: si alguien vuelve a intentar
+ * invertir la polaridad con `headAngle` en vez de con el orden de los vértices, la
+ * subducción quedaría dibujada del lado equivocado y este test lo detecta.
+ */
+describe('orientación de los dientes de sierra (caso Chile/Perú)', () => {
+  const dataset: PlateBoundaryCollection = JSON.parse(
+    readFileSync(join(__dirname, '..', 'public', 'geo', 'plate-boundaries.json'), 'utf-8')
+  );
+
+  it('orienta los símbolos de NZ\\SA hacia el este, donde Nazca subduce bajo Sudamérica', () => {
+    // Traza más larga del límite Nazca/Sudamérica: costa de Chile y Perú.
+    const nazcaSudamerica = dataset.features
+      .filter((f) => f.properties.PlateA === 'NZ' && f.properties.PlateB === 'SA')
+      .sort((a, b) => b.geometry.coordinates.length - a.geometry.coordinates.length)[0];
+
+    expect(nazcaSudamerica).toBeDefined();
+    expect(parsePolarity(nazcaSudamerica.properties.Name)).toBe('reverse');
+
+    // Sin invertir, la traza corre de sur a norte (rumbo ~8°, casi Norte), lo que dejaría
+    // los dientes apuntando al oeste, hacia el océano: al revés de la geología real.
+    const sinInvertir = nazcaSudamerica.geometry.coordinates.map(
+      ([lon, lat]) => [lat, lon] as [number, number]
+    );
+    expect(initialBearing(sinInvertir)).toBeLessThan(45);
+
+    // toLatLngs invierte el recorrido: pasa a ir de norte a sur (rumbo ~188°), y el
+    // símbolo, perpendicular a la izquierda del avance, queda mirando al este.
+    const bearing = initialBearing(toLatLngs(nazcaSudamerica));
+    expect(bearing).toBeGreaterThan(90);
+    expect(bearing).toBeLessThan(270);
   });
 });
 

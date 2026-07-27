@@ -65,6 +65,16 @@ export const SUBDUCTION_SYMBOL_SPACING_PX = 40;
 export const SUBDUCTION_SYMBOL_SIZE_PX = 7;
 
 /**
+ * Ángulo de APERTURA de la punta del diente de sierra, en grados: el símbolo se abre
+ * `±SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG / 2` respecto de la dirección del segmento.
+ *
+ * No confundir con la orientación del símbolo, que sale del sentido de recorrido de la
+ * traza (ver `toLatLngs`). Cambiarle el signo a este valor no invierte el diente: solo
+ * refleja la punta sobre su propio eje.
+ */
+export const SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG = 60;
+
+/**
  * Clasifica un feature por su tipo de contacto.
  *
  * El dataset solo distingue `"subduction"` del resto (cadena vacía), así que
@@ -96,6 +106,34 @@ export function parsePolarity(name: string): Polarity | null {
 /** Estilo de trazo para un tipo de contacto. */
 export function styleFor(kind: BoundaryKind): BoundaryStyle {
   return STYLES[kind];
+}
+
+/**
+ * Convierte las coordenadas de un feature a pares `[lat, lon]` orientados según la
+ * polaridad de subducción.
+ *
+ * GeoJSON usa `[lon, lat]` y Leaflet `[lat, lon]`, así que siempre hay que invertir
+ * cada par. Además, cuando la polaridad es `reverse` se invierte el ORDEN de los
+ * vértices.
+ *
+ * Ese segundo paso es el que orienta los dientes de sierra. Los renderers de símbolos
+ * sobre polilíneas (leaflet-polylinedecorator y equivalentes) derivan la dirección del
+ * símbolo del rumbo de cada segmento, y no exponen un flag para invertirla: el
+ * `headAngle` de `L.Symbol.arrowHead` es el ángulo de APERTURA de la punta
+ * (`direction ± headAngle/2`), no su orientación. Recorrer la traza al revés es lo que
+ * hace que la punta mire al otro lado.
+ *
+ * Verificación geométrica de la convención, sobre el feature `NZ\SA` (costa de
+ * Chile/Perú): su traza va de sur a norte con rumbo ~8°, y la geología conocida es que
+ * Nazca (oceánica, al oeste) subduce bajo Sudamérica (al este), así que los dientes
+ * deben apuntar al este. Con `\` mapeado a `reverse`, el recorrido invertido produce
+ * esa orientación.
+ */
+export function toLatLngs(feature: PlateBoundaryFeature): [number, number][] {
+  const latLngs = feature.geometry.coordinates.map(
+    ([lon, lat]) => [lat, lon] as [number, number]
+  );
+  return parsePolarity(feature.properties.Name) === 'reverse' ? latLngs.reverse() : latLngs;
 }
 
 /**

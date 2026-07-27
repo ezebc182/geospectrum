@@ -14,8 +14,10 @@ import {
   partitionByKind,
   parsePolarity,
   styleFor,
+  toLatLngs,
   SUBDUCTION_SYMBOL_SPACING_PX,
   SUBDUCTION_SYMBOL_SIZE_PX,
+  SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
   type PlateBoundaryCollection,
 } from '@/lib/plate-boundaries';
 import { Layers, Eye, EyeOff } from 'lucide-react';
@@ -357,14 +359,13 @@ export function AdvancedSeismicMap({
             if (cancelled || !leafletMapRef.current) return;
 
             for (const feature of subduction) {
-              const polarity = parsePolarity(feature.properties.Name);
-              if (!polarity) continue;
-              // GeoJSON es [lon, lat]; Leaflet espera [lat, lon].
-              const latLngs = feature.geometry.coordinates.map(
-                ([lon, lat]) => [lat, lon] as [number, number]
-              );
-              // `forward` (A/B) apunta en el sentido del trazado, `reverse` (A\B) en el opuesto:
-              // es la polaridad de subducción de PB2002, o sea hacia dónde se hunde la placa.
+              if (!parsePolarity(feature.properties.Name)) continue;
+              // toLatLngs invierte el orden de los vértices cuando la polaridad es `reverse`:
+              // el decorador deriva la dirección del símbolo del rumbo de cada segmento, así
+              // que recorrer la traza al revés es lo que hace que los dientes de sierra miren
+              // al lado correcto. `headAngle` NO sirve para esto: es el ángulo de apertura de
+              // la punta (direction ± headAngle/2), no su orientación.
+              const latLngs = toLatLngs(feature);
               (L as any)
                 .polylineDecorator(latLngs, {
                   patterns: [
@@ -373,7 +374,7 @@ export function AdvancedSeismicMap({
                       repeat: SUBDUCTION_SYMBOL_SPACING_PX,
                       symbol: (L as any).Symbol.arrowHead({
                         pixelSize: SUBDUCTION_SYMBOL_SIZE_PX,
-                        headAngle: polarity === 'forward' ? 60 : -60,
+                        headAngle: SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
                         polygon: true,
                         pathOptions: { ...styleFor('subduction'), fillOpacity: 0.9, weight: 1 },
                       }),
