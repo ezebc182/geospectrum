@@ -10,6 +10,16 @@ import type { SeismicEvent } from '@/lib/types';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
+import {
+  partitionByKind,
+  parsePolarity,
+  styleFor,
+  toLatLngs,
+  SUBDUCTION_SYMBOL_SPACING_PX,
+  SUBDUCTION_SYMBOL_SIZE_PX,
+  SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
+  type PlateBoundaryCollection,
+} from '@/lib/plate-boundaries';
 import { Layers, Eye, EyeOff } from 'lucide-react';
 
 interface AdvancedSeismicMapProps {
@@ -104,6 +114,16 @@ export function AdvancedSeismicMap({
   const [currentLayer, setCurrentLayer] = useState<keyof typeof BASE_LAYERS>(defaultLayer);
   const [activeOverlays, setActiveOverlays] = useState<string[]>([]);
   const [showLayerControl, setShowLayerControl] = useState(false);
+  // `showPlateBoundaries` es solo el valor INICIAL: el usuario puede togglear la capa desde el panel
+  // (Decisión 3 de 2026-07-27-plate-boundaries-usgs-style-design.md). Antes era una prop fija, así
+  // que las placas quedaban prendidas en el Dashboard y apagadas en /explore sin forma de cambiarlo.
+  const [showPlates, setShowPlates] = useState(showPlateBoundaries);
+  // La instancia del mapa vive TAMBIÉN en estado, no solo en `leafletMapRef`: un ref no
+  // dispara re-render, así que un efecto que dependa únicamente de él corre una sola vez
+  // —en el primer render, cuando el mapa todavía no existe— y ya nunca vuelve a correr.
+  // El efecto de placas necesita re-ejecutarse cuando el mapa queda listo; por eso su
+  // creación se publica como estado (ver deps del efecto de límites de placas).
+  const [mapInstance, setMapInstance] = useState<any>(null);
 
   // Inicializar mapa
   useEffect(() => {
@@ -191,6 +211,10 @@ export function AdvancedSeismicMap({
         }
 
         leafletMapRef.current = map;
+        // Publica la instancia como estado para despertar a los efectos que dependen de
+        // que el mapa ya exista (límites de placas). El ref se mantiene porque el resto
+        // del componente lo usa de forma síncrona dentro de callbacks.
+        setMapInstance(map);
       });
     }
 
@@ -198,6 +222,7 @@ export function AdvancedSeismicMap({
       if (leafletMapRef.current) {
         leafletMapRef.current.remove();
         leafletMapRef.current = null;
+        setMapInstance(null);
       }
     };
   }, [showCities, currentLayer]);
@@ -302,10 +327,16 @@ export function AdvancedSeismicMap({
     }
   }, [eventos, onEventClick]);
 
-  // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado).
+  // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado), estilizados por
+  // tipo de contacto como el mapa Latest Earthquakes del USGS: las 65 zonas de subducción llevan
+  // dientes de sierra orientados según la polaridad codificada en `Name`; los 176 límites restantes,
+  // trazo simple (2026-07-27-plate-boundaries-usgs-style-design.md).
   // Efecto separado del de inicialización del mapa: async, no bloqueante (Decisión 1 de design.md).
   useEffect(() => {
-    if (!leafletMapRef.current || !showPlateBoundaries) return;
+    // Depende de `mapInstance` (estado), no solo del ref: ver comentario en su declaración.
+    // Con `[showPlates]` como única dependencia este efecto corría una sola vez, antes de que
+    // el efecto de inicialización hubiera creado el mapa, y salía por el guard para siempre.
+    if (!mapInstance || !showPlates) return;
 
     let cancelled = false;
 
@@ -315,13 +346,78 @@ export function AdvancedSeismicMap({
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
         })
-        .then((data) => {
+        .then(async (data: PlateBoundaryCollection) => {
           if (cancelled || !leafletMapRef.current) return;
-          const layer = L.geoJSON(data, {
-            style: { color: '#dc2626', weight: 1.5, opacity: 0.7 },
-          });
-          layer.addTo(leafletMapRef.current);
-          plateBoundariesLayerRef.current = layer;
+
+          // Un solo LayerGroup contenedor: el cleanup sigue siendo un removeLayer, igual que antes.
+          const group = L.layerGroup();
+          const { subduction, other } = partitionByKind(data);
+
+          for (const kind of ['other', 'subduction'] as const) {
+            const features = kind === 'subduction' ? subduction : other;
+            if (features.length === 0) continue;
+            L.geoJSON(
+              { type: 'FeatureCollection', features } as any,
+              { style: styleFor(kind) }
+            ).addTo(group);
+          }
+
+          group.addTo(leafletMapRef.current);
+          plateBoundariesLayerRef.current = group;
+
+          // Dientes de sierra: se aplican solo sobre los 65 features de subducción. El decorador es
+          // opcional — si el plugin falla al cargar, las líneas ya están dibujadas y la capa degrada
+          // a "placas sin símbolos" en lugar de romper el mapa.
+          try {
+            // leaflet-polylinedecorator es un bundle UMD: recibe Leaflet por parámetro y le
+            // agrega `Symbol` y `polylineDecorator` a ESE objeto (ver dist/…js líneas 1-4,
+            // `factory(require('leaflet'))` / `factory(global.L)`). El `L` que devuelve
+            // `import('leaflet')` es el namespace ESM —un exotic object sellado, distinto del
+            // export CommonJS que recibe el plugin—, así que las extensiones NO aparecen ahí
+            // y `L.Symbol` queda undefined. Se publica `window.L` ANTES de cargar el plugin
+            // para que la rama UMD decore un objeto que sí podemos leer después.
+            const w = window as any;
+            w.L = w.L ?? L;
+            await import('leaflet-polylinedecorator');
+            if (cancelled || !leafletMapRef.current) return;
+
+            // Toma el namespace que realmente quedó decorado: `window.L` si el plugin lo
+            // extendió por la rama global, o el módulo si Webpack resolvió por CommonJS.
+            const LD: any = (w.L && w.L.Symbol) ? w.L : (L as any);
+            if (!LD.Symbol || !LD.polylineDecorator) {
+              throw new Error(
+                'leaflet-polylinedecorator no extendió Leaflet (Symbol/polylineDecorator ausentes)'
+              );
+            }
+
+            for (const feature of subduction) {
+              if (!parsePolarity(feature.properties.Name)) continue;
+              // toLatLngs invierte el orden de los vértices cuando la polaridad es `reverse`:
+              // el decorador deriva la dirección del símbolo del rumbo de cada segmento, así
+              // que recorrer la traza al revés es lo que hace que los dientes de sierra miren
+              // al lado correcto. `headAngle` NO sirve para esto: es el ángulo de apertura de
+              // la punta (direction ± headAngle/2), no su orientación.
+              const latLngs = toLatLngs(feature);
+              LD
+                .polylineDecorator(latLngs, {
+                  patterns: [
+                    {
+                      offset: SUBDUCTION_SYMBOL_SPACING_PX / 2,
+                      repeat: SUBDUCTION_SYMBOL_SPACING_PX,
+                      symbol: LD.Symbol.arrowHead({
+                        pixelSize: SUBDUCTION_SYMBOL_SIZE_PX,
+                        headAngle: SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
+                        polygon: true,
+                        pathOptions: { ...styleFor('subduction'), fillOpacity: 0.9, weight: 1 },
+                      }),
+                    },
+                  ],
+                })
+                .addTo(group);
+            }
+          } catch (err) {
+            console.error('No se pudieron dibujar los símbolos de subducción:', err);
+          }
         })
         .catch((err) => {
           // Falla de red/parseo no debe romper el resto del mapa (spec Requirement 2).
@@ -336,7 +432,7 @@ export function AdvancedSeismicMap({
         plateBoundariesLayerRef.current = null;
       }
     };
-  }, [showPlateBoundaries]);
+  }, [showPlates, mapInstance]);
 
   // Centrar/resaltar el evento seleccionado externamente (sincronización tabla→mapa, Decisión 3).
   useEffect(() => {
@@ -417,6 +513,25 @@ export function AdvancedSeismicMap({
                   </label>
                 ))}
               </div>
+            </div>
+
+            {/* Capas Tectónicas: vectoriales (GeoJSON), no tiles — por eso no están en GEOLOGICAL_OVERLAYS. */}
+            <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-4 mb-4">
+              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Capas Tectónicas</h4>
+              <label className="flex items-start gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+                <input
+                  type="checkbox"
+                  checked={showPlates}
+                  onChange={() => setShowPlates(prev => !prev)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">Límites de Placas</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                    Zonas de subducción con dientes de sierra y otros límites tectónicos (PB2002)
+                  </div>
+                </div>
+              </label>
             </div>
 
             {/* Overlays Geológicos */}
