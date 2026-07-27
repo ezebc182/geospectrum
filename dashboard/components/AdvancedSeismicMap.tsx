@@ -118,6 +118,12 @@ export function AdvancedSeismicMap({
   // (Decisión 3 de 2026-07-27-plate-boundaries-usgs-style-design.md). Antes era una prop fija, así
   // que las placas quedaban prendidas en el Dashboard y apagadas en /explore sin forma de cambiarlo.
   const [showPlates, setShowPlates] = useState(showPlateBoundaries);
+  // La instancia del mapa vive TAMBIÉN en estado, no solo en `leafletMapRef`: un ref no
+  // dispara re-render, así que un efecto que dependa únicamente de él corre una sola vez
+  // —en el primer render, cuando el mapa todavía no existe— y ya nunca vuelve a correr.
+  // El efecto de placas necesita re-ejecutarse cuando el mapa queda listo; por eso su
+  // creación se publica como estado (ver deps del efecto de límites de placas).
+  const [mapInstance, setMapInstance] = useState<any>(null);
 
   // Inicializar mapa
   useEffect(() => {
@@ -205,6 +211,10 @@ export function AdvancedSeismicMap({
         }
 
         leafletMapRef.current = map;
+        // Publica la instancia como estado para despertar a los efectos que dependen de
+        // que el mapa ya exista (límites de placas). El ref se mantiene porque el resto
+        // del componente lo usa de forma síncrona dentro de callbacks.
+        setMapInstance(map);
       });
     }
 
@@ -212,6 +222,7 @@ export function AdvancedSeismicMap({
       if (leafletMapRef.current) {
         leafletMapRef.current.remove();
         leafletMapRef.current = null;
+        setMapInstance(null);
       }
     };
   }, [showCities, currentLayer]);
@@ -322,7 +333,10 @@ export function AdvancedSeismicMap({
   // trazo simple (2026-07-27-plate-boundaries-usgs-style-design.md).
   // Efecto separado del de inicialización del mapa: async, no bloqueante (Decisión 1 de design.md).
   useEffect(() => {
-    if (!leafletMapRef.current || !showPlates) return;
+    // Depende de `mapInstance` (estado), no solo del ref: ver comentario en su declaración.
+    // Con `[showPlates]` como única dependencia este efecto corría una sola vez, antes de que
+    // el efecto de inicialización hubiera creado el mapa, y salía por el guard para siempre.
+    if (!mapInstance || !showPlates) return;
 
     let cancelled = false;
 
@@ -355,8 +369,26 @@ export function AdvancedSeismicMap({
           // opcional — si el plugin falla al cargar, las líneas ya están dibujadas y la capa degrada
           // a "placas sin símbolos" en lugar de romper el mapa.
           try {
+            // leaflet-polylinedecorator es un bundle UMD: recibe Leaflet por parámetro y le
+            // agrega `Symbol` y `polylineDecorator` a ESE objeto (ver dist/…js líneas 1-4,
+            // `factory(require('leaflet'))` / `factory(global.L)`). El `L` que devuelve
+            // `import('leaflet')` es el namespace ESM —un exotic object sellado, distinto del
+            // export CommonJS que recibe el plugin—, así que las extensiones NO aparecen ahí
+            // y `L.Symbol` queda undefined. Se publica `window.L` ANTES de cargar el plugin
+            // para que la rama UMD decore un objeto que sí podemos leer después.
+            const w = window as any;
+            w.L = w.L ?? L;
             await import('leaflet-polylinedecorator');
             if (cancelled || !leafletMapRef.current) return;
+
+            // Toma el namespace que realmente quedó decorado: `window.L` si el plugin lo
+            // extendió por la rama global, o el módulo si Webpack resolvió por CommonJS.
+            const LD: any = (w.L && w.L.Symbol) ? w.L : (L as any);
+            if (!LD.Symbol || !LD.polylineDecorator) {
+              throw new Error(
+                'leaflet-polylinedecorator no extendió Leaflet (Symbol/polylineDecorator ausentes)'
+              );
+            }
 
             for (const feature of subduction) {
               if (!parsePolarity(feature.properties.Name)) continue;
@@ -366,13 +398,13 @@ export function AdvancedSeismicMap({
               // al lado correcto. `headAngle` NO sirve para esto: es el ángulo de apertura de
               // la punta (direction ± headAngle/2), no su orientación.
               const latLngs = toLatLngs(feature);
-              (L as any)
+              LD
                 .polylineDecorator(latLngs, {
                   patterns: [
                     {
                       offset: SUBDUCTION_SYMBOL_SPACING_PX / 2,
                       repeat: SUBDUCTION_SYMBOL_SPACING_PX,
-                      symbol: (L as any).Symbol.arrowHead({
+                      symbol: LD.Symbol.arrowHead({
                         pixelSize: SUBDUCTION_SYMBOL_SIZE_PX,
                         headAngle: SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
                         polygon: true,
@@ -400,7 +432,7 @@ export function AdvancedSeismicMap({
         plateBoundariesLayerRef.current = null;
       }
     };
-  }, [showPlates]);
+  }, [showPlates, mapInstance]);
 
   // Centrar/resaltar el evento seleccionado externamente (sincronización tabla→mapa, Decisión 3).
   useEffect(() => {
