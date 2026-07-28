@@ -15,10 +15,13 @@ import {
   parsePolarity,
   styleFor,
   toLatLngs,
+  withWorldCopies,
+  worldCopyOffsets,
   SUBDUCTION_SYMBOL_SPACING_PX,
   SUBDUCTION_SYMBOL_SIZE_PX,
   SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
   type PlateBoundaryCollection,
+  type PlateBoundaryFeature,
 } from '@/lib/plate-boundaries';
 import { Layers, Eye, EyeOff } from 'lucide-react';
 
@@ -328,9 +331,10 @@ export function AdvancedSeismicMap({
   }, [eventos, onEventClick]);
 
   // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado), estilizados por
-  // tipo de contacto como el mapa Latest Earthquakes del USGS: las 65 zonas de subducción llevan
-  // dientes de sierra orientados según la polaridad codificada en `Name`; los 176 límites restantes,
-  // trazo simple (2026-07-27-plate-boundaries-usgs-style-design.md).
+  // tipo de contacto como el mapa Latest Earthquakes del USGS: los 73 tramos de subducción llevan
+  // dientes de sierra orientados según la polaridad codificada en `PLATEBOUND`; los 698 divergentes
+  // (dorsales y rifts) van punteados; el resto, trazo simple
+  // (2026-07-27-plate-boundaries-usgs-style-design.md).
   // Efecto separado del de inicialización del mapa: async, no bloqueante (Decisión 1 de design.md).
   useEffect(() => {
     // Depende de `mapInstance` (estado), no solo del ref: ver comentario en su declaración.
@@ -339,6 +343,9 @@ export function AdvancedSeismicMap({
     if (!mapInstance || !showPlates) return;
 
     let cancelled = false;
+    // Se asigna cuando el plugin de símbolos carga; hasta entonces la capa se dibuja sin dientes.
+    let decorate: (group: any, features: PlateBoundaryFeature[]) => void = () => {};
+    let onMoveEnd: (() => void) | null = null;
 
     import('leaflet').then((L) => {
       fetch('/geo/plate-boundaries.json')
@@ -349,23 +356,59 @@ export function AdvancedSeismicMap({
         .then(async (data: PlateBoundaryCollection) => {
           if (cancelled || !leafletMapRef.current) return;
 
-          // Un solo LayerGroup contenedor: el cleanup sigue siendo un removeLayer, igual que antes.
-          const group = L.layerGroup();
-          const { subduction, other } = partitionByKind(data);
+          const groups = partitionByKind(data);
+          const { subduction } = groups;
 
-          for (const kind of ['other', 'subduction'] as const) {
-            const features = kind === 'subduction' ? subduction : other;
-            if (features.length === 0) continue;
-            L.geoJSON(
-              { type: 'FeatureCollection', features } as any,
-              { style: styleFor(kind) }
-            ).addTo(group);
-          }
+          // Copias del mundo ya dibujadas, para no rehacer trabajo en cada `moveend`.
+          let drawnOffsets: number[] = [];
 
-          group.addTo(leafletMapRef.current);
-          plateBoundariesLayerRef.current = group;
+          /**
+           * Redibuja la capa cubriendo las copias del mundo que abarca la vista actual.
+           *
+           * Leaflet repite las tiles al panear en horizontal, pero una capa vectorial se dibuja
+           * una sola vez en el rango -180..180: sin esto, al cruzar el antimeridiano las placas
+           * desaparecen. Replicar la geometría a las copias visibles hace que el planisferio se
+           * una consigo mismo como una panorámica, sin el salto de vista de `worldCopyJump`.
+           */
+          const redraw = (decorate: (group: any, features: typeof subduction) => void) => {
+            const map = leafletMapRef.current;
+            if (!map) return;
 
-          // Dientes de sierra: se aplican solo sobre los 65 features de subducción. El decorador es
+            const bounds = map.getBounds();
+            const offsets = worldCopyOffsets(bounds.getWest(), bounds.getEast());
+            if (
+              offsets.length === drawnOffsets.length &&
+              offsets.every((o, i) => o === drawnOffsets[i])
+            ) {
+              return; // La vista sigue dentro de las copias ya dibujadas.
+            }
+
+            if (plateBoundariesLayerRef.current) {
+              map.removeLayer(plateBoundariesLayerRef.current);
+            }
+
+            // Un solo LayerGroup contenedor: el cleanup sigue siendo un removeLayer.
+            const group = L.layerGroup();
+            // La subducción va última para que su trazo grueso quede por encima en los cruces.
+            for (const kind of ['other', 'divergent', 'subduction'] as const) {
+              const features = withWorldCopies(groups[kind], offsets);
+              if (features.length === 0) continue;
+              L.geoJSON(
+                { type: 'FeatureCollection', features } as any,
+                { style: styleFor(kind) }
+              ).addTo(group);
+            }
+
+            decorate(group, withWorldCopies(subduction, offsets));
+            group.addTo(map);
+            plateBoundariesLayerRef.current = group;
+            drawnOffsets = offsets;
+          };
+
+          // Primer render sin símbolos: las líneas aparecen sin esperar al plugin.
+          redraw(() => {});
+
+          // Dientes de sierra: se aplican solo sobre los tramos de subducción. El decorador es
           // opcional — si el plugin falla al cargar, las líneas ya están dibujadas y la capa degrada
           // a "placas sin símbolos" en lugar de romper el mapa.
           try {
@@ -390,34 +433,44 @@ export function AdvancedSeismicMap({
               );
             }
 
-            for (const feature of subduction) {
-              if (!parsePolarity(feature.properties.Name)) continue;
-              // toLatLngs invierte el orden de los vértices cuando la polaridad es `reverse`:
-              // el decorador deriva la dirección del símbolo del rumbo de cada segmento, así
-              // que recorrer la traza al revés es lo que hace que los dientes de sierra miren
-              // al lado correcto. `headAngle` NO sirve para esto: es el ángulo de apertura de
-              // la punta (direction ± headAngle/2), no su orientación.
-              const latLngs = toLatLngs(feature);
-              LD
-                .polylineDecorator(latLngs, {
-                  patterns: [
-                    {
-                      offset: SUBDUCTION_SYMBOL_SPACING_PX / 2,
-                      repeat: SUBDUCTION_SYMBOL_SPACING_PX,
-                      symbol: LD.Symbol.arrowHead({
-                        pixelSize: SUBDUCTION_SYMBOL_SIZE_PX,
-                        headAngle: SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
-                        polygon: true,
-                        pathOptions: { ...styleFor('subduction'), fillOpacity: 0.9, weight: 1 },
-                      }),
-                    },
-                  ],
-                })
-                .addTo(group);
-            }
+            decorate = (group, features) => {
+              for (const feature of features) {
+                if (!parsePolarity(feature.properties.PLATEBOUND)) continue;
+                // toLatLngs invierte el orden de los vértices cuando la polaridad es `reverse`:
+                // el decorador deriva la dirección del símbolo del rumbo de cada segmento, así
+                // que recorrer la traza al revés es lo que hace que los dientes de sierra miren
+                // al lado correcto. `headAngle` NO sirve para esto: es el ángulo de apertura de
+                // la punta (direction ± headAngle/2), no su orientación.
+                const latLngs = toLatLngs(feature);
+                LD
+                  .polylineDecorator(latLngs, {
+                    patterns: [
+                      {
+                        offset: SUBDUCTION_SYMBOL_SPACING_PX / 2,
+                        repeat: SUBDUCTION_SYMBOL_SPACING_PX,
+                        symbol: LD.Symbol.arrowHead({
+                          pixelSize: SUBDUCTION_SYMBOL_SIZE_PX,
+                          headAngle: SUBDUCTION_SYMBOL_HEAD_ANGLE_DEG,
+                          polygon: true,
+                          pathOptions: { ...styleFor('subduction'), fillOpacity: 0.9, weight: 1 },
+                        }),
+                      },
+                    ],
+                  })
+                  .addTo(group);
+              }
+            };
+
+            // Redibuja lo ya dibujado, ahora con símbolos.
+            drawnOffsets = [];
+            redraw(decorate);
           } catch (err) {
             console.error('No se pudieron dibujar los símbolos de subducción:', err);
           }
+
+          // Al panear a una copia del mundo todavía sin dibujar, se replica la geometría hacia allá.
+          onMoveEnd = () => redraw(decorate);
+          leafletMapRef.current?.on('moveend', onMoveEnd);
         })
         .catch((err) => {
           // Falla de red/parseo no debe romper el resto del mapa (spec Requirement 2).
@@ -427,6 +480,9 @@ export function AdvancedSeismicMap({
 
     return () => {
       cancelled = true;
+      if (onMoveEnd && leafletMapRef.current) {
+        leafletMapRef.current.off('moveend', onMoveEnd);
+      }
       if (plateBoundariesLayerRef.current && leafletMapRef.current) {
         leafletMapRef.current.removeLayer(plateBoundariesLayerRef.current);
         plateBoundariesLayerRef.current = null;
