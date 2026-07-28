@@ -174,6 +174,58 @@ export function toLatLngs(feature: PlateBoundaryFeature): [number, number][] {
 }
 
 /**
+ * Múltiplos de 360° que hay que dibujar para cubrir un rango de longitudes visible.
+ *
+ * Leaflet repite el mundo indefinidamente al panear en horizontal, pero solo las tiles
+ * acompañan: una capa vectorial vive en el rango -180..180 y se dibuja UNA vez, así que
+ * al cruzar el antimeridiano las placas desaparecen.
+ *
+ * Las alternativas que no sirven: `worldCopyJump` reposiciona la vista de un salto, que
+ * se siente como un glitch bajo el cursor; y una cantidad fija de copias siempre se
+ * queda corta, porque el usuario puede panear sin límite. De ahí que el rango se calcule
+ * a partir de lo que se está mirando: mientras la vista se mueva, se recalcula.
+ *
+ * @param west  longitud del borde oeste del viewport, sin normalizar (puede ser -900)
+ * @param east  longitud del borde este del viewport, sin normalizar
+ * @param margin copias extra a cada lado, para que el borde ya esté dibujado al llegar
+ */
+export function worldCopyOffsets(west: number, east: number, margin = 1): number[] {
+  // Un feature desplazado `k * 360` cubre longitudes [-180 + 360k, 180 + 360k], así que
+  // el rango [west, east] necesita las copias k entre estos dos extremos.
+  const first = Math.floor((west + 180) / 360) - margin;
+  const last = Math.ceil((east - 180) / 360) + margin;
+
+  const offsets: number[] = [];
+  for (let k = first; k <= last; k += 1) offsets.push(k * 360);
+  return offsets;
+}
+
+/**
+ * Replica los features a las copias del mundo indicadas, desplazando la longitud.
+ *
+ * Se conservan las properties: de ellas dependen el estilo y la polaridad de los
+ * dientes de sierra, que se recalculan igual en cada copia.
+ */
+export function withWorldCopies(
+  features: PlateBoundaryFeature[],
+  offsets: number[]
+): PlateBoundaryFeature[] {
+  return offsets.flatMap((offset) =>
+    offset === 0
+      ? features
+      : features.map((feature) => ({
+          ...feature,
+          geometry: {
+            ...feature.geometry,
+            coordinates: feature.geometry.coordinates.map(
+              ([lon, lat]) => [lon + offset, lat] as [number, number]
+            ),
+          },
+        }))
+  );
+}
+
+/**
  * Separa los features por tipo de contacto en una sola pasada.
  *
  * El render necesita los grupos por separado: cada uno lleva su propio trazo, y solo

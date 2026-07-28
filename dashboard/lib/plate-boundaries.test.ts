@@ -7,6 +7,8 @@ import {
   partitionByKind,
   styleFor,
   toLatLngs,
+  withWorldCopies,
+  worldCopyOffsets,
   type PlateBoundaryCollection,
   type PlateBoundaryFeature,
 } from './plate-boundaries';
@@ -112,6 +114,69 @@ describe('partitionByKind', () => {
   it('devuelve grupos vacíos ante una colección sin features', () => {
     const groups = partitionByKind({ type: 'FeatureCollection', features: [] });
     expect(groups).toEqual({ subduction: [], divergent: [], other: [] });
+  });
+});
+
+describe('worldCopyOffsets', () => {
+  it('cubre la copia original más un margen a cada lado cuando la vista no cruza bordes', () => {
+    expect(worldCopyOffsets(-60, 60)).toEqual([-360, 0, 360]);
+  });
+
+  it('sigue la vista al panear al oeste: devuelve las copias negativas que la cubren', () => {
+    // Vista centrada ~2 vueltas al oeste: la copia -720 tiene que estar incluida.
+    expect(worldCopyOffsets(-800, -680)).toContain(-720);
+  });
+
+  it('sigue la vista al panear al este', () => {
+    expect(worldCopyOffsets(680, 800)).toContain(720);
+  });
+
+  it('cubre todas las copias intermedias cuando la vista abarca varios mundos', () => {
+    // A zoom muy bajo el viewport puede ser más ancho que un mundo entero.
+    const offsets = worldCopyOffsets(-500, 500, 0);
+    expect(offsets).toEqual([-360, 0, 360]);
+  });
+
+  it('devuelve offsets contiguos de 360 en 360, sin huecos', () => {
+    const offsets = worldCopyOffsets(-1000, 1000);
+    for (let i = 1; i < offsets.length; i += 1) {
+      expect(offsets[i] - offsets[i - 1]).toBe(360);
+    }
+  });
+});
+
+describe('withWorldCopies', () => {
+  it('replica los features a cada offset pedido', () => {
+    const features = [makeFeature('AF-AN', 'OSR'), makeFeature('NZ\\SA', 'SUB')];
+    expect(withWorldCopies(features, [-360, 0, 360])).toHaveLength(6);
+  });
+
+  it('desplaza la longitud y deja la latitud intacta', () => {
+    const feature = makeFeature('AF-AN', 'OSR');
+    feature.geometry.coordinates = [[-70, -33], [-71, -34]];
+
+    const copias = withWorldCopies([feature], [-360, 0, 360]);
+    expect(copias.map((f) => f.geometry.coordinates[0][0])).toEqual([-430, -70, 290]);
+    for (const copia of copias) {
+      expect(copia.geometry.coordinates.map(([, lat]) => lat)).toEqual([-33, -34]);
+    }
+  });
+
+  it('conserva las properties, de las que dependen el estilo y la polaridad', () => {
+    const copias = withWorldCopies([makeFeature('NZ\\SA', 'SUB')], [-360, 0, 360]);
+    expect(copias.every((f) => f.properties.STEPCLASS === 'SUB')).toBe(true);
+    expect(copias.every((f) => parsePolarity(f.properties.PLATEBOUND) === 'reverse')).toBe(true);
+  });
+
+  it('no muta los features originales', () => {
+    const feature = makeFeature('AF-AN', 'OSR');
+    feature.geometry.coordinates = [[-70, -33], [-71, -34]];
+    withWorldCopies([feature], [-360, 0, 360]);
+    expect(feature.geometry.coordinates).toEqual([[-70, -33], [-71, -34]]);
+  });
+
+  it('devuelve una lista vacía ante una entrada vacía', () => {
+    expect(withWorldCopies([], [-360, 0, 360])).toEqual([]);
   });
 });
 
