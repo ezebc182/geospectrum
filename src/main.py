@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, List
 from uuid import UUID
 
+import asyncpg
 import redis.asyncio as aioredis
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
@@ -224,10 +225,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "table (auth_service) — configure TIMESCALEDB_HOST/USER/PASSWORD"
         )
 
+    # Pool de Postgres COMPARTIDO (areas-of-interest / AOI-1). Antes vivía
+    # encapsulado dentro de AuthService; se extrae acá porque area_service lo
+    # necesita también y abrir un segundo pool contra la misma base duplicaría
+    # conexiones sin motivo. app.state es el mismo lugar donde ya viven
+    # auth_service/event_bus, así que no introduce un patrón nuevo.
+    #
+    # El dueño del ciclo de vida es este lifespan: se cierra abajo, DESPUÉS de
+    # los servicios que lo usan. AuthService lo recibe inyectado y por eso su
+    # close() es no-op (ver AuthService.__init__).
+    db_pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5)
+    app.state.db_pool = db_pool
+
     auth_service = AuthService(
         dsn=dsn,
         secret_key=settings.auth_secret_key,
         token_expire_minutes=settings.auth_token_expire_minutes,
+        pool=db_pool,
     )
     await auth_service.connect()
     app.state.auth_service = auth_service
@@ -265,6 +279,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if column_writer is not None:
         await column_writer.close()
     await auth_service.close()
+    # Después de auth_service (que ya no es dueño del pool): el pool compartido
+    # se cierra último, cuando nadie lo puede estar usando.
+    await db_pool.close()
     await totp_login_attempt_redis.aclose()
     logger.info("GeoSpectrum Service shutting down")
 

@@ -186,18 +186,43 @@ class Login2FAAttemptLimiter:
 class AuthService:
     """Acceso a datos y operaciones de autenticación (usuarios + JWT)."""
 
-    def __init__(self, dsn: str, secret_key: str, token_expire_minutes: int) -> None:
+    def __init__(
+        self,
+        dsn: str,
+        secret_key: str,
+        token_expire_minutes: int,
+        pool: Optional[asyncpg.Pool] = None,
+    ) -> None:
+        """
+        Args:
+            dsn: DSN de Postgres/TimescaleDB
+            secret_key: clave de firma de los JWT
+            token_expire_minutes: vigencia del access token
+            pool: pool YA creado y de ciclo de vida ajeno (areas-of-interest /
+                AOI-1). Cuando se pasa, este servicio deja de ser dueño del
+                pool: `connect()` y `close()` se vuelven no-ops y el que lo
+                creó es responsable de cerrarlo. Cuando es None se conserva el
+                comportamiento original — el servicio crea y cierra su propio
+                pool — para no romper a los callers existentes ni a los tests
+                que instancian AuthService directamente.
+        """
         self._dsn = dsn
         self._secret_key = secret_key
         self._token_expire_minutes = token_expire_minutes
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: Optional[asyncpg.Pool] = pool
+        # Distingue "pool propio" de "pool prestado". Sin esta bandera, un
+        # close() cerraría un pool compartido que otros servicios siguen
+        # usando: el bug clásico del recurso inyectado.
+        self._owns_pool = pool is None
 
     async def connect(self) -> None:
         if self._pool is not None:
-            return  # idempotente
+            return  # idempotente; también cubre el caso de pool inyectado
         self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
 
     async def close(self) -> None:
+        if not self._owns_pool:
+            return  # el pool es prestado: lo cierra quien lo creó
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
