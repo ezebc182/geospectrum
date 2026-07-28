@@ -328,9 +328,10 @@ export function AdvancedSeismicMap({
   }, [eventos, onEventClick]);
 
   // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado), estilizados por
-  // tipo de contacto como el mapa Latest Earthquakes del USGS: las 65 zonas de subducción llevan
-  // dientes de sierra orientados según la polaridad codificada en `Name`; los 176 límites restantes,
-  // trazo simple (2026-07-27-plate-boundaries-usgs-style-design.md).
+  // tipo de contacto como el mapa Latest Earthquakes del USGS: los 73 tramos de subducción llevan
+  // dientes de sierra orientados según la polaridad codificada en `PLATEBOUND`; los 698 divergentes
+  // (dorsales y rifts) van punteados; el resto, trazo simple
+  // (2026-07-27-plate-boundaries-usgs-style-design.md).
   // Efecto separado del de inicialización del mapa: async, no bloqueante (Decisión 1 de design.md).
   useEffect(() => {
     // Depende de `mapInstance` (estado), no solo del ref: ver comentario en su declaración.
@@ -351,10 +352,12 @@ export function AdvancedSeismicMap({
 
           // Un solo LayerGroup contenedor: el cleanup sigue siendo un removeLayer, igual que antes.
           const group = L.layerGroup();
-          const { subduction, other } = partitionByKind(data);
+          const groups = partitionByKind(data);
+          const { subduction } = groups;
 
-          for (const kind of ['other', 'subduction'] as const) {
-            const features = kind === 'subduction' ? subduction : other;
+          // La subducción va última para que su trazo grueso quede por encima en los cruces.
+          for (const kind of ['other', 'divergent', 'subduction'] as const) {
+            const features = groups[kind];
             if (features.length === 0) continue;
             L.geoJSON(
               { type: 'FeatureCollection', features } as any,
@@ -365,7 +368,7 @@ export function AdvancedSeismicMap({
           group.addTo(leafletMapRef.current);
           plateBoundariesLayerRef.current = group;
 
-          // Dientes de sierra: se aplican solo sobre los 65 features de subducción. El decorador es
+          // Dientes de sierra: se aplican solo sobre los 73 tramos de subducción. El decorador es
           // opcional — si el plugin falla al cargar, las líneas ya están dibujadas y la capa degrada
           // a "placas sin símbolos" en lugar de romper el mapa.
           try {
@@ -391,7 +394,7 @@ export function AdvancedSeismicMap({
             }
 
             for (const feature of subduction) {
-              if (!parsePolarity(feature.properties.Name)) continue;
+              if (!parsePolarity(feature.properties.PLATEBOUND)) continue;
               // toLatLngs invierte el orden de los vértices cuando la polaridad es `reverse`:
               // el decorador deriva la dirección del símbolo del rumbo de cada segmento, así
               // que recorrer la traza al revés es lo que hace que los dientes de sierra miren

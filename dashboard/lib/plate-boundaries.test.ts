@@ -11,32 +11,45 @@ import {
   type PlateBoundaryFeature,
 } from './plate-boundaries';
 
-function makeFeature(name: string, type: string): PlateBoundaryFeature {
+function makeFeature(plateBound: string, stepClass: string): PlateBoundaryFeature {
   return {
     type: 'Feature',
     properties: {
-      LAYER: 'plate boundary',
-      Name: name,
-      PlateA: name.slice(0, 2),
-      PlateB: name.slice(-2),
-      Source: 'test',
-      Type: type,
+      PLATEBOUND: plateBound,
+      STEPCLASS: stepClass,
     },
     geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
   };
 }
 
 describe('classify', () => {
-  it('clasifica como subduction cuando Type es "subduction"', () => {
-    expect(classify(makeFeature('EU/AF', 'subduction'))).toBe('subduction');
+  it('clasifica SUB como subduction', () => {
+    expect(classify(makeFeature('EU/AF', 'SUB'))).toBe('subduction');
   });
 
-  it('clasifica como other cuando Type es cadena vacía', () => {
-    expect(classify(makeFeature('AF-AN', ''))).toBe('other');
+  it('clasifica las dorsales oceánicas (OSR) como divergent', () => {
+    expect(classify(makeFeature('AF-AN', 'OSR'))).toBe('divergent');
   });
 
-  it('degrada a other ante un Type desconocido en lugar de fallar', () => {
-    expect(classify(makeFeature('XX/YY', 'transform'))).toBe('other');
+  it('clasifica los rifts continentales (CRB) como divergent', () => {
+    expect(classify(makeFeature('AF-AR', 'CRB'))).toBe('divergent');
+  });
+
+  it.each(['OTF', 'CTF', 'CCB', 'OCB'])(
+    'clasifica %s como other: son transformantes o convergencias sin placa cabalgante',
+    (stepClass) => {
+      expect(classify(makeFeature('AF-AN', stepClass))).toBe('other');
+    }
+  );
+
+  it('degrada a other ante un STEPCLASS desconocido en lugar de fallar', () => {
+    expect(classify(makeFeature('XX/YY', 'FUTURO'))).toBe('other');
+  });
+
+  it('degrada a other ante un feature sin STEPCLASS', () => {
+    const feature = makeFeature('XX-YY', '');
+    delete (feature.properties as Partial<typeof feature.properties>).STEPCLASS;
+    expect(classify(feature)).toBe('other');
   });
 });
 
@@ -66,53 +79,63 @@ describe('styleFor', () => {
     expect(subduction.opacity).toBeGreaterThan(other.opacity);
   });
 
-  it('usa el mismo color base para los dos tipos', () => {
-    expect(styleFor('subduction').color).toBe(styleFor('other').color);
+  it('usa el mismo color base para los tres tipos', () => {
+    expect(styleFor('divergent').color).toBe(styleFor('subduction').color);
+    expect(styleFor('other').color).toBe(styleFor('subduction').color);
+  });
+
+  it('puntea solo el trazo divergente: es lo que lo distingue del sólido del USGS', () => {
+    expect(styleFor('divergent').dashArray).toBeTruthy();
+    expect(styleFor('subduction').dashArray).toBeUndefined();
+    expect(styleFor('other').dashArray).toBeUndefined();
   });
 });
 
 describe('partitionByKind', () => {
-  it('separa los features en los dos grupos', () => {
+  it('separa los features en los tres grupos', () => {
     const collection: PlateBoundaryCollection = {
       type: 'FeatureCollection',
       features: [
-        makeFeature('EU/AF', 'subduction'),
-        makeFeature('AF-AN', ''),
-        makeFeature('AU\\PA', 'subduction'),
+        makeFeature('EU/AF', 'SUB'),
+        makeFeature('AF-AN', 'OTF'),
+        makeFeature('AU\\PA', 'SUB'),
+        makeFeature('NA-EU', 'OSR'),
+        makeFeature('AF-AR', 'CRB'),
       ],
     };
     const groups = partitionByKind(collection);
     expect(groups.subduction).toHaveLength(2);
+    expect(groups.divergent).toHaveLength(2);
     expect(groups.other).toHaveLength(1);
   });
 
   it('devuelve grupos vacíos ante una colección sin features', () => {
     const groups = partitionByKind({ type: 'FeatureCollection', features: [] });
-    expect(groups).toEqual({ subduction: [], other: [] });
+    expect(groups).toEqual({ subduction: [], divergent: [], other: [] });
   });
 });
 
 describe('toLatLngs', () => {
   it('convierte [lon, lat] de GeoJSON a [lat, lon] de Leaflet', () => {
-    const feature = makeFeature('AF-AN', '');
+    const feature = makeFeature('AF-AN', 'OTF');
     feature.geometry.coordinates = [[-70, -33], [-71, -34]];
     expect(toLatLngs(feature)).toEqual([[-33, -70], [-34, -71]]);
   });
 
   it('conserva el orden de los vértices cuando la polaridad es forward', () => {
-    const feature = makeFeature('NZ/SA', 'subduction');
+    const feature = makeFeature('NZ/SA', 'SUB');
     feature.geometry.coordinates = [[-70, -20], [-71, -30], [-72, -40]];
     expect(toLatLngs(feature)).toEqual([[-20, -70], [-30, -71], [-40, -72]]);
   });
 
   it('invierte el orden de los vértices cuando la polaridad es reverse', () => {
-    const feature = makeFeature('NZ\\SA', 'subduction');
+    const feature = makeFeature('NZ\\SA', 'SUB');
     feature.geometry.coordinates = [[-70, -20], [-71, -30], [-72, -40]];
     expect(toLatLngs(feature)).toEqual([[-40, -72], [-30, -71], [-20, -70]]);
   });
 
   it('no muta el feature original', () => {
-    const feature = makeFeature('NZ\\SA', 'subduction');
+    const feature = makeFeature('NZ\\SA', 'SUB');
     feature.geometry.coordinates = [[-70, -20], [-72, -40]];
     toLatLngs(feature);
     expect(feature.geometry.coordinates).toEqual([[-70, -20], [-72, -40]]);
@@ -136,6 +159,10 @@ function initialBearing(latLngs: [number, number][]): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
+const dataset: PlateBoundaryCollection = JSON.parse(
+  readFileSync(join(__dirname, '..', 'public', 'geo', 'plate-boundaries.json'), 'utf-8')
+);
+
 /**
  * Fija la orientación de los dientes de sierra contra un caso de geología conocida,
  * que es lo único que ningún test de tipos puede cubrir: si alguien vuelve a intentar
@@ -143,18 +170,15 @@ function initialBearing(latLngs: [number, number][]): number {
  * subducción quedaría dibujada del lado equivocado y este test lo detecta.
  */
 describe('orientación de los dientes de sierra (caso Chile/Perú)', () => {
-  const dataset: PlateBoundaryCollection = JSON.parse(
-    readFileSync(join(__dirname, '..', 'public', 'geo', 'plate-boundaries.json'), 'utf-8')
-  );
-
   it('orienta los símbolos de NZ\\SA hacia el este, donde Nazca subduce bajo Sudamérica', () => {
     // Traza más larga del límite Nazca/Sudamérica: costa de Chile y Perú.
     const nazcaSudamerica = dataset.features
-      .filter((f) => f.properties.PlateA === 'NZ' && f.properties.PlateB === 'SA')
+      .filter((f) => f.properties.PLATEBOUND === 'NZ\\SA')
       .sort((a, b) => b.geometry.coordinates.length - a.geometry.coordinates.length)[0];
 
     expect(nazcaSudamerica).toBeDefined();
-    expect(parsePolarity(nazcaSudamerica.properties.Name)).toBe('reverse');
+    expect(classify(nazcaSudamerica)).toBe('subduction');
+    expect(parsePolarity(nazcaSudamerica.properties.PLATEBOUND)).toBe('reverse');
 
     // Sin invertir, la traza corre de sur a norte (rumbo ~8°, casi Norte), lo que dejaría
     // los dientes apuntando al oeste, hacia el océano: al revés de la geología real.
@@ -172,36 +196,61 @@ describe('orientación de los dientes de sierra (caso Chile/Perú)', () => {
 });
 
 /**
- * Contrato con el dataset vendorizado: si una actualización de
- * public/geo/plate-boundaries.json rompe la convención del separador en `Name`,
- * estos tests fallan y el render de dientes de sierra queda avisado antes de
- * degradarse en silencio.
+ * Contrato con el dataset vendorizado que genera scripts/build_plate_boundaries.py.
+ * Si una regeneración cambia el pipeline (tolerancia de simplificación, criterio de
+ * fusión) o rompe la convención del separador en `PLATEBOUND`, estos tests fallan y
+ * el render queda avisado antes de degradarse en silencio.
  */
 describe('contrato con el dataset PB2002 vendorizado', () => {
-  const dataset: PlateBoundaryCollection = JSON.parse(
-    readFileSync(join(__dirname, '..', 'public', 'geo', 'plate-boundaries.json'), 'utf-8')
-  );
-
-  it('tiene los 241 features LineString esperados', () => {
-    expect(dataset.features).toHaveLength(241);
+  it('tiene los 1687 features LineString esperados', () => {
+    expect(dataset.features).toHaveLength(1687);
     expect(dataset.features.every((f) => f.geometry.type === 'LineString')).toBe(true);
   });
 
-  it('clasifica los 241 features en 65 de subducción y 176 restantes', () => {
+  it('clasifica los features en 73 de subducción, 698 divergentes y 916 restantes', () => {
     const groups = partitionByKind(dataset);
-    expect(groups.subduction).toHaveLength(65);
-    expect(groups.other).toHaveLength(176);
+    expect(groups.subduction).toHaveLength(73);
+    expect(groups.divergent).toHaveLength(698);
+    expect(groups.other).toHaveLength(916);
   });
 
   it('todo feature de subducción tiene polaridad parseable', () => {
     const { subduction } = partitionByKind(dataset);
-    const sinPolaridad = subduction.filter((f) => parsePolarity(f.properties.Name) === null);
+    const sinPolaridad = subduction.filter((f) => parsePolarity(f.properties.PLATEBOUND) === null);
     expect(sinPolaridad).toEqual([]);
   });
 
-  it('ningún feature que no sea de subducción tiene separador de polaridad', () => {
-    const { other } = partitionByKind(dataset);
-    const conPolaridad = other.filter((f) => parsePolarity(f.properties.Name) !== null);
-    expect(conPolaridad).toEqual([]);
+  it('mantiene la simplificación por debajo del presupuesto de vértices del render', () => {
+    // El dataset crudo PB2002_steps trae 269.153 vértices: impracticable en Leaflet.
+    // build_plate_boundaries.py lo simplifica a ~5.7k, por debajo de los 6.292 que
+    // tenía el dataset de boundaries al que reemplaza. Si una regeneración se pasa de
+    // este techo, el costo de render sube y conviene revisar la tolerancia.
+    const vertices = dataset.features.reduce((sum, f) => sum + f.geometry.coordinates.length, 0);
+    expect(vertices).toBeLessThan(6292);
+  });
+
+  it('usa solo los siete tipos de contacto conocidos de PB2002', () => {
+    const conocidos = new Set(['OSR', 'OTF', 'SUB', 'CRB', 'CTF', 'CCB', 'OCB']);
+    const desconocidos = [
+      ...new Set(dataset.features.map((f) => f.properties.STEPCLASS)),
+    ].filter((c) => !conocidos.has(c));
+    expect(desconocidos).toEqual([]);
+  });
+
+  /**
+   * PB2002_steps trae separador de polaridad en 15 tramos que no son de subducción
+   * (10 OTF, 3 CTF, 2 CRB), a diferencia del dataset de boundaries anterior donde la
+   * correlación con el tipo era del 100%.
+   *
+   * Es inocuo —solo el grupo `subduction` se decora con símbolos— pero se fija acá para
+   * que quede explícito que es una propiedad conocida del dataset y no un síntoma de
+   * que la clasificación se desalineó.
+   */
+  it('tolera los 15 tramos que no son de subducción y traen separador', () => {
+    const { divergent, other } = partitionByKind(dataset);
+    const conPolaridad = [...divergent, ...other].filter(
+      (f) => parsePolarity(f.properties.PLATEBOUND) !== null
+    );
+    expect(conPolaridad).toHaveLength(15);
   });
 });

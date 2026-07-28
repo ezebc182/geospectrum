@@ -66,3 +66,6 @@ data/
 # Playwright
 playwright-report/
 test-results/
+
+# Descargas cacheadas de scripts/ (ej. PB2002_steps.json, 10 MB)
+.cache/

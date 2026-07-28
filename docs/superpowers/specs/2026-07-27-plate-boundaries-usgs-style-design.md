@@ -110,6 +110,10 @@ propio: no reimplementar geometría computacional que ya está resuelta y testea
 
 ## Decisión 2: estilizado por tipo de contacto
 
+> **Superada por TECT-2** (`2026-07-28-plate-boundaries-divergent-dashed-design.md`): el dataset
+> pasó a PB2002_steps y se agregó un tercer trazo, punteado, para los límites divergentes. Los
+> conteos de esta tabla corresponden al dataset anterior.
+
 | Tipo | N | Trazo | Símbolo |
 |---|---|---|---|
 | Subducción | 65 | rojo, `weight: 2` | triángulos cada ~40px, rotados por polaridad |
