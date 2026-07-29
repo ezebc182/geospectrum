@@ -31,10 +31,24 @@ from src.models.area import AreaBbox, AreaPublic
 from src.services.geo_filter import InvalidGeometryError, bbox_of
 
 # Preset que se usa cuando el usuario no eligió ninguno (users.active_area_id
-# IS NULL). Es el mismo bbox que estaba fijo en settings.region_* y que sale
-# hoy en el log de arranque, así que un usuario que no toca nada no percibe
-# ningún cambio de comportamiento.
-DEFAULT_AREA_SLUG = "andes_argentina_chile"
+# IS NULL). DEBE coincidir con `default_slug` del catálogo generado por
+# scripts/build_areas_of_interest.py — scripts/seed_areas_of_interest.py aborta
+# si se desincronizan, porque si no get_default() falla recién en runtime.
+#
+# Es "global" y no una región concreta. La versión anterior de esta constante
+# era `andes_argentina_chile`, para que el default replicara el bbox fijo de
+# settings.region_* y ningún usuario existente percibiera un cambio. Se
+# descartó: el sistema no tiene ninguna señal de dónde está el usuario (no hay
+# geolocalización ni país en `users`), así que cualquier default regional le
+# impone una región ajena a la mayoría —un usuario de California no tiene por
+# qué ver los Andes—. Global es la única opción neutral, y es coherente con la
+# Decisión #1 de AOI-1 (ingesta global, filtro al leer).
+#
+# El costo de la decisión —cambiarle el área a un usuario preexistente— es
+# nulo en la práctica: al tomarla había 2 usuarios en la base, ambos con
+# active_area_id NULL. Defaultear por geolocalización es un feature propio,
+# fuera del alcance de AOI-1.
+DEFAULT_AREA_SLUG = "global"
 
 
 class AreaNotFoundError(Exception):
