@@ -65,6 +65,8 @@ from src.services.auth_service import (
     TotpNotAvailableForGoogleOnlyUserError,
 )
 from src.api.deps import SESSION_COOKIE_NAME, get_current_user
+from src.api.routers import areas as areas_router
+from src.services.area_service import AreaService
 from src.services import cache
 
 # =============================================================================
@@ -249,6 +251,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.totp_login_attempt_limiter = Login2FAAttemptLimiter(totp_login_attempt_redis)
 
+    # Áreas de interés (AOI-1). Recibe el pool COMPARTIDO y no lo cierra —
+    # igual que AuthService, el dueño del ciclo de vida es este lifespan.
+    # No tiene connect(): el pool ya está abierto cuando llega acá.
+    app.state.area_service = AreaService(db_pool)
+    logger.info("AreaService conectado (areas_of_interest)")
+
     # --------------------------------------------------------------------
     # Google OAuth (google-oauth, Phase 3) — registro CONDICIONAL, NO
     # fail-fast (ver design.md Decision 1). A diferencia del bloque de
@@ -328,6 +336,15 @@ app.add_middleware(
     secret_key=settings.auth_secret_key,
     session_cookie="oauth_state",
 )
+
+# =============================================================================
+# Routers (AOI-1)
+# =============================================================================
+#
+# Primer APIRouter del proyecto. El resto de los ~30 endpoints sigue con
+# @app.get más abajo en este mismo archivo; migrarlos sería un refactor de toda
+# la superficie de la API y no es parte de AOI-1.
+app.include_router(areas_router.router)
 
 
 # =============================================================================
