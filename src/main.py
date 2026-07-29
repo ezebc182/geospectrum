@@ -64,9 +64,14 @@ from src.services.auth_service import (
     TotpAlreadyEnabledError,
     TotpNotAvailableForGoogleOnlyUserError,
 )
-from src.api.deps import SESSION_COOKIE_NAME, get_current_user
+from src.api.deps import (
+    SESSION_COOKIE_NAME,
+    get_current_user,
+    get_current_user_optional,
+)
 from src.api.routers import areas as areas_router
 from src.services.area_service import AreaService
+from src.services.geo_filter import area_to_filter_dict
 from src.services import cache
 
 # =============================================================================
@@ -471,9 +476,11 @@ async def _fetch_parallel(
 
 
 @app.get("/report", response_model=MonitorReport, tags=["monitoring"])
-async def report() -> MonitorReport:
+async def report(
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
+) -> MonitorReport:
     """
-    Reporte completo de monitoreo sísmico.
+    Reporte completo de monitoreo sísmico, recortado al área de interés activa.
 
     Incluye:
     - KPIs calculados sobre ventana temporal
@@ -481,13 +488,34 @@ async def report() -> MonitorReport:
     - Lista completa de eventos detectados
     - Errores de fuentes externas (si los hubo)
 
-    Returns:
-        MonitorReport completo
+    ENDPOINT PÚBLICO CON PERSONALIZACIÓN OPCIONAL (AOI-1). Usa
+    get_current_user_optional, no get_current_user: con sesión válida el
+    reporte se recorta al área activa del usuario; sin ella, al preset por
+    defecto ("global"). Volverlo privado habría roto scripts/seismic-cli.py y
+    el consumo anónimo del dashboard, sin ganar nada: el reporte no expone
+    datos de nadie, sólo sismos públicos.
+
+    El área recorta eventos, KPIs y alertas por igual (ver build_report): un
+    usuario con área "Andes" no recibe alertas de sismos de Japón.
+
+    DefaultAreaMissingError se deja propagar (500) igual que en /areas: una
+    base sin seed es un error de configuración del servidor, no una condición
+    del cliente, y debe llegar a los logs y a GlitchTip como tal.
     """
     with request_duration.labels(endpoint="/report").time():
         logger.info("Generating seismic report")
 
-        report_obj = await build_report(sources=CANONICAL_SOURCES)
+        area_service: AreaService = app.state.area_service
+        if current_user is not None:
+            active_area, _is_default = await area_service.get_active(current_user.id)
+        else:
+            active_area = await area_service.get_default()
+        logger.info("Report area: %s", active_area.slug)
+
+        report_obj = await build_report(
+            sources=CANONICAL_SOURCES,
+            area=area_to_filter_dict(active_area),
+        )
         logger.info("Merged events: %d total", len(report_obj.eventos))
 
         # Desglose por fuente para events_fetched: se calcula sobre eventos

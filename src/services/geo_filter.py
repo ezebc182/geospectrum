@@ -234,3 +234,42 @@ def point_in_area(lat: float, lon: float, area: dict) -> bool:
 
     # Etapa 2: prueba exacta.
     return point_in_geometry(lat, lon, geometry)
+
+
+def area_to_filter_dict(area) -> dict:
+    """Adapta un AreaPublic al shape plano que consume point_in_area().
+
+    Existe por una diferencia real de forma entre dos contratos, no por gusto:
+    `AreaPublic` expone el bbox ANIDADO (`area.bbox.minlat`, porque es lo que
+    el frontend consume), mientras que `point_in_area()` lo espera PLANO
+    (`bbox_minlat`, porque es como salen las columnas de la base). Pasarle un
+    `AreaPublic.model_dump()` crudo no rompe nada visible —y ese es justo el
+    problema—: las claves bbox_* faltarían, point_in_area() recalcularía el
+    bbox con bbox_of() en cada evento y el descarte barato de la etapa 1 se
+    volvería más caro que la prueba exacta que pretende evitar. Un bug de
+    performance silencioso, del que nadie se entera hasta que el reporte tarda.
+
+    Devuelve además "bbox_public": el dict {minlat,maxlat,minlon,maxlon} tal
+    cual lo espera MonitorReport.region_monitorizada, cuyo shape está
+    congelado por dashboard/lib/types.ts y scripts/seismic-cli.py.
+
+    Args:
+        area: AreaPublic (o cualquier objeto con .geometry y .bbox)
+
+    Returns:
+        dict listo para point_in_area(), con "bbox_public" adjunto
+    """
+    bbox = area.bbox
+    return {
+        "geometry": area.geometry,
+        "bbox_minlat": bbox.minlat,
+        "bbox_maxlat": bbox.maxlat,
+        "bbox_minlon": bbox.minlon,
+        "bbox_maxlon": bbox.maxlon,
+        "bbox_public": {
+            "minlat": bbox.minlat,
+            "maxlat": bbox.maxlat,
+            "minlon": bbox.minlon,
+            "maxlon": bbox.maxlon,
+        },
+    }
