@@ -505,16 +505,30 @@ async def report(
     with request_duration.labels(endpoint="/report").time():
         logger.info("Generating seismic report")
 
-        area_service: AreaService = app.state.area_service
-        if current_user is not None:
-            active_area, _is_default = await area_service.get_active(current_user.id)
-        else:
-            active_area = await area_service.get_default()
-        logger.info("Report area: %s", active_area.slug)
+        # El área es una PERSONALIZACIÓN, no el corazón del endpoint: si no se
+        # puede resolver (AreaService no wireado, base sin seed, Postgres
+        # caído), /report degrada al reporte global en vez de devolver 500. El
+        # monitoreo sísmico es la función principal y no puede caerse porque
+        # falle el recorte por región. `area=None` reproduce exactamente el
+        # comportamiento previo a AOI-1, que es el fallback correcto.
+        area_filter = None
+        try:
+            area_service: AreaService = app.state.area_service
+            if current_user is not None:
+                active_area, _is_default = await area_service.get_active(current_user.id)
+            else:
+                active_area = await area_service.get_default()
+            area_filter = area_to_filter_dict(active_area)
+            logger.info("Report area: %s", active_area.slug)
+        except Exception:
+            # exception() y no warning(): el stack va a los logs y a GlitchTip
+            # para que esto se vea y se arregle, en vez de quedar como una
+            # degradación silenciosa que nadie nota.
+            logger.exception("No se pudo resolver el área activa; reporte global")
 
         report_obj = await build_report(
             sources=CANONICAL_SOURCES,
-            area=area_to_filter_dict(active_area),
+            area=area_filter,
         )
         logger.info("Merged events: %d total", len(report_obj.eventos))
 

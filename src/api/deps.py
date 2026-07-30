@@ -86,10 +86,7 @@ async def get_current_user(
         ) from exc
 
 
-async def get_current_user_optional(
-    request: Request,
-    auth_service: AuthService = Depends(_get_auth_service),
-) -> Optional[CurrentUser]:
+async def get_current_user_optional(request: Request) -> Optional[CurrentUser]:
     """Igual que get_current_user(), pero devuelve None en vez de rechazar.
 
     Para endpoints PÚBLICOS que personalizan su respuesta cuando hay sesión y
@@ -104,11 +101,25 @@ async def get_current_user_optional(
     de seguridad esperando a que las dos versiones diverjan — exactamente el
     tipo de bug que nadie nota hasta que un JWT de pre-auth entra por acá.
 
+    NO declara `auth_service` como Depends(_get_auth_service), a diferencia de
+    get_current_user(): un Depends se resuelve ANTES de entrar al cuerpo, así
+    que si app.state.auth_service no existe el AttributeError escapa por
+    afuera de cualquier try/except de acá y el endpoint devuelve 500. Eso
+    convertiría a un endpoint público y robusto en uno que explota — lo
+    detectaron tests/integration/test_api.py::test_report_* cuando /report
+    pasó a usar esta dependencia. Sin cookie no hace falta ningún service, y
+    ese es justamente el caso del anónimo: se resuelve adentro y sólo cuando
+    hay algo que validar.
+
     Sólo se traga el 401 (sesión ausente/inválida/pre-auth): cualquier otro
     error se propaga. Un fallo de configuración del servidor NO debe
     disfrazarse silenciosamente de "usuario anónimo".
     """
+    if request.cookies.get(SESSION_COOKIE_NAME) is None:
+        return None
+
     try:
+        auth_service = _get_auth_service(request)
         return await get_current_user(request, auth_service)
     except HTTPException as exc:
         if exc.status_code == status.HTTP_401_UNAUTHORIZED:
