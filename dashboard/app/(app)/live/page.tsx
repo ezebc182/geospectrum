@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
+import { getActiveArea } from '@/lib/areas';
 import { AlertBanner } from '@/components/AlertBanner';
+import { AreaSelector } from '@/components/AreaSelector';
 import { SeismicMapWithCities } from '@/components/SeismicMapWithCities';
 import { EventsTable } from '@/components/EventsTable';
 import { Radio, RefreshCw } from 'lucide-react';
@@ -15,6 +17,24 @@ export default function LivePage() {
     refreshInterval,
     revalidateOnFocus: true,
   });
+
+  // El área activa se pide aparte de /report: el reporte trae el bbox
+  // (region_monitorizada) pero NO la geometría, y el mapa necesita el polígono
+  // real para no dibujar un rectángulo que miente sobre un área cóncava.
+  // Devuelve null para los anónimos, y ahí el mapa cae al bbox.
+  const { data: activeArea, mutate: mutateArea } = useSWR(
+    '/areas/active',
+    getActiveArea,
+    { revalidateOnFocus: false }
+  );
+
+  // Al cambiar de área hay que refrescar las DOS cosas: el reporte (que ahora
+  // viene recortado por el backend) y el área en sí (para redibujar el
+  // polígono). Refrescar sólo el reporte dejaría el mapa con el área vieja.
+  const handleAreaChange = () => {
+    mutateArea();
+    mutate();
+  };
 
   if (isLoading) {
     return (
@@ -45,6 +65,8 @@ export default function LivePage() {
         </div>
 
         <div className="flex items-center gap-4">
+          <AreaSelector onAreaChange={handleAreaChange} />
+
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}
@@ -78,7 +100,12 @@ export default function LivePage() {
           <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
             Mapa en Tiempo Real con Ciudades
           </h2>
-          <SeismicMapWithCities eventos={eventos} region={region_monitorizada} className="h-[600px]" />
+          <SeismicMapWithCities
+            eventos={eventos}
+            region={region_monitorizada}
+            areaGeometry={activeArea?.area.geometry ?? null}
+            className="h-[600px]"
+          />
         </div>
 
         <div>

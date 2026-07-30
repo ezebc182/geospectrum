@@ -20,6 +20,11 @@ class SeismicAPI {
       },
       // No cache para datos en tiempo real
       cache: 'no-store',
+      // Obligatorio en cross-origin (dashboard :3008 -> API :8000): sin esto
+      // el browser NO manda la cookie `session` y /report responde siempre
+      // como anónimo, ignorando el área de interés activa del usuario. Mismo
+      // motivo que documenta lib/auth.ts, donde ya se usa en las 6 llamadas.
+      credentials: 'include',
     });
 
     if (!response.ok) {

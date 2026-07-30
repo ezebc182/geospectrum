@@ -6,12 +6,23 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { SeismicEvent } from '@/lib/types';
+import type { AreaGeometry, SeismicEvent } from '@/lib/types';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
+import { areaGeometryWithWorldCopies } from '@/lib/area-geometry';
 
 interface SeismicMapProps {
   eventos: SeismicEvent[];
   region: { minlat: number; maxlat: number; minlon: number; maxlon: number };
+  /**
+   * Geometría real del área de interés activa (AOI-1). Cuando viene, se dibuja
+   * el polígono; si no, se cae al rectángulo del bbox.
+   *
+   * El fallback NO es decorativo: un área cóncava como el anillo de fuego tiene
+   * un bbox que cubre casi todo el planeta, así que el rectángulo miente sobre
+   * lo que se está monitoreando. Se conserva sólo para el caso en que el área
+   * todavía no cargó.
+   */
+  areaGeometry?: AreaGeometry | null;
   className?: string;
 }
 
@@ -56,11 +67,29 @@ const MAJOR_CITIES = [
   { name: 'Montevideo', lat: -34.9011, lon: -56.1645, population: 1900000, country: 'Uruguay' },
 ];
 
-export function SeismicMapWithCities({ eventos, region, className }: SeismicMapProps) {
+export function SeismicMapWithCities({ eventos, region, areaGeometry, className }: SeismicMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const cityLayerGroupRef = useRef<any>(null);
   const eventLayerGroupRef = useRef<any>(null);
+  const areaLayerGroupRef = useRef<any>(null);
+  const drawAreaRef = useRef<(() => void) | null>(null);
+
+  // La geometría se lee desde un ref adentro del handler de `moveend`, que se
+  // registra UNA sola vez al crear el mapa: si leyera la prop directamente,
+  // capturaría el valor del primer render y seguiría dibujando el área vieja
+  // para siempre. El efecto de abajo se encarga de redibujar cuando cambia.
+  const areaGeometryRef = useRef<AreaGeometry | null | undefined>(areaGeometry);
+  areaGeometryRef.current = areaGeometry;
+
+  // Redibujar al cambiar el área. `drawAreaRef` NO alcanza como única
+  // dependencia —un ref no dispara renders—, por eso el efecto depende de
+  // `areaGeometry`: es el cambio de la prop lo que tiene que provocar el
+  // redibujo. Sin esto el mapa se quedaría con el rectángulo del fallback
+  // hasta el próximo paneo.
+  useEffect(() => {
+    drawAreaRef.current?.();
+  }, [areaGeometry]);
 
   useEffect(() => {
     // Dynamic import de Leaflet (solo client-side)
@@ -110,17 +139,50 @@ export function SeismicMapWithCities({ eventos, region, className }: SeismicMapP
           'Satélite': satellite,
         }).addTo(map);
 
-        // Bounding box de la región monitoreada
-        const bounds = L.latLngBounds(
-          [region.minlat, region.minlon],
-          [region.maxlat, region.maxlon]
-        );
-        L.rectangle(bounds, {
+        // Región monitoreada: el polígono real del área si está disponible,
+        // el rectángulo del bbox como fallback mientras carga. El área se
+        // redibuja en cada moveend porque las capas vectoriales de Leaflet
+        // sólo existen en -180..180 y desaparecen al panear (ver
+        // lib/area-geometry.ts).
+        const AREA_STYLE = {
           color: '#ef4444',
           weight: 2,
           fillOpacity: 0.05,
           dashArray: '5, 5',
-        }).addTo(map);
+        };
+
+        const areaLayerGroup = L.layerGroup().addTo(map);
+        areaLayerGroupRef.current = areaLayerGroup;
+
+        const drawArea = () => {
+          areaLayerGroup.clearLayers();
+          const geometry = areaGeometryRef.current;
+
+          if (!geometry) {
+            L.rectangle(
+              L.latLngBounds(
+                [region.minlat, region.minlon],
+                [region.maxlat, region.maxlon]
+              ),
+              AREA_STYLE
+            ).addTo(areaLayerGroup);
+            return;
+          }
+
+          const viewport = map.getBounds();
+          L.geoJSON(
+            areaGeometryWithWorldCopies(
+              geometry,
+              viewport.getWest(),
+              viewport.getEast()
+            ) as any,
+            { style: AREA_STYLE, interactive: false }
+          ).addTo(areaLayerGroup);
+        };
+
+        drawAreaRef.current = drawArea;
+        drawArea();
+        map.on('moveend', drawArea);
 
         // Layer groups para organizar marcadores
         cityLayerGroupRef.current = L.layerGroup().addTo(map);
