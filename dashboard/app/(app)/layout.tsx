@@ -1,4 +1,5 @@
 import { AppSidebar } from '@/components/AppSidebar';
+import { AreaHeader } from '@/components/AreaHeader';
 import { UserMenu } from '@/components/UserMenu';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
@@ -16,9 +17,7 @@ export default function AppShellLayout({
           <div className="flex items-center gap-2">
             <SidebarTrigger />
             <Separator orientation="vertical" className="h-5" />
-            <span className="font-data text-xs text-muted-foreground">
-              Estación de monitoreo · Región Andes AR/CL
-            </span>
+            <AreaHeader />
           </div>
           <UserMenu />
         </header>

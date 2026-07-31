@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import type { AreaGeometry, SeismicEvent } from '@/lib/types';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 import { areaGeometryWithWorldCopies } from '@/lib/area-geometry';
+import { areaViewBounds } from '@/lib/area-view-bounds';
 
 interface SeismicMapProps {
   eventos: SeismicEvent[];
@@ -90,6 +91,31 @@ export function SeismicMapWithCities({ eventos, region, areaGeometry, className 
   useEffect(() => {
     drawAreaRef.current?.();
   }, [areaGeometry]);
+
+  // Reencuadrar al cambiar el área.
+  //
+  // El efecto que crea el mapa ya depende de `region`, pero tiene un guard
+  // `!leafletMapRef.current`: con el mapa ya creado sale por el guard sin hacer
+  // nada, así que el encuadre se quedaba clavado en el área con la que se montó
+  // la página. Sacar el guard no es opción —recrearía el mapa entero—, por eso
+  // el reencuadre va acá.
+  //
+  // El encuadre sale de la geometría y no del bbox: las áreas que cruzan el
+  // antimeridiano declaran un bbox de -180..180 que encuadraría el planeta
+  // entero (ver lib/area-view-bounds.ts).
+  //
+  // Se serializa a string para las deps porque `areaViewBounds` devuelve un
+  // array nuevo en cada render y SWR devuelve un `region` nuevo en cada
+  // revalidación: dependiendo del objeto, el mapa se reencuadraría cada 30s
+  // pisándole el zoom al usuario.
+  const viewBoundsKey = JSON.stringify(areaViewBounds(areaGeometry, region));
+
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map || viewBoundsKey === 'null') return;
+
+    map.fitBounds(JSON.parse(viewBoundsKey));
+  }, [viewBoundsKey]);
 
   useEffect(() => {
     // Dynamic import de Leaflet (solo client-side)

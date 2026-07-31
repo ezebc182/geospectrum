@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
 import { getActiveArea } from '@/lib/areas';
+import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { AlertBanner } from '@/components/AlertBanner';
-import { AreaSelector } from '@/components/AreaSelector';
 import { SeismicMapWithCities } from '@/components/SeismicMapWithCities';
 import { EventsTable } from '@/components/EventsTable';
 import { Radio, RefreshCw } from 'lucide-react';
@@ -28,13 +28,13 @@ export default function LivePage() {
     { revalidateOnFocus: false }
   );
 
-  // Al cambiar de área hay que refrescar las DOS cosas: el reporte (que ahora
-  // viene recortado por el backend) y el área en sí (para redibujar el
-  // polígono). Refrescar sólo el reporte dejaría el mapa con el área vieja.
-  const handleAreaChange = () => {
-    mutateArea();
+  // Hay que refrescar las DOS cosas: el reporte (que ahora viene recortado por
+  // el backend) y el área en sí (para redibujar el polígono). Refrescar sólo el
+  // reporte dejaría el mapa con el área vieja.
+  useAreaRefresh(() => {
     mutate();
-  };
+    mutateArea();
+  });
 
   if (isLoading) {
     return (
@@ -65,8 +65,6 @@ export default function LivePage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <AreaSelector onAreaChange={handleAreaChange} />
-
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}

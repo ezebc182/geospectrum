@@ -19,18 +19,15 @@
 import { useRouter } from 'next/navigation';
 
 import { AreaSelector } from '@/components/AreaSelector';
-
-/**
- * Nombre del evento que avisa "cambió el área activa". Las páginas que tengan
- * datos dependientes del área lo escuchan y revalidan (ver /live).
- */
-export const AREA_CHANGED_EVENT = 'geospectrum:area-changed';
+import { emitAreaChanged } from '@/lib/area-events';
 
 export function AreaHeader() {
   const router = useRouter();
 
   const handleAreaChange = () => {
-    window.dispatchEvent(new CustomEvent(AREA_CHANGED_EVENT));
+    // El evento es para los datos de cliente (SWR); router.refresh() es para lo
+    // que renderice el servidor. Hacen falta los dos: ninguno cubre al otro.
+    emitAreaChanged();
     router.refresh();
   };
 
