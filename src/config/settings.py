@@ -16,7 +16,10 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    # Región de monitoreo
+    # Región por defecto de MonitorReport.region_monitorizada cuando no hay un
+    # área de interés resuelta (/events, /alerts). Ya NO recorta la consulta a
+    # las fuentes: desde la ingesta global, los fetchers piden el planeta entero
+    # y el filtro geográfico se aplica al leer, en build_report().
     region_minlat: float = -40.0
     region_maxlat: float = -20.0
     region_minlon: float = -75.0
@@ -24,6 +27,12 @@ class Settings(BaseSettings):
 
     # Umbral de magnitud
     min_mag_alert: float = 3.0
+
+    # Techo de eventos por consulta a cada fuente. Con la ingesta global el
+    # viejo hardcode de 200 dejaba de alcanzar: 200 eventos mundiales ordenados
+    # por tiempo pueden caer todos fuera del área elegida y devolver una lista
+    # vacía. USGS acepta hasta 20000 (maxAllowed).
+    source_fetch_limit: int = 2000
 
     # Timeouts externos
     usgs_timeout_s: float = 5.0
