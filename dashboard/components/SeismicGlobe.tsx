@@ -12,11 +12,12 @@
 
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
 
 import {
   eventsToPoints,
+  globePointId,
   plateBoundariesToPaths,
   type GlobePath,
   type GlobePoint,
@@ -29,6 +30,10 @@ interface SeismicGlobeProps {
   showPlates?: boolean;
   /** Alto del canvas en píxeles. */
   height?: number;
+  /** Se avisa al padre qué evento se clickeó, o null al deseleccionar. */
+  onSelectEvent?: (evento: SeismicEvent | null) => void;
+  /** Id del evento enfocado. El globo gira hacia él y frena la rotación. */
+  selectedEventId?: string | null;
 }
 
 /**
@@ -39,10 +44,28 @@ interface SeismicGlobeProps {
  */
 const AUTO_ROTATE_SPEED = 0.35;
 
+/**
+ * Duración del giro hacia un evento, en ms.
+ *
+ * Se anima en vez de saltar: un corte seco a la otra punta del globo hace
+ * perder la referencia de dónde se estaba mirando.
+ */
+const FOCUS_TRANSITION_MS = 900;
+
+/**
+ * Altitud de cámara al enfocar, en radios de globo.
+ *
+ * Acerca sin llegar a tapar el contexto: se quiere ver el evento Y la fosa que
+ * tiene al lado, que es la mitad de la razón para mirar esto en una esfera.
+ */
+const FOCUS_ALTITUDE = 1.6;
+
 export function SeismicGlobe({
   eventos,
   showPlates = true,
   height = 600,
+  onSelectEvent,
+  selectedEventId = null,
 }: SeismicGlobeProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [plates, setPlates] = useState<GlobePath[]>([]);
@@ -85,19 +108,63 @@ export function SeismicGlobe({
     };
   }, [showPlates]);
 
-  // Los controles de órbita viven fuera de React: se configuran una vez, sobre
-  // la instancia imperativa que expone react-globe.gl.
+  // Los controles de órbita viven fuera de React: se configuran sobre la
+  // instancia imperativa que expone react-globe.gl.
+  //
+  // `selectedEventId` está en las dependencias porque la rotación se frena
+  // mientras hay un evento enfocado: sin esa dependencia el efecto corre una
+  // sola vez y el globo sigue girando bajo el panel abierto, llevándose de la
+  // vista justo el evento que se quiso mirar.
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
 
     const controls = globe.controls();
-    controls.autoRotate = true;
+    controls.autoRotate = selectedEventId === null;
     controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
     controls.enableDamping = true;
-  }, [width]);
+  }, [width, selectedEventId]);
 
   const points = useMemo(() => eventsToPoints(eventos), [eventos]);
+
+  // Gira la cámara hacia el evento enfocado.
+  //
+  // Se busca el punto en `points` y no en `eventos` porque points ya descartó
+  // los que no tienen coordenadas usables: apuntar la cámara a un evento sin
+  // lat/lon la mandaría a (0,0) sin que nadie entienda por qué.
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!globe || !selectedEventId) return;
+
+    const target = points.find((p) => p.id === selectedEventId);
+    if (!target) return;
+
+    globe.pointOfView(
+      { lat: target.lat, lng: target.lng, altitude: FOCUS_ALTITUDE },
+      FOCUS_TRANSITION_MS,
+    );
+  }, [selectedEventId, points]);
+
+  // Índice de id de punto al evento original: globe.gl entrega el punto que
+  // dibujó, no el evento del que salió.
+  const eventsById = useMemo(() => {
+    const index = new Map<string, SeismicEvent>();
+    for (const evento of eventos) index.set(globePointId(evento), evento);
+    return index;
+  }, [eventos]);
+
+  // Clickear el punto ya enfocado lo deselecciona: es la forma de cerrar el
+  // panel sin ir hasta la X y de devolverle la rotación al globo.
+  const handlePointClick = useCallback(
+    (point: object) => {
+      const { id } = point as GlobePoint;
+      const evento = eventsById.get(id);
+      if (!evento) return;
+
+      onSelectEvent?.(id === selectedEventId ? null : evento);
+    },
+    [eventsById, onSelectEvent, selectedEventId],
+  );
 
   return (
     <div ref={containerRef} className="w-full overflow-hidden rounded-xl">
@@ -121,6 +188,7 @@ export function SeismicGlobe({
           pointAltitude={(d) => (d as GlobePoint).altitude}
           pointRadius={0.28}
           pointLabel={(d) => (d as GlobePoint).label}
+          onPointClick={handlePointClick}
           pathsData={plates}
           pathPoints={(d) => (d as GlobePath).coords}
           pathPointLat={(p) => (p as [number, number])[0]}

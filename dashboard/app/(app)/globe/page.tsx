@@ -11,13 +11,17 @@
 
 'use client';
 
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { Globe2, RefreshCw } from 'lucide-react';
 
 import { reportFetcher } from '@/lib/api';
+import { globePointId } from '@/lib/globe-data';
 import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
+import { GlobeEventPanel } from '@/components/GlobeEventPanel';
+import type { SeismicEvent } from '@/lib/types';
 
 // three.js accede a `window` al importarse: con SSR el build revienta. El
 // esqueleto de carga evita que el layout salte cuando aparece el canvas.
@@ -38,6 +42,12 @@ export default function GlobePage() {
     refreshInterval: 60_000,
   });
 
+  // Se guarda el id, no el evento: con el refresco cada 60s el objeto guardado
+  // queda viejo, y el panel mostraría datos de hace un minuto mientras el globo
+  // dibuja los nuevos. Con el id se re-resuelve siempre contra el último
+  // reporte, y si el evento desaparece del reporte el panel se cierra solo.
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
   const isRefreshingArea = useAreaRefresh(() => mutate());
 
   if (error) {
@@ -49,6 +59,13 @@ export default function GlobePage() {
   }
 
   const eventos = data?.eventos ?? [];
+
+  const selectedEvent =
+    eventos.find((evento) => globePointId(evento) === selectedEventId) ?? null;
+
+  const handleSelectEvent = (evento: SeismicEvent | null) => {
+    setSelectedEventId(evento ? globePointId(evento) : null);
+  };
 
   return (
     <div className="space-y-4 p-6">
@@ -78,9 +95,27 @@ export default function GlobePage() {
             <span className="text-sm text-muted-foreground">Cargando eventos…</span>
           </div>
         ) : (
-          <SeismicGlobe eventos={eventos} height={600} />
+          <SeismicGlobe
+            eventos={eventos}
+            height={600}
+            onSelectEvent={handleSelectEvent}
+            // Se deriva del evento resuelto y no del estado crudo: si el
+            // refresco se lleva el evento del reporte, el foco se suelta y el
+            // globo vuelve a rotar en vez de quedar trabado apuntando a nada.
+            selectedEventId={selectedEvent ? selectedEventId : null}
+          />
         )}
       </AreaRefreshIndicator>
+
+      {/*
+        La `key` remonta el panel al cambiar de evento: así el estado de
+        "Copiado al portapapeles" no queda pegado del evento anterior.
+      */}
+      <GlobeEventPanel
+        key={selectedEventId ?? 'none'}
+        evento={selectedEvent}
+        onClose={() => setSelectedEventId(null)}
+      />
     </div>
   );
 }

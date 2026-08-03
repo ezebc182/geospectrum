@@ -67,6 +67,19 @@ function toCoordinate(value: unknown): number | null {
 }
 
 /**
+ * Identificador estable del punto en el globo.
+ *
+ * Se exporta porque el componente necesita reconstruir la misma clave para
+ * mapear un punto clickeado de vuelta a su evento. Si cada lado calculara el
+ * id por su cuenta, los eventos sin `id` —los que caen en el respaldo por
+ * coordenadas— dejarían de poder seleccionarse y nadie entendería por qué
+ * unos puntos responden al click y otros no.
+ */
+export function globePointId(evento: SeismicEvent): string {
+  return evento.id ?? `${Number(evento.lat)},${Number(evento.lon)},${evento.hora_utc ?? ''}`;
+}
+
+/**
  * Convierte los eventos del reporte a puntos del globo.
  *
  * Descarta los que no tienen coordenadas numéricas: la API devuelve el campo
@@ -89,7 +102,7 @@ export function eventsToPoints(eventos: SeismicEvent[]): GlobePoint[] {
       altitude: pointAltitude(magnitude),
       color: magnitudeColor(magnitude),
       label: `M${magnitude.toFixed(1)} — ${evento.lugar ?? 'sin ubicación'}`,
-      id: evento.id ?? `${lat},${lng},${evento.hora_utc ?? ''}`,
+      id: globePointId(evento),
     });
   }
 

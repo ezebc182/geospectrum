@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   eventsToPoints,
+  globePointId,
   magnitudeColor,
   plateBoundariesToPaths,
   pointAltitude,
@@ -61,6 +62,43 @@ describe('pointAltitude', () => {
     // El piso de 0.01 existe para que un M0 no quede enterrado en la esfera:
     // altura 0 en globe.gl es un punto que no se ve.
     expect(pointAltitude(0)).toBeGreaterThan(0);
+  });
+});
+
+describe('globePointId', () => {
+  it('usa el id del evento cuando viene', () => {
+    expect(globePointId(makeEvent({ id: 'usgs-abc123' }))).toBe('usgs-abc123');
+  });
+
+  it('distingue eventos sin id por coordenadas y hora', () => {
+    const sinId = { id: undefined as unknown as string };
+
+    expect(globePointId(makeEvent({ ...sinId, lat: 10, lon: 20 }))).not.toBe(
+      globePointId(makeEvent({ ...sinId, lat: 30, lon: 40 })),
+    );
+  });
+
+  it('distingue dos eventos en el mismo lugar a distinta hora', () => {
+    // Una réplica cae casi en el mismo punto que el sismo principal: sin la
+    // hora en la clave, las dos se pisarían y una desaparecería del globo.
+    const sinId = { id: undefined as unknown as string, lat: -33.4, lon: -70.6 };
+
+    expect(globePointId(makeEvent({ ...sinId, hora_utc: '2026-08-01T00:00:00Z' }))).not.toBe(
+      globePointId(makeEvent({ ...sinId, hora_utc: '2026-08-01T00:05:00Z' })),
+    );
+  });
+
+  it('coincide con el id que eventsToPoints le pone al punto', () => {
+    // Este es el contrato que hace clickeable un punto: el componente mapea el
+    // punto clickeado de vuelta al evento reconstruyendo esta misma clave. Si
+    // las dos implementaciones divergen, el click deja de responder en algunos
+    // eventos y no hay error que lo delate.
+    const eventos = [
+      makeEvent({ id: 'con-id' }),
+      makeEvent({ id: undefined as unknown as string, lat: 12.5, lon: -80.25 }),
+    ];
+
+    expect(eventsToPoints(eventos).map((p) => p.id)).toEqual(eventos.map(globePointId));
   });
 });
 

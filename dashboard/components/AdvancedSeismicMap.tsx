@@ -11,6 +11,7 @@ import { areaViewBounds } from '@/lib/area-view-bounds';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
+import { shouldShowCityLabel } from '@/lib/city-labels';
 import {
   partitionByKind,
   parsePolarity,
@@ -237,6 +238,9 @@ export function AdvancedSeismicMap({
         // Agregar ciudades si está habilitado
         if (showCities) {
           const cityLayerGroup = L.layerGroup();
+          // Los labels van en su propia capa para poder rehacerlos al cambiar
+          // el zoom sin tocar los marcadores, que se dibujan una sola vez.
+          const cityLabelGroup = L.layerGroup();
 
           MAJOR_CITIES.forEach((city) => {
             const size = city.population > 5000000 ? 8 : city.population > 2000000 ? 6 : 5;
@@ -257,10 +261,22 @@ export function AdvancedSeismicMap({
                 </div>
               `)
               .addTo(cityLayerGroup);
+          });
 
-            const icon = L.divIcon({
-              className: 'city-label',
-              html: `<div style="
+          // Redibuja los nombres según el zoom: a nivel continental solo las
+          // megaciudades, y el resto va apareciendo al acercarse. Sin esto los
+          // 30 labels se apilan sobre Sudamérica y no se lee ninguno.
+          const renderCityLabels = () => {
+            cityLabelGroup.clearLayers();
+            const zoom = map.getZoom();
+
+            MAJOR_CITIES.filter((city) => shouldShowCityLabel(city.population, zoom)).forEach(
+              (city) => {
+                const size = city.population > 5000000 ? 8 : city.population > 2000000 ? 6 : 5;
+
+                const icon = L.divIcon({
+                  className: 'city-label',
+                  html: `<div style="
                 background-color: rgba(0, 0, 0, 0.7);
                 color: white;
                 padding: 2px 6px;
@@ -270,14 +286,22 @@ export function AdvancedSeismicMap({
                 white-space: nowrap;
                 pointer-events: none;
               ">${city.name}</div>`,
-              iconSize: [0, 0],
-              iconAnchor: [-size - 5, 0],
-            });
+                  iconSize: [0, 0],
+                  iconAnchor: [-size - 5, 0],
+                });
 
-            L.marker([city.lat, city.lon], { icon, interactive: false }).addTo(cityLayerGroup);
-          });
+                L.marker([city.lat, city.lon], { icon, interactive: false }).addTo(
+                  cityLabelGroup,
+                );
+              },
+            );
+          };
+
+          renderCityLabels();
+          map.on('zoomend', renderCityLabels);
 
           cityLayerGroup.addTo(map);
+          cityLabelGroup.addTo(map);
         }
 
         leafletMapRef.current = map;
