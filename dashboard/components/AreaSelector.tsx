@@ -14,10 +14,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Globe } from 'lucide-react';
+import { Check, ChevronDown, Globe } from 'lucide-react';
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { groupAreas } from '@/lib/area-groups';
 import { getActiveArea, listAreas, setActiveArea } from '@/lib/areas';
 import type { Area } from '@/lib/types';
+import { cn } from '@/lib/utils';
+
+const DEFAULT_AREA_LABEL = 'Área por defecto';
 
 interface AreaSelectorProps {
   /** Se llama después de cambiar el área, para refrescar el reporte. */
@@ -73,27 +85,89 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
     }
   };
 
+  const activeArea = areas.find((area) => area.id === activeId) ?? null;
+  const activeLabel = activeArea ? activeArea.name : DEFAULT_AREA_LABEL;
+  const groups = groupAreas(areas);
+
   return (
-    <div className="flex items-center gap-2">
-      <Globe className="h-4 w-4 text-gray-500" aria-hidden="true" />
-      <label htmlFor="area-selector" className="sr-only">
-        Área de interés
-      </label>
-      <select
-        id="area-selector"
-        value={activeId ?? ''}
+    <DropdownMenu>
+      <DropdownMenuTrigger
         disabled={saving}
-        onChange={(e) => handleChange(e.target.value)}
-        className="rounded-lg border-2 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2 text-sm disabled:opacity-60"
+        aria-label={`Área de interés: ${activeLabel}`}
+        className="flex max-w-[16rem] items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 dark:border-gray-700"
       >
-        <option value="">Área por defecto</option>
-        {areas.map((area) => (
-          <option key={area.id} value={area.id}>
-            {area.name}
-            {area.is_system ? '' : ' (propia)'}
-          </option>
+        <Globe className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+        {/* `truncate` porque hay nombres largos ("Papúa Nueva Guinea y
+            Melanesia") que si no ensanchan el header y descolocan el resto. */}
+        <span className="truncate">{activeLabel}</span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+      </DropdownMenuTrigger>
+
+      {/* Reemplaza a un <select> nativo, cuyo desplegable posiciona el SISTEMA
+          OPERATIVO y no el CSS: con 17 áreas y el header pegado arriba, macOS
+          lo abría hacia arriba y la lista se salía de la ventana, tapando la
+          barra de pestañas. Radix mide el viewport y voltea o desplaza solo.
+          `collisionPadding` le deja aire al borde y `max-h` fuerza el scroll
+          adentro del panel en vez de estirarlo más allá de la pantalla. */}
+      <DropdownMenuContent
+        align="end"
+        collisionPadding={12}
+        className="max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[18rem] overflow-y-auto"
+      >
+        <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+          Área de interés
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+
+        <AreaOption
+          label={DEFAULT_AREA_LABEL}
+          isActive={activeId === null}
+          onSelect={() => handleChange('')}
+        />
+
+        {/* Con 17 áreas del sistema, una lista plana obliga a leerlas todas
+            para encontrar una. Los grupos vacíos no se renderizan: "Mis áreas"
+            no existe hasta que el usuario cree la primera. */}
+        {groups.map((group) => (
+          <div key={group.id}>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+              {group.label}
+            </DropdownMenuLabel>
+            {group.areas.map((area) => (
+              <AreaOption
+                key={area.id}
+                label={area.name}
+                isActive={area.id === activeId}
+                onSelect={() => handleChange(area.id)}
+              />
+            ))}
+          </div>
         ))}
-      </select>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+interface AreaOptionProps {
+  label: string;
+  isActive: boolean;
+  onSelect: () => void;
+}
+
+function AreaOption({ label, isActive, onSelect }: AreaOptionProps) {
+  return (
+    <DropdownMenuItem
+      onSelect={onSelect}
+      // El check ocupa lugar SIEMPRE (invisible cuando no aplica) para que las
+      // etiquetas queden alineadas y la lista no salte al cambiar de área.
+      className={cn('cursor-pointer gap-2', isActive && 'font-semibold')}
+    >
+      <Check
+        className={cn('h-4 w-4 shrink-0 text-seismic-600', !isActive && 'invisible')}
+        aria-hidden="true"
+      />
+      <span className="truncate">{label}</span>
+    </DropdownMenuItem>
   );
 }
