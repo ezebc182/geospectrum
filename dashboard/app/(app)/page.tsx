@@ -9,6 +9,7 @@ import { KPICard } from '@/components/KPICard';
 import { AlertBanner } from '@/components/AlertBanner';
 import { EventsTable } from '@/components/EventsTable';
 import { AdvancedSeismicMap } from '@/components/AdvancedSeismicMap';
+import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Activity, TrendingUp, Layers, Users, MapPin, Clock } from 'lucide-react';
@@ -32,10 +33,13 @@ export default function DashboardPage() {
   // El backend recorta el reporte por el área activa, así que al cambiarla hay
   // que volver a pedirlo: sin esto el dashboard seguía mostrando los KPIs y el
   // mapa de la región anterior hasta el refresco automático de 60s.
-  useAreaRefresh(() => {
-    mutate();
-    mutateArea();
-  });
+  //
+  // Se devuelve el Promise.all —y no se llaman las dos mutaciones sueltas—
+  // porque de esa promesa depende el indicador: apagarlo con la primera que
+  // resuelva dejaría el mapa redibujándose sin ninguna señal.
+  const isRefreshingArea = useAreaRefresh(() =>
+    Promise.all([mutate(), mutateArea()])
+  );
 
   // Sincronización unidireccional tabla→mapa (Decisión 3 de design.md). Estado local,
   // sin store global. Solo EventsTable.onRowClick escribe acá — el mapa NO tiene onEventClick
@@ -94,7 +98,7 @@ export default function DashboardPage() {
   } = data;
 
   return (
-    <div className="space-y-8">
+    <AreaRefreshIndicator isRefreshing={isRefreshingArea} className="space-y-8">
       {/* Header con timestamp */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-foreground">
@@ -185,12 +189,13 @@ export default function DashboardPage() {
           <EventsTable
             eventos={eventos}
             limit={10}
+            filterable
             onRowClick={setSelectedEventId}
             selectedEventId={selectedEventId}
             className="h-[500px]"
           />
         </div>
       </div>
-    </div>
+    </AreaRefreshIndicator>
   );
 }
