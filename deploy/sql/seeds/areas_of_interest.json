@@ -740,6 +740,43 @@
       }
     },
     {
+      "slug": "cascadia",
+      "name": "Zona de subducción de Cascadia",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -132.0,
+              40.0
+            ],
+            [
+              -119.0,
+              40.0
+            ],
+            [
+              -119.0,
+              51.5
+            ],
+            [
+              -132.0,
+              51.5
+            ],
+            [
+              -132.0,
+              40.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 40.0,
+        "maxlat": 51.5,
+        "minlon": -132.0,
+        "maxlon": -119.0
+      }
+    },
+    {
       "slug": "anatolia",
       "name": "Anatolia (falla Norte de Anatolia)",
       "geometry": {

@@ -56,10 +56,32 @@ async def other_user_id(db_pool):
 
 class TestSeedYPresets:
     async def test_el_catalogo_quedo_sembrado(self, db_pool):
-        total = await db_pool.fetchval(
-            "SELECT count(*) FROM areas_of_interest WHERE is_system"
+        """Lo sembrado tiene que coincidir con el seed, área por área.
+
+        El conteo se lee del JSON en vez de ir hardcodeado: con un número fijo,
+        agregar un área al catálogo rompía este test sin que hubiera nada roto
+        (pasó al sumar `cascadia`), y el arreglo era actualizar la constante, que
+        no verifica nada. Comparar los slugs sí detecta lo que importa: un seed
+        que quedó a medias o un área que no se cargó.
+        """
+        import json
+        from pathlib import Path
+
+        seed_path = (
+            Path(__file__).resolve().parents[2]
+            / "deploy"
+            / "sql"
+            / "seeds"
+            / "areas_of_interest.json"
         )
-        assert total == 17
+        esperados = {a["slug"] for a in json.loads(seed_path.read_text())["areas"]}
+
+        filas = await db_pool.fetch(
+            "SELECT slug FROM areas_of_interest WHERE is_system"
+        )
+        sembrados = {fila["slug"] for fila in filas}
+
+        assert sembrados == esperados
 
     async def test_existe_el_preset_por_defecto(self, service):
         area = await service.get_default()

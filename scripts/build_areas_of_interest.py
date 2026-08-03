@@ -231,6 +231,22 @@ REGIONS: list[dict] = [
         "rings": [rectangle(-126.0, 31.5, -114.0, 42.0)],
     },
     {
+        "slug": "cascadia",
+        "name": "Zona de subducción de Cascadia",
+        # Juan de Fuca subduciendo bajo Norteamérica, del norte de California
+        # (40°N, donde la triple unión de Mendocino la separa de San Andrés) a
+        # la isla de Vancouver. El límite oeste (-132) cubre la fosa mar
+        # adentro, que es donde ocurriría el evento interplaca: el último fue
+        # en 1700 (Mw ~9.0) y no hay registro instrumental de uno igual, así
+        # que el encuadre sigue la estructura y no la sismicidad observada.
+        #
+        # Deliberadamente NO incluye Alaska, aunque el tramo homónimo de
+        # anillo_de_fuego los agrupe en un solo rectángulo: son márgenes
+        # distintos y un área llamada "Cascadia" no debería traer eventos de
+        # las Aleutianas.
+        "rings": [rectangle(-132.0, 40.0, -119.0, 51.5)],
+    },
+    {
         "slug": "anatolia",
         "name": "Anatolia (falla Norte de Anatolia)",
         # Transformante que acomoda la extrusión de la placa Anatolia hacia el

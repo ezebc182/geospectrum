@@ -1,7 +1,7 @@
 /**
  * Agrupación de las áreas de interés para el selector.
  *
- * Con 17 áreas del sistema, una lista plana obliga a leerlas todas para
+ * Con 18 áreas del sistema, una lista plana obliga a leerlas todas para
  * encontrar una. Los grupos ("Fallas", "Cinturones"…) hacen el barrido visual
  * mucho más corto.
  *
@@ -18,13 +18,20 @@
 
 import type { Area } from '@/lib/types';
 
-export type AreaGroupId = 'mine' | 'global' | 'belts' | 'faults' | 'regions';
+export type AreaGroupId =
+  | 'mine'
+  | 'global'
+  | 'belts'
+  | 'subduction'
+  | 'faults'
+  | 'regions';
 
 /** Orden en que se muestran los grupos. Lo propio del usuario va primero. */
 export const AREA_GROUP_ORDER: AreaGroupId[] = [
   'mine',
   'global',
   'belts',
+  'subduction',
   'faults',
   'regions',
 ];
@@ -33,14 +40,26 @@ export const AREA_GROUP_LABELS: Record<AreaGroupId, string> = {
   mine: 'Mis áreas',
   global: 'Global',
   belts: 'Cinturones sísmicos',
+  subduction: 'Zonas de subducción',
   faults: 'Fallas',
   regions: 'Regiones',
 };
 
 /**
- * Slugs por categoría, tomados del catálogo real (17 áreas del sistema).
- * Lo que no figure acá cae en "Regiones", que es el grupo más numeroso y el
- * default razonable para un área geográfica nueva.
+ * Slugs por categoría, tomados del catálogo real (18 áreas del sistema).
+ * Lo que no figure acá cae en "Regiones", el default razonable para un área
+ * geográfica nueva.
+ *
+ * El criterio es el RÉGIMEN TECTÓNICO, no la geografía: "Zonas de subducción"
+ * son márgenes convergentes donde una placa se hunde bajo otra, y "Fallas" son
+ * transformantes, donde dos placas se deslizan lateralmente. Separarlas importa
+ * porque los eventos son distintos —una subducción produce megaterremotos
+ * interplaca y tsunamis; una transformante, eventos someros de desgarre— y
+ * quien monitorea suele buscar uno de los dos tipos, no una región del mapa.
+ *
+ * Antes de que existiera 'subduction', todas estas áreas caían en "Regiones"
+ * por descarte, no por decisión: era el cajón genérico. Cascadia obligó a
+ * mirarlo, porque es subducción pero se busca al lado de San Andrés.
  */
 const SLUG_GROUPS: Record<string, AreaGroupId> = {
   global: 'global',
@@ -48,8 +67,28 @@ const SLUG_GROUPS: Record<string, AreaGroupId> = {
   anillo_de_fuego: 'belts',
   cinturon_alpino_himalayo: 'belts',
 
+  // Márgenes convergentes. Todas se extienden mar adentro sobre su fosa: ahí
+  // ocurre el evento interplaca, que es el que importa.
+  cascadia: 'subduction',
+  chile: 'subduction',
+  peru: 'subduction',
+  mexico: 'subduction',
+  centroamerica: 'subduction',
+  japon: 'subduction',
+  indonesia: 'subduction',
+  filipinas: 'subduction',
+  kamchatka_aleutianas: 'subduction',
+  mediterraneo_oriental: 'subduction',
+
+  // Transformantes: desgarre, sin placa hundiéndose.
   san_andres: 'faults',
   anatolia: 'faults',
+
+  // Quedan en "Regiones" a propósito, por no tener un régimen único:
+  //   - himalaya: colisión continental (India–Eurasia), sin subducción oceánica.
+  //   - nueva_zelanda: fosa de Hikurangi al noreste PERO falla Alpina
+  //     transformante al suroeste; clasificarla en uno solo sería mentir.
+  //   - papua_nueva_guinea: colisión múltiple entre placas y microplacas.
 };
 
 /**

@@ -31,10 +31,30 @@ describe('groupOf', () => {
     expect(groupOf(makeArea('global', 'Global'))).toBe('global');
   });
 
+  it('clasifica las zonas de subducción del catálogo', () => {
+    expect(groupOf(makeArea('cascadia', 'Cascadia'))).toBe('subduction');
+    expect(groupOf(makeArea('chile', 'Chile'))).toBe('subduction');
+    expect(groupOf(makeArea('japon', 'Japón'))).toBe('subduction');
+  });
+
+  it('separa subducción de transformantes', () => {
+    // Cascadia y San Andrés son vecinas geográficamente (las separa la triple
+    // unión de Mendocino) pero son regímenes distintos, y el grupo lo refleja.
+    expect(groupOf(makeArea('cascadia', 'Cascadia'))).toBe('subduction');
+    expect(groupOf(makeArea('san_andres', 'San Andrés'))).toBe('faults');
+  });
+
+  it('deja en Regiones las áreas sin un régimen tectónico único', () => {
+    // No es el fallback actuando por descuido: están sin clasificar a
+    // propósito. Nueva Zelanda tiene subducción al noreste y una transformante
+    // al suroeste; el Himalaya es colisión continental, sin subducción.
+    expect(groupOf(makeArea('nueva_zelanda', 'Nueva Zelanda'))).toBe('regions');
+    expect(groupOf(makeArea('himalaya', 'Himalaya'))).toBe('regions');
+  });
+
   it('manda a Regiones lo que no está clasificado', () => {
     // El fallback importa: un área nueva del catálogo tiene que aparecer igual,
     // aunque nadie la haya clasificado todavía.
-    expect(groupOf(makeArea('chile', 'Chile'))).toBe('regions');
     expect(groupOf(makeArea('slug_inventado', 'Área futura'))).toBe('regions');
   });
 
@@ -46,13 +66,14 @@ describe('groupOf', () => {
 describe('groupAreas', () => {
   it('omite los grupos vacíos', () => {
     // Sin áreas propias, "Mis áreas" no debe aparecer como etiqueta suelta.
-    const groups = groupAreas([makeArea('chile', 'Chile')]);
+    const groups = groupAreas([makeArea('himalaya', 'Himalaya')]);
 
     expect(groups.map((g) => g.id)).toEqual(['regions']);
   });
 
   it('respeta el orden de grupos y pone lo del usuario primero', () => {
     const groups = groupAreas([
+      makeArea('himalaya', 'Himalaya'),
       makeArea('chile', 'Chile'),
       makeArea('san_andres', 'Falla de San Andrés'),
       makeArea('global', 'Global'),
@@ -64,6 +85,7 @@ describe('groupAreas', () => {
       'mine',
       'global',
       'belts',
+      'subduction',
       'faults',
       'regions',
     ]);
