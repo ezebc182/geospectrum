@@ -47,12 +47,72 @@ NETWORK_CODES = {
 # tienen streaming en vivo vía SeedLink (ver src/services/seedlink_ingestor.py,
 # DEFAULT_CHANNELS). El location code no se puede derivar de antemano —
 # ObsPy lo resuelve recién con el primer paquete real — así que estos valores
-# están verificados a mano contra /ws/spectrogram (2026-07-10). city_id debe
-# coincidir con dashboard/lib/seismic-cities.ts y con KNOWN_STATIONS abajo.
+# están verificados contra la red real. city_id debe coincidir con
+# dashboard/lib/seismic-cities.ts.
+#
+# Cómo se armó esta lista (2026-08-03, ampliación de 3 a 26 ciudades)
+# -------------------------------------------------------------------
+# NO se escribió a mano. El precedente de KNOWN_STATIONS abajo muestra por qué:
+# las estaciones originales (JP.TNPH, C.GO01, PE.LIMA…) devolvían HTTP 204
+# porque alguien las dedujo del código de país en vez de consultarlas.
+#
+# El procedimiento fue, para cada ciudad de seismic-cities.ts:
+#   1. `Client("rtserve.earthscope.org").get_info(level="station")` → las 4326
+#      estaciones que el servidor SeedLink de EarthScope transmite en vivo.
+#   2. FDSN `get_stations(maxradius=3°, channel="BHZ,HHZ")` → las estaciones de
+#      banda ancha cercanas, con sus coordenadas reales.
+#   3. Intersección de las dos, ordenada por distancia a la ciudad.
+#   4. `get_waveforms()` sobre la más cercana: si devuelve muestras, el canal
+#      sirve, y el location code sale de `trace.stats.location`.
+#
+# El paso 4 no es opcional: 4 estaciones que figuraban en el catálogo del
+# servidor NO transmitían (CM.RUS, UW.SEA, KO.BALB, NU.MASN). Estar listado y
+# estar emitiendo son cosas distintas.
+#
+# Los tres formatos de location code que aparecen abajo —"00", "10" y vacío—
+# son reales y salieron del paso 4. Adivinarlos es justamente lo que rompe.
+#
+# Ausencias conocidas:
+#   - bogota: no hay ninguna estación colombiana transmitiendo por este
+#     servidor. Cae a FDSN 24h, que sí funciona.
+#   - manila y jakarta: sin estación en vivo a menos de 333 km.
+#   - tehran: IRIS no devuelve inventario para esa zona.
+#   - istanbul: la más cercana que transmite (GE.TIRR) está a 388 km, en
+#     Rumania. Sirve para sismicidad regional, no para eventos locales de la
+#     falla Norte de Anatolia.
 LIVE_CHANNELS_BY_CITY = {
-    "tokyo": "IU.MAJO.00.BHZ",
-    "osaka": "II.ERM.00.BHZ",
+    # Asia-Pacífico
+    "tokyo": "JP.JYT..BHZ",
+    "osaka": "JP.JWT..BHZ",
+    "taipei": "IU.TATO.00.BHZ",
+    "guam": "IU.GUMO.00.BHZ",
+    "kathmandu": "NK.KKN..BHZ",
+    # Sudamérica
+    "lima": "II.NNA.00.BHZ",
+    "arequipa": "C1.AP01..BHZ",
+    "santiago": "C1.MT18..BHZ",
+    "valparaiso": "C1.MT02..BHZ",
+    "antofagasta": "C.GO02..BHZ",
+    "quito": "EC.PULU..HHZ",
+    # Centroamérica y Caribe
+    "mexicocity": "G.UNM.00.BHZ",
+    "sanjose": "G.HDC.00.BHZ",
+    "managua": "GE.BOAB..BHZ",
+    "portauprince": "CU.SDDR.00.BHZ",
+    # Norteamérica
+    "losangeles": "CI.USC..BHZ",
+    "sandiego": "AZ.SIO5..BHZ",
+    "sanfrancisco": "BK.MCCM.00.BHZ",
+    "portland": "UO.PF27..HHZ",
     "seattle": "UW.LON..HHZ",
+    "vancouver": "CN.QEPB..HHZ",
+    "anchorage": "AK.RC01..BHZ",
+    # Europa / Mediterráneo
+    "istanbul": "GE.TIRR..BHZ",
+    # Oceanía
+    "wellington": "IU.SNZO.00.BHZ",
+    "auckland": "NZ.HIZ.10.HHZ",
+    "christchurch": "NZ.KHZ.10.HHZ",
 }
 
 

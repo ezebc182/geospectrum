@@ -69,3 +69,6 @@ test-results/
 
 # Descargas cacheadas de scripts/ (ej. PB2002_steps.json, 10 MB)
 .cache/
+
+# Artefactos del MCP de Playwright (snapshots y logs de sesiones de debug)
+.playwright-mcp/

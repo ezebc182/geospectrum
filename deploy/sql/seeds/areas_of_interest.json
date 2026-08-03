@@ -1,0 +1,891 @@
+{
+  "default_slug": "global",
+  "areas": [
+    {
+      "slug": "global",
+      "name": "Global — todo el planeta",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -180.0,
+              -90.0
+            ],
+            [
+              180.0,
+              -90.0
+            ],
+            [
+              180.0,
+              90.0
+            ],
+            [
+              -180.0,
+              90.0
+            ],
+            [
+              -180.0,
+              -90.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -90.0,
+        "maxlat": 90.0,
+        "minlon": -180.0,
+        "maxlon": 180.0
+      }
+    },
+    {
+      "slug": "anillo_de_fuego",
+      "name": "Cinturón — Anillo de Fuego",
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -82.0,
+                -56.0
+              ],
+              [
+                -66.0,
+                -56.0
+              ],
+              [
+                -66.0,
+                -3.0
+              ],
+              [
+                -82.0,
+                -3.0
+              ],
+              [
+                -82.0,
+                -56.0
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -107.0,
+                6.5
+              ],
+              [
+                -77.0,
+                6.5
+              ],
+              [
+                -77.0,
+                22.0
+              ],
+              [
+                -107.0,
+                22.0
+              ],
+              [
+                -107.0,
+                6.5
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -160.0,
+                40.0
+              ],
+              [
+                -122.0,
+                40.0
+              ],
+              [
+                -122.0,
+                62.0
+              ],
+              [
+                -160.0,
+                62.0
+              ],
+              [
+                -160.0,
+                40.0
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                165.0,
+                47.0
+              ],
+              [
+                180.0,
+                47.0
+              ],
+              [
+                180.0,
+                60.0
+              ],
+              [
+                165.0,
+                60.0
+              ],
+              [
+                165.0,
+                47.0
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -180.0,
+                47.0
+              ],
+              [
+                -160.0,
+                47.0
+              ],
+              [
+                -160.0,
+                60.0
+              ],
+              [
+                -180.0,
+                60.0
+              ],
+              [
+                -180.0,
+                47.0
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                128.0,
+                30.0
+              ],
+              [
+                165.0,
+                30.0
+              ],
+              [
+                165.0,
+                56.0
+              ],
+              [
+                128.0,
+                56.0
+              ],
+              [
+                128.0,
+                30.0
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                117.0,
+                4.5
+              ],
+              [
+                147.0,
+                4.5
+              ],
+              [
+                147.0,
+                30.0
+              ],
+              [
+                117.0,
+                30.0
+              ],
+              [
+                117.0,
+                4.5
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                94.0,
+                -11.5
+              ],
+              [
+                156.0,
+                -11.5
+              ],
+              [
+                156.0,
+                6.5
+              ],
+              [
+                94.0,
+                6.5
+              ],
+              [
+                94.0,
+                -11.5
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                163.0,
+                -48.0
+              ],
+              [
+                180.0,
+                -48.0
+              ],
+              [
+                180.0,
+                -14.0
+              ],
+              [
+                163.0,
+                -14.0
+              ],
+              [
+                163.0,
+                -48.0
+              ]
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -56.0,
+        "maxlat": 62.0,
+        "minlon": -180.0,
+        "maxlon": 180.0
+      }
+    },
+    {
+      "slug": "cinturon_alpino_himalayo",
+      "name": "Cinturón — Alpino-Himalayo",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -10.0,
+              25.0
+            ],
+            [
+              105.0,
+              25.0
+            ],
+            [
+              105.0,
+              47.0
+            ],
+            [
+              -10.0,
+              47.0
+            ],
+            [
+              -10.0,
+              25.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 25.0,
+        "maxlat": 47.0,
+        "minlon": -10.0,
+        "maxlon": 105.0
+      }
+    },
+    {
+      "slug": "indonesia",
+      "name": "Indonesia y fosa de la Sonda",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              94.0,
+              -11.5
+            ],
+            [
+              141.0,
+              -11.5
+            ],
+            [
+              141.0,
+              6.5
+            ],
+            [
+              94.0,
+              6.5
+            ],
+            [
+              94.0,
+              -11.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -11.5,
+        "maxlat": 6.5,
+        "minlon": 94.0,
+        "maxlon": 141.0
+      }
+    },
+    {
+      "slug": "japon",
+      "name": "Japón y fosa de Japón",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              128.0,
+              30.0
+            ],
+            [
+              148.0,
+              30.0
+            ],
+            [
+              148.0,
+              46.0
+            ],
+            [
+              128.0,
+              46.0
+            ],
+            [
+              128.0,
+              30.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 30.0,
+        "maxlat": 46.0,
+        "minlon": 128.0,
+        "maxlon": 148.0
+      }
+    },
+    {
+      "slug": "filipinas",
+      "name": "Filipinas",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              117.0,
+              4.5
+            ],
+            [
+              127.0,
+              4.5
+            ],
+            [
+              127.0,
+              21.0
+            ],
+            [
+              117.0,
+              21.0
+            ],
+            [
+              117.0,
+              4.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 4.5,
+        "maxlat": 21.0,
+        "minlon": 117.0,
+        "maxlon": 127.0
+      }
+    },
+    {
+      "slug": "chile",
+      "name": "Chile y fosa Perú-Chile",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.5,
+              -56.0
+            ],
+            [
+              -66.0,
+              -56.0
+            ],
+            [
+              -66.0,
+              -17.5
+            ],
+            [
+              -76.5,
+              -17.5
+            ],
+            [
+              -76.5,
+              -56.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -56.0,
+        "maxlat": -17.5,
+        "minlon": -76.5,
+        "maxlon": -66.0
+      }
+    },
+    {
+      "slug": "peru",
+      "name": "Perú y fosa Perú-Chile (norte)",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -82.0,
+              -18.5
+            ],
+            [
+              -68.0,
+              -18.5
+            ],
+            [
+              -68.0,
+              -3.0
+            ],
+            [
+              -82.0,
+              -3.0
+            ],
+            [
+              -82.0,
+              -18.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -18.5,
+        "maxlat": -3.0,
+        "minlon": -82.0,
+        "maxlon": -68.0
+      }
+    },
+    {
+      "slug": "mexico",
+      "name": "México y fosa Mesoamericana",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -107.0,
+              13.5
+            ],
+            [
+              -92.0,
+              13.5
+            ],
+            [
+              -92.0,
+              22.0
+            ],
+            [
+              -107.0,
+              22.0
+            ],
+            [
+              -107.0,
+              13.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 13.5,
+        "maxlat": 22.0,
+        "minlon": -107.0,
+        "maxlon": -92.0
+      }
+    },
+    {
+      "slug": "centroamerica",
+      "name": "Centroamérica",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.0,
+              6.5
+            ],
+            [
+              -77.0,
+              6.5
+            ],
+            [
+              -77.0,
+              18.5
+            ],
+            [
+              -93.0,
+              18.5
+            ],
+            [
+              -93.0,
+              6.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 6.5,
+        "maxlat": 18.5,
+        "minlon": -93.0,
+        "maxlon": -77.0
+      }
+    },
+    {
+      "slug": "kamchatka_aleutianas",
+      "name": "Kamchatka, Kuriles y Aleutianas",
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                150.0,
+                47.0
+              ],
+              [
+                180.0,
+                47.0
+              ],
+              [
+                180.0,
+                60.0
+              ],
+              [
+                150.0,
+                60.0
+              ],
+              [
+                150.0,
+                47.0
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -180.0,
+                47.0
+              ],
+              [
+                -155.0,
+                47.0
+              ],
+              [
+                -155.0,
+                60.0
+              ],
+              [
+                -180.0,
+                60.0
+              ],
+              [
+                -180.0,
+                47.0
+              ]
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 47.0,
+        "maxlat": 60.0,
+        "minlon": -180.0,
+        "maxlon": 180.0
+      }
+    },
+    {
+      "slug": "himalaya",
+      "name": "Himalaya y meseta tibetana",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              72.0,
+              26.0
+            ],
+            [
+              96.0,
+              26.0
+            ],
+            [
+              96.0,
+              37.0
+            ],
+            [
+              72.0,
+              37.0
+            ],
+            [
+              72.0,
+              26.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 26.0,
+        "maxlat": 37.0,
+        "minlon": 72.0,
+        "maxlon": 96.0
+      }
+    },
+    {
+      "slug": "papua_nueva_guinea",
+      "name": "Papúa Nueva Guinea y Melanesia",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              139.0,
+              -11.5
+            ],
+            [
+              156.0,
+              -11.5
+            ],
+            [
+              156.0,
+              -1.0
+            ],
+            [
+              139.0,
+              -1.0
+            ],
+            [
+              139.0,
+              -11.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -11.5,
+        "maxlat": -1.0,
+        "minlon": 139.0,
+        "maxlon": 156.0
+      }
+    },
+    {
+      "slug": "san_andres",
+      "name": "Falla de San Andrés (California)",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -126.0,
+              31.5
+            ],
+            [
+              -114.0,
+              31.5
+            ],
+            [
+              -114.0,
+              42.0
+            ],
+            [
+              -126.0,
+              42.0
+            ],
+            [
+              -126.0,
+              31.5
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 31.5,
+        "maxlat": 42.0,
+        "minlon": -126.0,
+        "maxlon": -114.0
+      }
+    },
+    {
+      "slug": "cascadia",
+      "name": "Zona de subducción de Cascadia",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -132.0,
+              40.0
+            ],
+            [
+              -119.0,
+              40.0
+            ],
+            [
+              -119.0,
+              51.5
+            ],
+            [
+              -132.0,
+              51.5
+            ],
+            [
+              -132.0,
+              40.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 40.0,
+        "maxlat": 51.5,
+        "minlon": -132.0,
+        "maxlon": -119.0
+      }
+    },
+    {
+      "slug": "anatolia",
+      "name": "Anatolia (falla Norte de Anatolia)",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              26.0,
+              36.0
+            ],
+            [
+              45.0,
+              36.0
+            ],
+            [
+              45.0,
+              42.5
+            ],
+            [
+              26.0,
+              42.5
+            ],
+            [
+              26.0,
+              36.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 36.0,
+        "maxlat": 42.5,
+        "minlon": 26.0,
+        "maxlon": 45.0
+      }
+    },
+    {
+      "slug": "nueva_zelanda",
+      "name": "Nueva Zelanda",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              163.0,
+              -48.0
+            ],
+            [
+              180.0,
+              -48.0
+            ],
+            [
+              180.0,
+              -33.0
+            ],
+            [
+              163.0,
+              -33.0
+            ],
+            [
+              163.0,
+              -48.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": -48.0,
+        "maxlat": -33.0,
+        "minlon": 163.0,
+        "maxlon": 180.0
+      }
+    },
+    {
+      "slug": "mediterraneo_oriental",
+      "name": "Mediterráneo oriental y arco helénico",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              19.0,
+              32.0
+            ],
+            [
+              37.0,
+              32.0
+            ],
+            [
+              37.0,
+              42.0
+            ],
+            [
+              19.0,
+              42.0
+            ],
+            [
+              19.0,
+              32.0
+            ]
+          ]
+        ]
+      },
+      "bbox": {
+        "minlat": 32.0,
+        "maxlat": 42.0,
+        "minlon": 19.0,
+        "maxlon": 37.0
+      }
+    }
+  ]
+}

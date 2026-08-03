@@ -89,8 +89,18 @@ const config: Config = {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+      keyframes: {
+        // Barra de progreso indeterminada: no sabemos cuánto va a tardar la
+        // revalidación (1-4s según la latencia de USGS/EMSC), así que el tramo
+        // cruza de lado a lado en vez de llenarse hasta el 100%.
+        'indeterminate-bar': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(400%)' },
+        },
+      },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'indeterminate-bar': 'indeterminate-bar 1.2s ease-in-out infinite',
       },
     },
   },

@@ -32,12 +32,11 @@ async def fetch_usgs_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
         "starttime": start_utc.strftime("%Y-%m-%dT%H:%M:%S"),
         "endtime": end_utc.strftime("%Y-%m-%dT%H:%M:%S"),
         "minmagnitude": str(settings.min_mag_alert),
-        "minlatitude": str(settings.region_minlat),
-        "maxlatitude": str(settings.region_maxlat),
-        "minlongitude": str(settings.region_minlon),
-        "maxlongitude": str(settings.region_maxlon),
+        # Sin bbox: la ingesta es GLOBAL y el recorte geográfico ocurre al leer,
+        # en build_report() vía point_in_area(). Filtrar acá ataba el catálogo a
+        # los Andes y dejaba en cero cualquier área fuera de Sudamérica.
         "orderby": "time",
-        "limit": "200",
+        "limit": str(settings.source_fetch_limit),
     }
 
     t0 = time.perf_counter()

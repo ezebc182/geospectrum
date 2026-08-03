@@ -3,20 +3,43 @@
 import { useCallback, useState } from 'react';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
+import { getActiveArea } from '@/lib/areas';
+import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { KPICard } from '@/components/KPICard';
 import { AlertBanner } from '@/components/AlertBanner';
 import { EventsTable } from '@/components/EventsTable';
 import { AdvancedSeismicMap } from '@/components/AdvancedSeismicMap';
+import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Activity, TrendingUp, Layers, Users, MapPin, Clock } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils';
 
 export default function DashboardPage() {
-  const { data, error, isLoading } = useSWR('/report', reportFetcher, {
+  const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
     refreshInterval: 60000, // Auto-refresh cada 60s
     revalidateOnFocus: true,
   });
+
+  // El área se pide aparte del reporte: /report trae el bbox pero NO la
+  // geometría, y el encuadre la necesita — el bbox de un área que cruza el
+  // antimeridiano dice -180..180 y encuadraría el planeta entero.
+  const { data: activeArea, mutate: mutateArea } = useSWR(
+    '/areas/active',
+    getActiveArea,
+    { revalidateOnFocus: false }
+  );
+
+  // El backend recorta el reporte por el área activa, así que al cambiarla hay
+  // que volver a pedirlo: sin esto el dashboard seguía mostrando los KPIs y el
+  // mapa de la región anterior hasta el refresco automático de 60s.
+  //
+  // Se devuelve el Promise.all —y no se llaman las dos mutaciones sueltas—
+  // porque de esa promesa depende el indicador: apagarlo con la primera que
+  // resuelva dejaría el mapa redibujándose sin ninguna señal.
+  const isRefreshingArea = useAreaRefresh(() =>
+    Promise.all([mutate(), mutateArea()])
+  );
 
   // Sincronización unidireccional tabla→mapa (Decisión 3 de design.md). Estado local,
   // sin store global. Solo EventsTable.onRowClick escribe acá — el mapa NO tiene onEventClick
@@ -65,10 +88,17 @@ export default function DashboardPage() {
     );
   }
 
-  const { kpis, alertas, eventos, timestamp_utc_generacion, data_source_errors } = data;
+  const {
+    kpis,
+    alertas,
+    eventos,
+    timestamp_utc_generacion,
+    data_source_errors,
+    region_monitorizada,
+  } = data;
 
   return (
-    <div className="space-y-8">
+    <AreaRefreshIndicator isRefreshing={isRefreshingArea} className="space-y-8">
       {/* Header con timestamp */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-foreground">
@@ -142,6 +172,8 @@ export default function DashboardPage() {
           </div>
           <AdvancedSeismicMap
             eventos={eventos}
+            region={region_monitorizada}
+            areaGeometry={activeArea?.area.geometry ?? null}
             className="h-[500px]"
             showCities
             showPlateBoundaries
@@ -157,12 +189,13 @@ export default function DashboardPage() {
           <EventsTable
             eventos={eventos}
             limit={10}
+            filterable
             onRowClick={setSelectedEventId}
             selectedEventId={selectedEventId}
             className="h-[500px]"
           />
         </div>
       </div>
-    </div>
+    </AreaRefreshIndicator>
   );
 }

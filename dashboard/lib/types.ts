@@ -50,6 +50,62 @@ export interface MonitorReport {
 export type AlertType = Alert['tipo'];
 
 /**
+ * Áreas de interés (AOI-1).
+ *
+ * `geometry` es GeoJSON crudo (Polygon o MultiPolygon) — el mapa lo dibuja tal
+ * cual con L.geoJSON. `bbox` viaja además de la geometría porque es lo que usa
+ * el mapa para encuadrar la vista sin recorrer todos los vértices. Mismo shape
+ * que `MonitorReport.region_monitorizada`, a propósito: las dos cosas son "la
+ * región que estoy mirando" y se consumen igual.
+ */
+export interface AreaBbox {
+  minlat: number;
+  maxlat: number;
+  minlon: number;
+  maxlon: number;
+}
+
+/**
+ * GeoJSON mínimo, declarado a mano en vez de traer @types/geojson: es el mismo
+ * criterio que ya usa lib/plate-boundaries.ts, y son dos tipos.
+ *
+ * Anillos de Polygon: [lon, lat][][]  — ojo el orden, GeoJSON va al revés de
+ * como se nombran las coordenadas en el resto del proyecto.
+ */
+export interface AreaPolygon {
+  type: 'Polygon';
+  coordinates: [number, number][][];
+}
+
+export interface AreaMultiPolygon {
+  type: 'MultiPolygon';
+  coordinates: [number, number][][][];
+}
+
+export type AreaGeometry = AreaPolygon | AreaMultiPolygon;
+
+export interface Area {
+  id: string;
+  slug: string;
+  name: string;
+  is_system: boolean;
+  geometry: AreaGeometry;
+  bbox: AreaBbox;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * `is_default=true` significa que el usuario NO eligió nada y está viendo el
+ * preset por defecto. El selector lo necesita para no marcar como seleccionada
+ * un área que el usuario nunca eligió.
+ */
+export interface ActiveAreaResponse {
+  area: Area;
+  is_default: boolean;
+}
+
+/**
  * Roles de usuario, jerarquía estricta descendente (ver
  * openspec/changes/multi-user-auth/design.md, Decision 6). El backend
  * serializa `role` como este mismo string en /auth/register, /auth/login

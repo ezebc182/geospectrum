@@ -18,6 +18,8 @@ tal cual, no se atrapa como 401/403).
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import Depends, HTTPException, Request, status
 
 from src.models.user import CurrentUser, UserRole, role_level
@@ -82,6 +84,47 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="not authenticated",
         ) from exc
+
+
+async def get_current_user_optional(request: Request) -> Optional[CurrentUser]:
+    """Igual que get_current_user(), pero devuelve None en vez de rechazar.
+
+    Para endpoints PÚBLICOS que personalizan su respuesta cuando hay sesión y
+    siguen funcionando cuando no la hay — hoy /report, que resuelve el área de
+    interés activa del usuario y cae al preset por defecto para anónimos. Sin
+    esto, personalizar /report obligaría a volverlo privado (401), rompiendo
+    scripts/seismic-cli.py y el consumo anónimo del dashboard.
+
+    DELIBERADAMENTE delega en get_current_user() en lugar de reimplementar la
+    validación: la verificación de firma, expiración y el rechazo de tokens
+    `pending_2fa` viven en UN solo lugar. Una copia paralela sería un agujero
+    de seguridad esperando a que las dos versiones diverjan — exactamente el
+    tipo de bug que nadie nota hasta que un JWT de pre-auth entra por acá.
+
+    NO declara `auth_service` como Depends(_get_auth_service), a diferencia de
+    get_current_user(): un Depends se resuelve ANTES de entrar al cuerpo, así
+    que si app.state.auth_service no existe el AttributeError escapa por
+    afuera de cualquier try/except de acá y el endpoint devuelve 500. Eso
+    convertiría a un endpoint público y robusto en uno que explota — lo
+    detectaron tests/integration/test_api.py::test_report_* cuando /report
+    pasó a usar esta dependencia. Sin cookie no hace falta ningún service, y
+    ese es justamente el caso del anónimo: se resuelve adentro y sólo cuando
+    hay algo que validar.
+
+    Sólo se traga el 401 (sesión ausente/inválida/pre-auth): cualquier otro
+    error se propaga. Un fallo de configuración del servidor NO debe
+    disfrazarse silenciosamente de "usuario anónimo".
+    """
+    if request.cookies.get(SESSION_COOKIE_NAME) is None:
+        return None
+
+    try:
+        auth_service = _get_auth_service(request)
+        return await get_current_user(request, auth_service)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return None
+        raise
 
 
 def require_role(role: UserRole):

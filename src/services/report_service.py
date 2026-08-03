@@ -18,6 +18,7 @@ from src.services import cache
 from src.services.emsc_service import fetch_emsc_events
 from src.services.inpres_service import fetch_inpres_events
 from src.services.kpi_service import compute_kpis_and_alerts
+from src.services.geo_filter import point_in_area
 from src.services.merge_service import merge_all_sources
 from src.services.usgs_service import fetch_usgs_events
 from src.utils.geo import now_utc_iso
@@ -132,6 +133,7 @@ def count_by_source(
 async def build_report(
     sources: list[str],
     window_minutes: Optional[int] = None,
+    area: Optional[dict] = None,
 ) -> MonitorReport:
     """
     Orquesta la fusión de eventos sísmicos de las fuentes dadas y calcula
@@ -145,11 +147,28 @@ async def build_report(
             default silencioso que alguien pueda desalinear sin darse cuenta.
         window_minutes: Ventana temporal en minutos. Si None, usa
             settings.window_minutes (mismo default que /events/search).
+        area: Área de interés (AOI-1) con la que recortar geográficamente el
+            reporte, en el shape que espera geo_filter.point_in_area(): claves
+            "geometry" (GeoJSON) y bbox_minlat/maxlat/minlon/maxlon PLANAS.
+            Usar area_to_filter_dict() para convertir un AreaPublic; pasarle el
+            .model_dump() crudo NO alcanza, porque ahí el bbox viaja anidado y
+            el fast-path de dos etapas de point_in_area() no lo encontraría
+            (funcionaría igual, pero cayendo siempre a Shapely).
+
+            Si es None se conserva EXACTAMENTE el comportamiento previo: sin
+            filtro geográfico y region_monitorizada desde settings.bbox. El
+            parámetro es opcional a propósito — hoy sólo /report resuelve un
+            área; /events y /alerts siguen siendo globales y no cambian.
 
     Returns:
         MonitorReport con kpis, alertas, eventos (fusionados vía
         merge_all_sources en el orden recibido en `sources`),
-        region_monitorizada (desde settings.bbox) y data_source_errors.
+        region_monitorizada y data_source_errors.
+
+        Cuando `area` viene, el filtro se aplica ANTES de calcular KPIs y
+        alertas: el reporte describe el área pedida, no el mundo. Filtrar
+        después dejaría un reporte incoherente, con una lista de 3 eventos
+        regionales y un total_eventos global de 300.
     """
     effective_window = window_minutes if window_minutes is not None else settings.window_minutes
 
@@ -160,11 +179,25 @@ async def build_report(
     merged_events = merge_all_sources(usgs_events, emsc_events, inpres_events)
     logger.info("build_report: merged events: %d total (sources=%s)", len(merged_events), sources)
 
+    if area is not None:
+        total_before = len(merged_events)
+        merged_events = [
+            e for e in merged_events if point_in_area(e.lat, e.lon, area)
+        ]
+        logger.info(
+            "build_report: area filter kept %d/%d events",
+            len(merged_events),
+            total_before,
+        )
+        region = area["bbox_public"]
+    else:
+        region = settings.bbox
+
     kpis, alertas = compute_kpis_and_alerts(merged_events, effective_window)
 
     return MonitorReport(
         timestamp_utc_generacion=now_utc_iso(),
-        region_monitorizada=settings.bbox,
+        region_monitorizada=region,
         data_source_errors=errors,
         kpis=kpis,
         alertas=alertas,

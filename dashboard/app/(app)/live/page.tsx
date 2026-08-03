@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
+import { getActiveArea } from '@/lib/areas';
+import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { AlertBanner } from '@/components/AlertBanner';
+import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { SeismicMapWithCities } from '@/components/SeismicMapWithCities';
 import { EventsTable } from '@/components/EventsTable';
 import { Radio, RefreshCw } from 'lucide-react';
@@ -15,6 +18,26 @@ export default function LivePage() {
     refreshInterval,
     revalidateOnFocus: true,
   });
+
+  // El área activa se pide aparte de /report: el reporte trae el bbox
+  // (region_monitorizada) pero NO la geometría, y el mapa necesita el polígono
+  // real para no dibujar un rectángulo que miente sobre un área cóncava.
+  // Devuelve null para los anónimos, y ahí el mapa cae al bbox.
+  const { data: activeArea, mutate: mutateArea } = useSWR(
+    '/areas/active',
+    getActiveArea,
+    { revalidateOnFocus: false }
+  );
+
+  // Hay que refrescar las DOS cosas: el reporte (que ahora viene recortado por
+  // el backend) y el área en sí (para redibujar el polígono). Refrescar sólo el
+  // reporte dejaría el mapa con el área vieja.
+  //
+  // El indicador espera a las dos: el polígono del mapa se redibuja con
+  // `mutateArea`, que suele resolver después que el reporte.
+  const isRefreshingArea = useAreaRefresh(() =>
+    Promise.all([mutate(), mutateArea()])
+  );
 
   if (isLoading) {
     return (
@@ -35,7 +58,7 @@ export default function LivePage() {
   const { alertas, eventos, timestamp_utc_generacion, region_monitorizada } = data;
 
   return (
-    <div className="space-y-8">
+    <AreaRefreshIndicator isRefreshing={isRefreshingArea} className="space-y-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Radio className="h-8 w-8 text-red-600 animate-pulse" />
@@ -78,18 +101,29 @@ export default function LivePage() {
           <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
             Mapa en Tiempo Real con Ciudades
           </h2>
-          <SeismicMapWithCities eventos={eventos} region={region_monitorizada} className="h-[600px]" />
+          <SeismicMapWithCities
+            eventos={eventos}
+            region={region_monitorizada}
+            areaGeometry={activeArea?.area.geometry ?? null}
+            className="h-[600px]"
+          />
         </div>
 
         <div>
           <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
             Eventos Activos ({eventos.length})
           </h2>
-          <div className="max-h-[600px] overflow-y-auto">
-            <EventsTable eventos={eventos.slice(0, 20)} />
-          </div>
+          {/* Se le pasan TODOS los eventos y se recorta con `limit`: con un
+              slice previo el filtro buscaría sólo entre los 20 primeros y
+              parecería no encontrar lo que está más abajo en la lista. */}
+          <EventsTable
+            eventos={eventos}
+            limit={20}
+            filterable
+            className="max-h-[600px]"
+          />
         </div>
       </div>
-    </div>
+    </AreaRefreshIndicator>
   );
 }

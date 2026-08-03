@@ -4,10 +4,21 @@
 
 'use client';
 
+import { useMemo, useState } from 'react';
+
 import { SeismicEvent } from '@/lib/types';
 import { formatDateTime, formatMagnitude, formatDepth, getMagnitudeSeverity, cn } from '@/lib/utils';
 import { CheckCircle, Clock, MapPin, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { EventFiltersBar } from '@/components/EventFiltersBar';
+import {
+  EMPTY_FILTERS,
+  availableSources,
+  dateRangeOf,
+  filterEvents,
+  hasActiveFilters,
+} from '@/lib/event-filters';
+import { useAreaRefresh } from '@/lib/use-area-refresh';
 
 interface EventsTableProps {
   eventos: SeismicEvent[];
@@ -17,6 +28,11 @@ interface EventsTableProps {
   onRowClick?: (id: string) => void;
   /** Id del evento actualmente seleccionado (resalta la fila correspondiente). Default: undefined. */
   selectedEventId?: string | null;
+  /**
+   * Muestra la barra de búsqueda y filtros sobre la tabla. Default: false, para
+   * no cambiar el aspecto de los usos que no la pidieron.
+   */
+  filterable?: boolean;
 }
 
 const magnitudeBadgeVariant = {
@@ -33,21 +49,73 @@ const magnitudeBadgeClass = {
   critical: 'bg-severity-critical/15 text-severity-critical',
 };
 
-export function EventsTable({ eventos, limit, className, onRowClick, selectedEventId }: EventsTableProps) {
-  const displayEvents = limit ? eventos.slice(0, limit) : eventos;
+export function EventsTable({
+  eventos,
+  limit,
+  className,
+  onRowClick,
+  selectedEventId,
+  filterable = false,
+}: EventsTableProps) {
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+
+  // Al cambiar de área los filtros se limpian: un "Chile" tecleado antes de
+  // elegir Japón dejaría la tabla vacía y parecería que la app se rompió,
+  // cuando lo que sobrevive es un filtro que ya no aplica.
+  useAreaRefresh(() => setFilters(EMPTY_FILTERS));
+
+  // Se filtra ANTES de recortar por `limit`: al revés, el dashboard buscaría
+  // solamente entre los 10 eventos visibles y el filtro parecería no encontrar
+  // nada que existe más abajo en la lista.
+  const filteredEvents = useMemo(
+    () => (filterable ? filterEvents(eventos, filters) : eventos),
+    [filterable, eventos, filters]
+  );
+
+  const sources = useMemo(
+    () => (filterable ? availableSources(eventos) : []),
+    [filterable, eventos]
+  );
+  const dateRange = useMemo(
+    () => (filterable ? dateRangeOf(eventos) : null),
+    [filterable, eventos]
+  );
+
+  const displayEvents = limit ? filteredEvents.slice(0, limit) : filteredEvents;
+  const isFiltered = filterable && hasActiveFilters(filters);
+
+  const filtersBar = filterable ? (
+    <EventFiltersBar
+      filters={filters}
+      onChange={setFilters}
+      sources={sources}
+      dateRange={dateRange}
+      matched={filteredEvents.length}
+      total={eventos.length}
+    />
+  ) : null;
 
   if (displayEvents.length === 0) {
     return (
-      <div className={cn('rounded-lg border-2 border-border bg-muted/40 p-8 text-center', className)}>
-        <p className="text-muted-foreground">
-          No hay eventos registrados en la ventana de tiempo actual
-        </p>
+      <div className={cn('flex flex-col gap-3', className)}>
+        {filtersBar}
+        {/* Sin filtros el vacío significa "no hay datos"; con filtros significa
+            "no hay coincidencias", y la barra ya lo explica arriba. */}
+        {!isFiltered && (
+          <div className="rounded-lg border-2 border-border bg-muted/40 p-8 text-center">
+            <p className="text-muted-foreground">
+              No hay eventos registrados en la ventana de tiempo actual
+            </p>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className={cn('flex flex-col overflow-hidden rounded-lg border-2 border-border', className)}>
+    <div className={cn('flex flex-col gap-3', className)}>
+      {filtersBar}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-2 border-border">
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full">
           <thead className="sticky top-0 z-10 bg-muted">
@@ -143,11 +211,15 @@ export function EventsTable({ eventos, limit, className, onRowClick, selectedEve
           </tbody>
         </table>
       </div>
-      {limit && eventos.length > limit && (
-        <div className="border-t-2 border-border bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground">
-          Mostrando {limit} de {eventos.length} eventos
-        </div>
-      )}
+        {/* El total del pie es el de los eventos FILTRADOS: decir "10 de 224"
+            cuando el filtro dejó 12 sería mentir sobre lo que hay para ver. */}
+        {limit && filteredEvents.length > limit && (
+          <div className="border-t-2 border-border bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground">
+            Mostrando {limit} de {filteredEvents.length} eventos
+            {isFiltered && ' filtrados'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -30,6 +30,7 @@ from scipy.signal import spectrogram as scipy_spectrogram
 
 from src.config.settings import settings
 from src.services.event_bus import EventBus, RedisPubSubBus
+from src.services.spectrogram_service import LIVE_CHANNELS_BY_CITY
 from src.services.timescale_service import TimescaleColumnWriter
 
 logger = logging.getLogger(__name__)
@@ -139,14 +140,30 @@ class SeedLinkIngestor:
         self._client.run()  # bloquea para siempre
 
 
-# Estaciones conocidas con datos verificados (ver KNOWN_STATIONS en
-# spectrogram_service.py, misma fuente de verdad para evitar duplicar
-# el trabajo de verificación estación por estación).
-DEFAULT_CHANNELS = [
-    ("IU", "MAJO", "BHZ"),  # Tokyo
-    ("II", "ERM", "BHZ"),  # Osaka
-    ("UW", "LON", "HHZ"),  # Seattle
-]
+def _default_channels() -> list[tuple[str, str, str]]:
+    """Canales a suscribir, derivados de LIVE_CHANNELS_BY_CITY.
+
+    Antes esta lista estaba escrita a mano y en paralelo a la del service, con
+    un comentario que decía "misma fuente de verdad" sobre dos listas que había
+    que sincronizar de memoria. Al ampliar de 3 a 26 ciudades eso deja de ser
+    un detalle: agregar una ciudad en un lado y olvidarla en el otro da un
+    canal que el front ofrece como "Vivo" y que nadie está transmitiendo.
+
+    Ahora se deriva. El service publica canales SEED completos
+    ("IU.TATO.00.BHZ") y SeedLink se suscribe por (red, estación, canal): el
+    location code se descarta acá porque el servidor lo resuelve solo, y es
+    justamente el campo que no se puede escribir de memoria.
+    """
+    canales = []
+    for seed_id in LIVE_CHANNELS_BY_CITY.values():
+        net, sta, _loc, chan = seed_id.split(".")
+        par = (net, sta, chan)
+        if par not in canales:  # dos ciudades pueden compartir estación
+            canales.append(par)
+    return canales
+
+
+DEFAULT_CHANNELS = _default_channels()
 
 
 if __name__ == "__main__":

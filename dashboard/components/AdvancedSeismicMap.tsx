@@ -6,7 +6,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { SeismicEvent } from '@/lib/types';
+import type { AreaGeometry, SeismicEvent } from '@/lib/types';
+import { areaViewBounds } from '@/lib/area-view-bounds';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
@@ -28,6 +29,21 @@ import { Layers, Eye, EyeOff } from 'lucide-react';
 interface AdvancedSeismicMapProps {
   eventos: SeismicEvent[];
   className?: string;
+  /**
+   * Bbox del área de interés activa. El mapa se encuadra acá en vez de en un
+   * centro fijo: sin esto el Dashboard apuntaba siempre a los Andes aunque el
+   * usuario tuviera seleccionada otra región.
+   *
+   * Opcional para no romper a los llamadores que todavía no lo pasan; ahí se
+   * cae al encuadre histórico de Sudamérica.
+   */
+  region?: { minlat: number; maxlat: number; minlon: number; maxlon: number };
+  /**
+   * Geometría real del área activa. Manda sobre `region` para el encuadre: el
+   * bbox de un área que cruza el antimeridiano (Kamchatka, Anillo de Fuego)
+   * declara -180..180 y encuadraría el planeta entero.
+   */
+  areaGeometry?: AreaGeometry | null;
   showCities?: boolean;
   defaultLayer?: keyof typeof BASE_LAYERS;
   /** Renderiza los límites de placas tectónicas reales (GeoJSON PB2002). Default: false (comportamiento actual sin cambios). */
@@ -99,6 +115,8 @@ const MAJOR_CITIES: MajorCity[] = [
 export function AdvancedSeismicMap({
   eventos,
   className = '',
+  region,
+  areaGeometry,
   showCities = true,
   defaultLayer = 'terrain',
   showPlateBoundaries = false,
@@ -128,6 +146,45 @@ export function AdvancedSeismicMap({
   // creación se publica como estado (ver deps del efecto de límites de placas).
   const [mapInstance, setMapInstance] = useState<any>(null);
 
+  // El efecto que crea el mapa depende de [showCities, currentLayer], NO de
+  // `region`: leer la prop directamente ahí congelaría el valor del primer
+  // render (cuando el área todavía está cargando). Se lee del ref, y el efecto
+  // de reencuadre de abajo se ocupa de los cambios posteriores.
+  const regionRef = useRef(region);
+  regionRef.current = region;
+  const areaGeometryRef = useRef(areaGeometry);
+  areaGeometryRef.current = areaGeometry;
+
+  // Reencuadrar cuando cambia el área activa.
+  //
+  // Va en un efecto SEPARADO del que crea el mapa a propósito: aquel tiene un
+  // guard `!leafletMapRef.current` y agregarle `region` a las deps no
+  // reencuadraría nada —saldría por el guard—, mientras que sacarle el guard
+  // destruiría y recrearía el mapa entero en cada cambio, perdiendo las capas
+  // y la selección del usuario.
+  //
+  // Depende de `mapInstance` (estado) y no de `leafletMapRef` (ref) porque un
+  // ref no dispara renders: con el ref, este efecto correría sólo en el primer
+  // render, cuando el mapa todavía no existe, y nunca reencuadraría.
+  //
+  // El encuadre se serializa a string para las deps: `areaViewBounds` devuelve
+  // un array nuevo en cada render, y SWR además devuelve un `region` nuevo en
+  // cada revalidación. Dependiendo del objeto, el mapa saltaría al encuadre
+  // inicial cada 60 segundos y le pisaría el zoom al usuario. Con la clave sólo
+  // se reencuadra cuando los NÚMEROS cambian, o sea cuando cambió el área.
+  const viewBounds = areaViewBounds(areaGeometry, region);
+  const viewBoundsKey = viewBounds ? JSON.stringify(viewBounds) : null;
+
+  useEffect(() => {
+    if (!mapInstance || !viewBoundsKey) return;
+
+    mapInstance.fitBounds(JSON.parse(viewBoundsKey));
+    // `viewBounds` queda fuera de las deps a propósito: `viewBoundsKey` es su
+    // forma estable y se parsea acá adentro para no depender de la identidad
+    // del array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapInstance, viewBoundsKey]);
+
   // Inicializar mapa
   useEffect(() => {
     if (typeof window !== 'undefined' && mapRef.current && !leafletMapRef.current) {
@@ -147,7 +204,17 @@ export function AdvancedSeismicMap({
           delete (container as any)._leaflet_id;
         }
 
-        const map = L.map(container).setView([-30, -65], 4);
+        // Sin `region` se cae al encuadre histórico (Sudamérica): este efecto
+        // sólo corre al crear el mapa, y en ese momento el área todavía puede
+        // estar cargando. El efecto de reencuadre de más abajo lo corrige
+        // apenas llega, y también cuando el usuario cambia de área.
+        const map = L.map(container);
+        const initial = areaViewBounds(areaGeometryRef.current, regionRef.current);
+        if (initial) {
+          map.fitBounds(initial);
+        } else {
+          map.setView([-30, -65], 4);
+        }
 
         // Crear todas las capas base
         Object.entries(BASE_LAYERS).forEach(([key, layer]) => {

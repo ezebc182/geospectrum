@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, List
 from uuid import UUID
 
+import asyncpg
 import redis.asyncio as aioredis
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
@@ -63,7 +64,14 @@ from src.services.auth_service import (
     TotpAlreadyEnabledError,
     TotpNotAvailableForGoogleOnlyUserError,
 )
-from src.api.deps import SESSION_COOKIE_NAME, get_current_user
+from src.api.deps import (
+    SESSION_COOKIE_NAME,
+    get_current_user,
+    get_current_user_optional,
+)
+from src.api.routers import areas as areas_router
+from src.services.area_service import AreaService
+from src.services.geo_filter import area_to_filter_dict
 from src.services import cache
 
 # =============================================================================
@@ -224,16 +232,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "table (auth_service) — configure TIMESCALEDB_HOST/USER/PASSWORD"
         )
 
+    # Pool de Postgres COMPARTIDO (areas-of-interest / AOI-1). Antes vivía
+    # encapsulado dentro de AuthService; se extrae acá porque area_service lo
+    # necesita también y abrir un segundo pool contra la misma base duplicaría
+    # conexiones sin motivo. app.state es el mismo lugar donde ya viven
+    # auth_service/event_bus, así que no introduce un patrón nuevo.
+    #
+    # El dueño del ciclo de vida es este lifespan: se cierra abajo, DESPUÉS de
+    # los servicios que lo usan. AuthService lo recibe inyectado y por eso su
+    # close() es no-op (ver AuthService.__init__).
+    db_pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5)
+    app.state.db_pool = db_pool
+
     auth_service = AuthService(
         dsn=dsn,
         secret_key=settings.auth_secret_key,
         token_expire_minutes=settings.auth_token_expire_minutes,
+        pool=db_pool,
     )
     await auth_service.connect()
     app.state.auth_service = auth_service
     logger.info("AuthService conectado (tabla users en TimescaleDB/Postgres)")
 
     app.state.totp_login_attempt_limiter = Login2FAAttemptLimiter(totp_login_attempt_redis)
+
+    # Áreas de interés (AOI-1). Recibe el pool COMPARTIDO y no lo cierra —
+    # igual que AuthService, el dueño del ciclo de vida es este lifespan.
+    # No tiene connect(): el pool ya está abierto cuando llega acá.
+    app.state.area_service = AreaService(db_pool)
+    logger.info("AreaService conectado (areas_of_interest)")
 
     # --------------------------------------------------------------------
     # Google OAuth (google-oauth, Phase 3) — registro CONDICIONAL, NO
@@ -265,6 +292,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if column_writer is not None:
         await column_writer.close()
     await auth_service.close()
+    # Después de auth_service (que ya no es dueño del pool): el pool compartido
+    # se cierra último, cuando nadie lo puede estar usando.
+    await db_pool.close()
     await totp_login_attempt_redis.aclose()
     logger.info("GeoSpectrum Service shutting down")
 
@@ -311,6 +341,15 @@ app.add_middleware(
     secret_key=settings.auth_secret_key,
     session_cookie="oauth_state",
 )
+
+# =============================================================================
+# Routers (AOI-1)
+# =============================================================================
+#
+# Primer APIRouter del proyecto. El resto de los ~30 endpoints sigue con
+# @app.get más abajo en este mismo archivo; migrarlos sería un refactor de toda
+# la superficie de la API y no es parte de AOI-1.
+app.include_router(areas_router.router)
 
 
 # =============================================================================
@@ -437,9 +476,11 @@ async def _fetch_parallel(
 
 
 @app.get("/report", response_model=MonitorReport, tags=["monitoring"])
-async def report() -> MonitorReport:
+async def report(
+    current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
+) -> MonitorReport:
     """
-    Reporte completo de monitoreo sísmico.
+    Reporte completo de monitoreo sísmico, recortado al área de interés activa.
 
     Incluye:
     - KPIs calculados sobre ventana temporal
@@ -447,13 +488,48 @@ async def report() -> MonitorReport:
     - Lista completa de eventos detectados
     - Errores de fuentes externas (si los hubo)
 
-    Returns:
-        MonitorReport completo
+    ENDPOINT PÚBLICO CON PERSONALIZACIÓN OPCIONAL (AOI-1). Usa
+    get_current_user_optional, no get_current_user: con sesión válida el
+    reporte se recorta al área activa del usuario; sin ella, al preset por
+    defecto ("global"). Volverlo privado habría roto scripts/seismic-cli.py y
+    el consumo anónimo del dashboard, sin ganar nada: el reporte no expone
+    datos de nadie, sólo sismos públicos.
+
+    El área recorta eventos, KPIs y alertas por igual (ver build_report): un
+    usuario con área "Andes" no recibe alertas de sismos de Japón.
+
+    DefaultAreaMissingError se deja propagar (500) igual que en /areas: una
+    base sin seed es un error de configuración del servidor, no una condición
+    del cliente, y debe llegar a los logs y a GlitchTip como tal.
     """
     with request_duration.labels(endpoint="/report").time():
         logger.info("Generating seismic report")
 
-        report_obj = await build_report(sources=CANONICAL_SOURCES)
+        # El área es una PERSONALIZACIÓN, no el corazón del endpoint: si no se
+        # puede resolver (AreaService no wireado, base sin seed, Postgres
+        # caído), /report degrada al reporte global en vez de devolver 500. El
+        # monitoreo sísmico es la función principal y no puede caerse porque
+        # falle el recorte por región. `area=None` reproduce exactamente el
+        # comportamiento previo a AOI-1, que es el fallback correcto.
+        area_filter = None
+        try:
+            area_service: AreaService = app.state.area_service
+            if current_user is not None:
+                active_area, _is_default = await area_service.get_active(current_user.id)
+            else:
+                active_area = await area_service.get_default()
+            area_filter = area_to_filter_dict(active_area)
+            logger.info("Report area: %s", active_area.slug)
+        except Exception:
+            # exception() y no warning(): el stack va a los logs y a GlitchTip
+            # para que esto se vea y se arregle, en vez de quedar como una
+            # degradación silenciosa que nadie nota.
+            logger.exception("No se pudo resolver el área activa; reporte global")
+
+        report_obj = await build_report(
+            sources=CANONICAL_SOURCES,
+            area=area_filter,
+        )
         logger.info("Merged events: %d total", len(report_obj.eventos))
 
         # Desglose por fuente para events_fetched: se calcula sobre eventos

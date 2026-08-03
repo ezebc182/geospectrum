@@ -51,6 +51,24 @@ itsdangerous==2.2.0
 # del otpauth:// URI (Decision 7) — el backend nunca genera una imagen PNG.
 pyotp==2.10.0
 
+# Geometría (areas-of-interest / AOI-1) — punto-en-polígono para filtrar eventos
+# por área de interés. Ver docs/superpowers/specs/
+# 2026-07-27-plate-boundaries-usgs-style-design.md ("Decisiones heredadas",
+# #1 y #2): la imagen timescale/timescaledb:latest-pg15 NO trae PostGIS
+# (`postgis` no figura en pg_available_extensions, verificado contra la base
+# corriendo), así que la geometría se guarda como GeoJSON en JSONB y el
+# punto-en-polígono lo resuelve Shapely en Python. Se elige Shapely y no
+# ray-casting propio porque maneja multipolígonos y agujeros —el catálogo
+# curado tiene cinturones partidos en el antimeridiano (Decisión heredada #5).
+#
+# 2.1.2 es la última estable en PyPI al momento de esta tarea. Se elige la
+# serie 2.x —y no la 1.8.x— porque requiere numpy>=1.21 y es compatible con
+# numpy 2.x, que es lo que el venv de desarrollo tiene realmente instalado
+# (2.5.1), por delante del `numpy==1.26.4` pineado más abajo. Instala desde
+# wheel precompilada (no compila C), así que no reproduce el problema de
+# toolchain que tiene obspy en deploy/docker/Dockerfile.
+shapely==2.1.2
+
 # Utils
 python-dateutil==2.9.0
 pytz==2024.1

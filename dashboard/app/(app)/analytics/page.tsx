@@ -2,15 +2,23 @@
 
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
+import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { MagnitudeTimeChart } from '@/components/MagnitudeTimeChart';
 import { DepthDistributionChart } from '@/components/DepthDistributionChart';
 import { EventsTable } from '@/components/EventsTable';
+import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { BarChart3 } from 'lucide-react';
 
 export default function AnalyticsPage() {
-  const { data, error, isLoading } = useSWR('/report', reportFetcher, {
+  const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
     refreshInterval: 60000,
   });
+
+  // Esta página no escuchaba el cambio de área: al elegir otra región los
+  // gráficos y la tabla seguían con los datos viejos hasta el refresco de 60s.
+  // A diferencia del dashboard y de /live, acá sólo hay que revalidar el
+  // reporte — no se dibuja el polígono del área en ningún lado.
+  const isRefreshingArea = useAreaRefresh(() => mutate());
 
   if (isLoading) {
     return (
@@ -31,7 +39,7 @@ export default function AnalyticsPage() {
   const { eventos } = data;
 
   return (
-    <div className="space-y-8">
+    <AreaRefreshIndicator isRefreshing={isRefreshingArea} className="space-y-8">
       <div className="flex items-center gap-3">
         <BarChart3 className="h-8 w-8 text-seismic-600" />
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -53,8 +61,8 @@ export default function AnalyticsPage() {
         <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
           Tabla Completa de Eventos
         </h2>
-        <EventsTable eventos={eventos} />
+        <EventsTable eventos={eventos} filterable />
       </div>
-    </div>
+    </AreaRefreshIndicator>
   );
 }

@@ -43,12 +43,10 @@ async def fetch_emsc_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
         "start": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
         "end": now.strftime("%Y-%m-%dT%H:%M:%S"),
         "minmag": str(settings.min_mag_alert),
-        "minlat": str(settings.bbox["minlat"]),
-        "maxlat": str(settings.bbox["maxlat"]),
-        "minlon": str(settings.bbox["minlon"]),
-        "maxlon": str(settings.bbox["maxlon"]),
+        # Sin bbox: ingesta GLOBAL, el recorte por área ocurre al leer.
+        # Ver el comentario equivalente en usgs_service.
         "orderby": "time-asc",
-        "limit": "200",
+        "limit": str(settings.source_fetch_limit),
     }
 
     t0 = time.perf_counter()
