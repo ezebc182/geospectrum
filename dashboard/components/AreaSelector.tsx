@@ -14,7 +14,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, Globe } from 'lucide-react';
+import { Check, ChevronDown, Globe, Search } from 'lucide-react';
 
 import {
   DropdownMenu,
@@ -25,11 +25,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { groupAreas } from '@/lib/area-groups';
+import { countAreas, filterGroups, normalize } from '@/lib/area-search';
 import { getActiveArea, listAreas, setActiveArea } from '@/lib/areas';
 import type { Area } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_AREA_LABEL = 'Área por defecto';
+
+/**
+ * A partir de cuántas áreas aparece el buscador.
+ *
+ * Con pocas opciones el input es ruido: se ven todas de un vistazo y el filtro
+ * agrega un paso para no ahorrar ninguno. El catálogo del sistema ya son 18, así
+ * que en la práctica se muestra siempre; el umbral existe para el caso raro de
+ * un despliegue con el catálogo recortado.
+ */
+const SEARCH_THRESHOLD = 8;
 
 interface AreaSelectorProps {
   /** Se llama después de cambiar el área, para refrescar el reporte. */
@@ -40,6 +51,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
   const [areas, setAreas] = useState<Area[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -89,8 +101,22 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
   const activeLabel = activeArea ? activeArea.name : DEFAULT_AREA_LABEL;
   const groups = groupAreas(areas);
 
+  const showSearch = areas.length >= SEARCH_THRESHOLD;
+  const visibleGroups = showSearch ? filterGroups(groups, query) : groups;
+  const hasResults = countAreas(visibleGroups) > 0;
+  // "Área por defecto" es una opción más y se filtra con el mismo criterio, si
+  // no quedaría fija arriba contradiciendo al buscador.
+  const showDefaultOption =
+    !showSearch || normalize(DEFAULT_AREA_LABEL).includes(normalize(query));
+
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      // El texto tipeado no sobrevive al cierre: al reabrir se espera la lista
+      // completa, no el filtro de la vez pasada.
+      onOpenChange={(open) => {
+        if (!open) setQuery('');
+      }}
+    >
       <DropdownMenuTrigger
         disabled={saving}
         aria-label={`Área de interés: ${activeLabel}`}
@@ -117,18 +143,50 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
         <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
           Área de interés
         </DropdownMenuLabel>
+
+        {showSearch && (
+          <div className="px-2 pb-2 pt-1">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              {/* Sin autoFocus a propósito: Radix enfoca el primer item al
+                  abrir, y robarle el foco al input rompería la navegación por
+                  flechas de quien usa teclado. Se llega con Tab o con click. */}
+              <input
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Buscar área…"
+                aria-label="Buscar área de interés"
+                // Radix trata cada tecla como typeahead para mover el foco
+                // entre items: sin esto, escribir acá salta a una opción en vez
+                // de llenar el input. Escape sí se deja pasar, para que siga
+                // cerrando el menú.
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') event.stopPropagation();
+                }}
+                className="w-full rounded-md border border-input bg-transparent py-1.5 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+        )}
+
         <DropdownMenuSeparator />
 
-        <AreaOption
-          label={DEFAULT_AREA_LABEL}
-          isActive={activeId === null}
-          onSelect={() => handleChange('')}
-        />
+        {showDefaultOption && (
+          <AreaOption
+            label={DEFAULT_AREA_LABEL}
+            isActive={activeId === null}
+            onSelect={() => handleChange('')}
+          />
+        )}
 
-        {/* Con 17 áreas del sistema, una lista plana obliga a leerlas todas
+        {/* Con 18 áreas del sistema, una lista plana obliga a leerlas todas
             para encontrar una. Los grupos vacíos no se renderizan: "Mis áreas"
             no existe hasta que el usuario cree la primera. */}
-        {groups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.id}>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -144,6 +202,13 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
             ))}
           </div>
         ))}
+
+        {/* Sin esto el panel queda vacío y parece colgado. */}
+        {showSearch && !hasResults && !showDefaultOption && (
+          <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+            No hay áreas que coincidan con «{query}»
+          </p>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
