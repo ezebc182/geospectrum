@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach } from 'vitest';
 import { EventsTable } from './EventsTable';
+import { emitAreaChanged } from '@/lib/area-events';
 import type { SeismicEvent } from '@/lib/types';
 
 afterEach(() => {
@@ -71,5 +72,56 @@ describe('EventsTable — sincronización tabla→mapa (onRowClick)', () => {
     fireEvent.mouseOver(row!);
 
     expect(onRowClick).not.toHaveBeenCalled();
+  });
+});
+
+describe('EventsTable — filtros (filterable)', () => {
+  const eventos = [
+    makeEvento({ id: 'a', lugar: 'Santiago, Chile', mag: 5.5 }),
+    makeEvento({ id: 'b', lugar: 'Tokio, Japón', mag: 3.1 }),
+    makeEvento({ id: 'c', lugar: 'Valparaíso, Chile', mag: 2.0 }),
+  ];
+
+  it('no muestra la barra de filtros si no se pide', () => {
+    render(<EventsTable eventos={eventos} />);
+
+    expect(screen.queryByLabelText('Buscar por zona')).toBeNull();
+  });
+
+  it('filtra las filas por la búsqueda de zona', () => {
+    render(<EventsTable eventos={eventos} filterable />);
+
+    fireEvent.change(screen.getByLabelText('Buscar por zona'), {
+      target: { value: 'chile' },
+    });
+
+    expect(screen.getByText('Santiago, Chile')).toBeTruthy();
+    expect(screen.getByText('Valparaíso, Chile')).toBeTruthy();
+    expect(screen.queryByText('Tokio, Japón')).toBeNull();
+  });
+
+  it('filtra ANTES de aplicar el limit', () => {
+    // Con el orden invertido, un limit de 1 recortaría a "Santiago" y buscar
+    // "japon" no encontraría nada aunque el evento exista en la lista.
+    render(<EventsTable eventos={eventos} limit={1} filterable />);
+
+    fireEvent.change(screen.getByLabelText('Buscar por zona'), {
+      target: { value: 'japon' },
+    });
+
+    expect(screen.getByText('Tokio, Japón')).toBeTruthy();
+  });
+
+  it('limpia los filtros al cambiar de área', () => {
+    render(<EventsTable eventos={eventos} filterable />);
+
+    const search = screen.getByLabelText('Buscar por zona') as HTMLInputElement;
+    fireEvent.change(search, { target: { value: 'japon' } });
+    expect(screen.queryByText('Santiago, Chile')).toBeNull();
+
+    act(() => emitAreaChanged());
+
+    expect(search.value).toBe('');
+    expect(screen.getByText('Santiago, Chile')).toBeTruthy();
   });
 });
