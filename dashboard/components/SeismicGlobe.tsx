@@ -109,7 +109,11 @@ export function SeismicGlobe({
           // Fondo transparente para que tome el color de la página y funcione
           // igual en tema claro y oscuro.
           backgroundColor="rgba(0,0,0,0)"
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+          // Textura servida desde /public, no desde unpkg: es un asset de
+          // runtime y depender de un CDN de terceros significa que el globo se
+          // ve negro cuando ese CDN falla. El archivo viene con three-globe
+          // (dependencia de react-globe.gl), así que copiarlo no agrega fuentes.
+          globeImageUrl="/textures/earth-night.jpg"
           pointsData={points}
           pointLat={(d) => (d as GlobePoint).lat}
           pointLng={(d) => (d as GlobePoint).lng}
