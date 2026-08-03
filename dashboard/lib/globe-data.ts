@@ -53,6 +53,20 @@ export function pointAltitude(magnitude: number): number {
 }
 
 /**
+ * Coordenada del evento, o null si no es utilizable.
+ *
+ * No alcanza con `Number.isFinite(Number(v))`: `Number(null)`, `Number('')` y
+ * `Number([])` valen 0, no NaN. Un evento con `lat: null` pasaría el filtro
+ * convertido en 0 y se dibujaría en el Golfo de Guinea —que es agua, así que
+ * el punto se ve plausible y nadie lo detecta a simple vista. Mismo tipo de
+ * fallo silencioso que invertir [lat,lng]: no rompe, miente.
+ */
+function toCoordinate(value: unknown): number | null {
+  if (typeof value !== 'number') return null;
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
  * Convierte los eventos del reporte a puntos del globo.
  *
  * Descarta los que no tienen coordenadas numéricas: la API devuelve el campo
@@ -63,9 +77,9 @@ export function eventsToPoints(eventos: SeismicEvent[]): GlobePoint[] {
   const points: GlobePoint[] = [];
 
   for (const evento of eventos) {
-    const lat = Number(evento.lat);
-    const lng = Number(evento.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const lat = toCoordinate(evento.lat);
+    const lng = toCoordinate(evento.lon);
+    if (lat === null || lng === null) continue;
 
     const magnitude = Number(evento.mag) || 0;
     points.push({
