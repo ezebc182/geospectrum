@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { Check, Share2 } from 'lucide-react';
 
 import { shareEvent, type ShareOutcome } from '@/lib/share-event';
+import { MagnitudeScale } from '@/components/MagnitudeScale';
 import {
   Sheet,
   SheetContent,
@@ -139,7 +140,11 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
           </DetailRow>
         </dl>
 
-        <div className="px-4 pt-2">
+        <div className="px-4 pt-4">
+          <MagnitudeScale magnitude={evento.mag} />
+        </div>
+
+        <div className="px-4 pt-4">
           <button
             onClick={handleShare}
             className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 dark:border-gray-700"

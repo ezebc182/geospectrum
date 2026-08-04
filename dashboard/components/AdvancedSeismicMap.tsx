@@ -12,6 +12,7 @@ import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils'
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
 import { shouldShowCityLabel } from '@/lib/city-labels';
+import { MAJOR_CITIES } from '@/lib/major-cities';
 import {
   partitionByKind,
   parsePolarity,
@@ -57,61 +58,6 @@ interface AdvancedSeismicMapProps {
   onBoundsChange?: (visibleCount: number, totalCount: number) => void;
 }
 
-interface MajorCity {
-  name: string;
-  lat: number;
-  lon: number;
-  population: number;
-  country: string;
-}
-
-// Listado unificado (Decisión 7 de design.md): 9 ciudades originales de este componente
-// + 27 de SeismicMapWithCities, deduplicadas por coincidencia de coordenadas (6 en común).
-// Total: 30 ciudades, todas con `country` para consistencia de tipo.
-const MAJOR_CITIES: MajorCity[] = [
-  // Argentina
-  { name: 'Buenos Aires', lat: -34.6037, lon: -58.3816, population: 15000000, country: 'Argentina' },
-  { name: 'Córdoba', lat: -31.4201, lon: -64.1888, population: 1500000, country: 'Argentina' },
-  { name: 'Rosario', lat: -32.9468, lon: -60.6393, population: 1300000, country: 'Argentina' },
-  { name: 'Mendoza', lat: -32.8895, lon: -68.8458, population: 1100000, country: 'Argentina' },
-  { name: 'San Juan', lat: -31.5375, lon: -68.5364, population: 500000, country: 'Argentina' },
-  { name: 'San Miguel de Tucumán', lat: -26.8083, lon: -65.2176, population: 900000, country: 'Argentina' },
-  { name: 'Salta', lat: -24.7859, lon: -65.4117, population: 600000, country: 'Argentina' },
-  { name: 'Mar del Plata', lat: -38.0055, lon: -57.5426, population: 650000, country: 'Argentina' },
-  { name: 'Neuquén', lat: -38.9516, lon: -68.0591, population: 350000, country: 'Argentina' },
-
-  // Chile
-  { name: 'Santiago', lat: -33.4489, lon: -70.6693, population: 7000000, country: 'Chile' },
-  { name: 'Valparaíso', lat: -33.0472, lon: -71.6127, population: 900000, country: 'Chile' },
-  { name: 'Concepción', lat: -36.8201, lon: -73.0444, population: 730000, country: 'Chile' },
-  { name: 'Antofagasta', lat: -23.6509, lon: -70.3975, population: 400000, country: 'Chile' },
-  { name: 'Temuco', lat: -38.7359, lon: -72.5904, population: 300000, country: 'Chile' },
-  { name: 'Iquique', lat: -20.2307, lon: -70.1355, population: 200000, country: 'Chile' },
-  { name: 'Valdivia', lat: -39.8142, lon: -73.2459, population: 170000, country: 'Chile' },
-  { name: 'Coquimbo', lat: -29.9533, lon: -71.3436, population: 200000, country: 'Chile' },
-
-  // Perú
-  { name: 'Lima', lat: -12.0464, lon: -77.0428, population: 10000000, country: 'Perú' },
-  { name: 'Arequipa', lat: -16.4090, lon: -71.5375, population: 1000000, country: 'Perú' },
-  { name: 'Cusco', lat: -13.5319, lon: -71.9675, population: 430000, country: 'Perú' },
-  { name: 'Trujillo', lat: -8.1116, lon: -79.0288, population: 920000, country: 'Perú' },
-
-  // Bolivia
-  { name: 'La Paz', lat: -16.5000, lon: -68.1500, population: 2300000, country: 'Bolivia' },
-  { name: 'Santa Cruz', lat: -17.8146, lon: -63.1561, population: 1900000, country: 'Bolivia' },
-  { name: 'Cochabamba', lat: -17.3895, lon: -66.1568, population: 1200000, country: 'Bolivia' },
-
-  // Paraguay
-  { name: 'Asunción', lat: -25.2637, lon: -57.5759, population: 2500000, country: 'Paraguay' },
-
-  // Uruguay
-  { name: 'Montevideo', lat: -34.9011, lon: -56.1645, population: 1900000, country: 'Uruguay' },
-
-  // Exclusivas de las 9 originales de AdvancedSeismicMap (fuera de la cobertura AR/CL/PE/BO/PY/UY)
-  { name: 'Bogotá', lat: 4.7110, lon: -74.0721, population: 10000000, country: 'Colombia' },
-  { name: 'Caracas', lat: 10.4806, lon: -66.9036, population: 3000000, country: 'Venezuela' },
-  { name: 'Quito', lat: -0.1807, lon: -78.4678, population: 2800000, country: 'Ecuador' },
-];
 
 export function AdvancedSeismicMap({
   eventos,
@@ -270,7 +216,16 @@ export function AdvancedSeismicMap({
             cityLabelGroup.clearLayers();
             const zoom = map.getZoom();
 
-            MAJOR_CITIES.filter((city) => shouldShowCityLabel(city.population, zoom)).forEach(
+            // El filtro por viewport es el que hace el trabajo pesado ahora que
+            // la lista es mundial: mirando Sudamérica, las ciudades de Asia no
+            // compiten por espacio aunque pasen el corte de población.
+            const bounds = map.getBounds();
+
+            MAJOR_CITIES.filter(
+              (city) =>
+                shouldShowCityLabel(city.population, zoom) &&
+                bounds.contains([city.lat, city.lon]),
+            ).forEach(
               (city) => {
                 const size = city.population > 5000000 ? 8 : city.population > 2000000 ? 6 : 5;
 
@@ -298,7 +253,10 @@ export function AdvancedSeismicMap({
           };
 
           renderCityLabels();
-          map.on('zoomend', renderCityLabels);
+          // moveend cubre zoom Y paneo: Leaflet lo dispara al terminar
+          // cualquiera de los dos, y al panear también cambia qué ciudades
+          // entran en el viewport.
+          map.on('moveend', renderCityLabels);
 
           cityLayerGroup.addTo(map);
           cityLabelGroup.addTo(map);

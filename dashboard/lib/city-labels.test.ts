@@ -23,6 +23,15 @@ describe('shouldShowCityLabel', () => {
     expect(shouldShowCityLabel(900_000, 4)).toBe(false); // Trujillo
   });
 
+  it('deja fuera a las ciudades grandes que no son megaciudades', () => {
+    // Con la lista mundial de 84 ciudades, un corte de 8M dejaba 27 etiquetas
+    // a zoom 4 y el apilamiento volvía. Santiago y Madrid son grandes pero a
+    // nivel continental no aportan referencia sobre las que ya están.
+    expect(shouldShowCityLabel(6_800_000, 4)).toBe(false); // Santiago
+    expect(shouldShowCityLabel(6_700_000, 4)).toBe(false); // Madrid
+    expect(shouldShowCityLabel(37_000_000, 4)).toBe(true); // Tokio
+  });
+
   it('muestra las ciudades medianas al acercarse', () => {
     const trujillo = 900_000;
 
@@ -46,7 +55,7 @@ describe('shouldShowCityLabel', () => {
   });
 
   it('incluye a la ciudad que está justo en el umbral', () => {
-    expect(shouldShowCityLabel(8_000_000, 4)).toBe(true);
-    expect(shouldShowCityLabel(7_999_999, 4)).toBe(false);
+    expect(shouldShowCityLabel(15_000_000, 4)).toBe(true);
+    expect(shouldShowCityLabel(14_999_999, 4)).toBe(false);
   });
 });

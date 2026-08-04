@@ -23,9 +23,10 @@
  * dibujando siempre: lo que se oculta es el texto, que es lo que se pisa.
  */
 const LABEL_THRESHOLDS: { maxZoom: number; minPopulation: number }[] = [
-  { maxZoom: 4, minPopulation: 8_000_000 },
-  { maxZoom: 6, minPopulation: 3_000_000 },
-  { maxZoom: 8, minPopulation: 1_000_000 },
+  { maxZoom: 4, minPopulation: 15_000_000 },
+  { maxZoom: 5, minPopulation: 10_000_000 },
+  { maxZoom: 6, minPopulation: 5_000_000 },
+  { maxZoom: 8, minPopulation: 1_500_000 },
 ];
 
 /**
