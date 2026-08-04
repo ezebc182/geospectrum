@@ -11,13 +11,15 @@
 
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { Globe2, RefreshCw } from 'lucide-react';
 
 import { reportFetcher } from '@/lib/api';
 import { globePointId } from '@/lib/globe-data';
+import { EVENT_PARAM } from '@/lib/share-event';
 import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { GlobeEventPanel } from '@/components/GlobeEventPanel';
@@ -37,7 +39,26 @@ const SeismicGlobe = dynamic(
   },
 );
 
+/**
+ * useSearchParams obliga a un límite de Suspense en Next 15: sin él la página
+ * entera queda fuera del prerender y el build falla. El fallback es el mismo
+ * esqueleto que usa la carga del globo, así no salta el layout.
+ */
 export default function GlobePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-[600px] items-center justify-center rounded-xl bg-muted/30">
+          <span className="text-sm text-muted-foreground">Cargando globo…</span>
+        </div>
+      }
+    >
+      <GlobeView />
+    </Suspense>
+  );
+}
+
+function GlobeView() {
   const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
     refreshInterval: 60_000,
   });
@@ -46,9 +67,31 @@ export default function GlobePage() {
   // queda viejo, y el panel mostraría datos de hace un minuto mientras el globo
   // dibuja los nuevos. Con el id se re-resuelve siempre contra el último
   // reporte, y si el evento desaparece del reporte el panel se cierra solo.
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  //
+  // Arranca con el ?event= de la URL para que un link compartido abra el
+  // evento en cuestión y no el globo girando en cualquier lado.
+  const searchParams = useSearchParams();
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(
+    () => searchParams.get(EVENT_PARAM),
+  );
 
   const isRefreshingArea = useAreaRefresh(() => mutate());
+
+  // La URL sigue al evento seleccionado para que copiarla del navegador o
+  // compartirla lleven al mismo lugar.
+  //
+  // Se usa replaceState y no router.push: cada click en un punto agregaría una
+  // entrada al historial y salir del globo pasaría a ser apretar "atrás" veinte
+  // veces. Tampoco se usa router.replace porque dispara una navegación de Next
+  // que remonta el canvas de WebGL.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+
+    if (selectedEventId) url.searchParams.set(EVENT_PARAM, selectedEventId);
+    else url.searchParams.delete(EVENT_PARAM);
+
+    window.history.replaceState(null, '', url.toString());
+  }, [selectedEventId]);
 
   if (error) {
     return (

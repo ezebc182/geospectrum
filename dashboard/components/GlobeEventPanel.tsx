@@ -14,7 +14,8 @@
 import { useState } from 'react';
 import { Check, Share2 } from 'lucide-react';
 
-import { shareEvent, type ShareOutcome } from '@/lib/share-event';
+import { eventUrl, shareEvent, type ShareOutcome } from '@/lib/share-event';
+import { globePointId } from '@/lib/globe-data';
 import { MagnitudeScale } from '@/components/MagnitudeScale';
 import {
   Sheet,
@@ -75,9 +76,10 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
 
   const handleShare = async () => {
     if (!evento) return;
-    // La URL de la página basta: no hay ruta por evento todavía, y mandar un
-    // link roto es peor que mandar solo el texto.
-    setOutcome(await shareEvent(evento, window.location.href));
+    // La URL lleva ?event=<id> para que quien la abra caiga en este mismo
+    // sismo. Sin el parámetro el link abre el globo girando y el mensaje
+    // pierde la mitad de su sentido.
+    setOutcome(await shareEvent(evento, eventUrl(globePointId(evento))));
   };
 
   // Radix cierra el Sheet con onOpenChange(false); el estado real del evento

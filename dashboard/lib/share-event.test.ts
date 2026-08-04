@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildShareText } from './share-event';
+import { buildShareText, EVENT_PARAM, eventUrl } from './share-event';
 import type { SeismicEvent } from '@/lib/types';
 
 function makeEvent(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
@@ -19,6 +19,37 @@ function makeEvent(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
     ...overrides,
   };
 }
+
+describe('eventUrl', () => {
+  const BASE = 'http://localhost:3008/globe';
+
+  it('agrega el id del evento como parámetro', () => {
+    expect(eventUrl('usgs-abc123', BASE)).toContain(`${EVENT_PARAM}=usgs-abc123`);
+  });
+
+  it('reemplaza el evento anterior en vez de acumular parámetros', () => {
+    // Sin esto, clickear cinco eventos deja una URL con cinco ?event= y el que
+    // abre el link cae en el primero, no en el que se quiso compartir.
+    const url = new URL(eventUrl('nuevo', `${BASE}?event=viejo`));
+
+    expect(url.searchParams.getAll(EVENT_PARAM)).toEqual(['nuevo']);
+  });
+
+  it('conserva los demás parámetros de la URL', () => {
+    const url = new URL(eventUrl('evt-1', `${BASE}?area=cascadia`));
+
+    expect(url.searchParams.get('area')).toBe('cascadia');
+    expect(url.searchParams.get(EVENT_PARAM)).toBe('evt-1');
+  });
+
+  it('escapa los ids que traen caracteres especiales', () => {
+    // El id de respaldo se arma con coordenadas y hora: "-33.4,-70.6,2026-..."
+    // Las comas y los dos puntos tienen que viajar codificados.
+    const id = '-33.4,-70.6,2026-08-01T00:00:00Z';
+
+    expect(new URL(eventUrl(id, BASE)).searchParams.get(EVENT_PARAM)).toBe(id);
+  });
+});
 
 describe('buildShareText', () => {
   it('pone magnitud y lugar en la primera línea', () => {

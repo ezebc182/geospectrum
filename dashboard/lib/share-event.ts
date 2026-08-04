@@ -47,6 +47,21 @@ function formatUtc(isoString: string): string {
   return `${fecha.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
+/** Parámetro de la URL que identifica el evento enfocado en el globo. */
+export const EVENT_PARAM = 'event';
+
+/**
+ * URL absoluta que apunta a un evento concreto.
+ *
+ * Vive acá y no en la página del globo para que el panel pueda usarla sin
+ * importar desde una ruta —eso arma un ciclo entre página y componente.
+ */
+export function eventUrl(eventId: string, base = window.location.href): string {
+  const url = new URL(base);
+  url.searchParams.set(EVENT_PARAM, eventId);
+  return url.toString();
+}
+
 /** Resultado de intentar compartir, para que la UI dé la devolución correcta. */
 export type ShareOutcome = 'shared' | 'copied' | 'dismissed' | 'failed';
 
