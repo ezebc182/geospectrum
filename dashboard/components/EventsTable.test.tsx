@@ -33,7 +33,7 @@ describe('EventsTable — sincronización tabla→mapa (onRowClick)', () => {
 
     render(<EventsTable eventos={eventos} onRowClick={onRowClick} />);
 
-    const row = screen.getByText('Buenos Aires, Argentina').closest('tr');
+    const row = screen.getByText('Buenos Aires, Argentina').closest('[role="row"]');
     expect(row).not.toBeNull();
     fireEvent.click(row!);
 
@@ -45,7 +45,7 @@ describe('EventsTable — sincronización tabla→mapa (onRowClick)', () => {
     const eventos = [makeEvento({ id: 'evt-123' })];
     render(<EventsTable eventos={eventos} selectedEventId="evt-123" />);
 
-    const row = screen.getByText('Buenos Aires, Argentina').closest('tr');
+    const row = screen.getByText('Buenos Aires, Argentina').closest('[role="row"]');
     expect(row?.getAttribute('data-state')).toBe('selected');
   });
 
@@ -53,7 +53,7 @@ describe('EventsTable — sincronización tabla→mapa (onRowClick)', () => {
     const eventos = [makeEvento({ id: 'evt-123' })];
     render(<EventsTable eventos={eventos} selectedEventId="evt-999" />);
 
-    const row = screen.getByText('Buenos Aires, Argentina').closest('tr');
+    const row = screen.getByText('Buenos Aires, Argentina').closest('[role="row"]');
     expect(row?.getAttribute('data-state')).toBeNull();
   });
 
@@ -67,7 +67,7 @@ describe('EventsTable — sincronización tabla→mapa (onRowClick)', () => {
     const eventos = [makeEvento({ id: 'evt-123' })];
     render(<EventsTable eventos={eventos} onRowClick={onRowClick} />);
 
-    const row = screen.getByText('Buenos Aires, Argentina').closest('tr');
+    const row = screen.getByText('Buenos Aires, Argentina').closest('[role="row"]');
     fireEvent.mouseEnter(row!);
     fireEvent.mouseOver(row!);
 

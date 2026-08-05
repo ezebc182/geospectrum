@@ -131,6 +131,15 @@ class SeedLinkIngestor:
         self._loop = asyncio.new_event_loop()
         threading.Thread(target=self._loop.run_forever, daemon=True).start()
 
+        if self.column_writer is not None:
+            # El pool de asyncpg debe nacer en el mismo loop donde después se
+            # usa (add_column corre vía run_coroutine_threadsafe en self._loop);
+            # conectarlo en el loop de _main() revienta con "attached to a
+            # different loop" en cada flush.
+            asyncio.run_coroutine_threadsafe(
+                self.column_writer.connect(), self._loop
+            ).result()
+
         self._client = create_client(self.server, on_data=self._on_data)
         for net, sta, cha in channels:
             self._client.select_stream(net, sta, cha)
@@ -184,9 +193,11 @@ if __name__ == "__main__":
 
         column_writer: Optional[TimescaleColumnWriter] = None
         if settings.timescaledb_dsn is not None:
+            # No conectar acá: el pool de asyncpg debe nacer en el loop del
+            # ingestor (ver SeedLinkIngestor.run), no en este. Solo se
+            # instancia para pasarle el DSN.
             column_writer = TimescaleColumnWriter(settings.timescaledb_dsn)
-            await column_writer.connect()
-            logger.info("seedlink_ingestor: conectado a TimescaleDB en %s", settings.timescaledb_host)
+            logger.info("seedlink_ingestor: TimescaleDB configurado en %s", settings.timescaledb_host)
         else:
             logger.warning(
                 "seedlink_ingestor: TimescaleDB no configurado (TIMESCALEDB_HOST vacío) — "
@@ -203,7 +214,10 @@ if __name__ == "__main__":
             while thread.is_alive():
                 await asyncio.sleep(1)
         finally:
-            if column_writer is not None:
-                await column_writer.close()
+            if column_writer is not None and ingestor._loop is not None:
+                # close() debe correr en el mismo loop donde vive el pool.
+                asyncio.run_coroutine_threadsafe(
+                    column_writer.close(), ingestor._loop
+                ).result()
 
     asyncio.run(_main())

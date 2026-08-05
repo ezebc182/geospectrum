@@ -26,7 +26,6 @@ const routes = [
   { href: '/', label: 'Dashboard', icon: Gauge },
   { href: '/explore', label: 'Explorador', icon: Compass },
   { href: '/spectrograms-live', label: 'Espectrogramas', icon: RadioTower },
-  { href: '/live', label: 'En Vivo', icon: Activity },
   { href: '/globe', label: 'Globo 3D', icon: Globe2 },
   { href: '/analytics', label: 'Análisis', icon: LineChart },
 ];

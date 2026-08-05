@@ -14,6 +14,8 @@ interface KPICardProps {
   trend?: 'up' | 'down' | 'neutral';
   color?: 'blue' | 'green' | 'yellow' | 'red' | 'gray';
   className?: string;
+  /** Padding y tipografía reducidos, para grids donde el KPI es contexto secundario. Default: false. */
+  compact?: boolean;
 }
 
 /** Prop `color` (heredada del inventario de KPIs) remapeada a tokens de severidad. */
@@ -41,25 +43,37 @@ export function KPICard({
   trend,
   color = 'gray',
   className,
+  compact = false,
 }: KPICardProps) {
   return (
     <Card className={cn('ring-2 transition-all hover:shadow-lg', borderClasses[color], className)}>
-      <CardContent>
+      <CardContent className={compact ? 'p-3' : undefined}>
         <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className={cn('mt-2 font-data text-3xl font-bold text-foreground')}>
+          <div className="min-w-0 flex-1">
+            <p className={cn('truncate font-medium text-muted-foreground', compact ? 'text-xs' : 'text-sm')}>
+              {title}
+            </p>
+            <p
+              className={cn(
+                'font-data font-bold text-foreground',
+                compact ? 'mt-1 text-xl' : 'mt-2 text-3xl'
+              )}
+            >
               {value}
             </p>
             {subtitle && (
-              <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+              <p className={cn('truncate text-muted-foreground', compact ? 'mt-0.5 text-xs' : 'mt-1 text-sm')}>
+                {subtitle}
+              </p>
             )}
           </div>
-          {icon && <div className={cn('text-2xl', accentClasses[color])}>{icon}</div>}
+          {icon && (
+            <div className={cn(compact ? 'text-lg' : 'text-2xl', accentClasses[color])}>{icon}</div>
+          )}
         </div>
 
         {trend && (
-          <div className="mt-4">
+          <div className={compact ? 'mt-2' : 'mt-4'}>
             <span
               className={cn(
                 'inline-flex items-center text-sm font-medium',

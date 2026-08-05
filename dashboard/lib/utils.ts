@@ -22,6 +22,30 @@ export function getMagnitudeColor(mag: number): string {
   return '#14b8a6'; // teal — micro
 }
 
+/** Categoría de magnitud, mismos cortes que getMagnitudeColor — para agrupar/filtrar. */
+export type MagnitudeCategory = 'micro' | 'leve' | 'moderado' | 'fuerte' | 'mayor';
+
+export function getMagnitudeCategory(mag: number): MagnitudeCategory {
+  if (mag >= 6) return 'mayor';
+  if (mag >= 5) return 'fuerte';
+  if (mag >= 4) return 'moderado';
+  if (mag >= 3) return 'leve';
+  return 'micro';
+}
+
+/** Metadata de cada categoría para la leyenda: mismo orden/color que getMagnitudeColor. */
+export const MAGNITUDE_CATEGORIES: {
+  id: MagnitudeCategory;
+  label: string;
+  color: string;
+}[] = [
+  { id: 'micro', label: 'M < 3.0', color: getMagnitudeColor(0) },
+  { id: 'leve', label: 'M 3.0-4.0', color: getMagnitudeColor(3) },
+  { id: 'moderado', label: 'M 4.0-5.0', color: getMagnitudeColor(4) },
+  { id: 'fuerte', label: 'M 5.0-6.0', color: getMagnitudeColor(5) },
+  { id: 'mayor', label: 'M > 6.0', color: getMagnitudeColor(6) },
+];
+
 export function formatMagnitude(mag: number): string {
   return mag.toFixed(1);
 }
@@ -44,6 +68,20 @@ export function formatDateTime(isoString: string): string {
     dateStyle: 'medium',
     timeStyle: 'medium',
   });
+}
+
+/**
+ * "YYYY-MM-DD HH:MM:SS", estilo USGS: una sola línea corta que sigue siendo
+ * ordenable a simple vista (año primero), a diferencia de formatDateTime
+ * ("5 ago 2026, 1:05:39 p. m.") que es más legible pero casi el doble de ancho.
+ */
+export function formatDateTimeCompact(isoString: string): string {
+  const date = new Date(isoString);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
 }
 
 export function formatTimeAgo(isoString: string): string {

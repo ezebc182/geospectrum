@@ -128,3 +128,44 @@ export function areaViewBounds(
     [maxlat, maxlon],
   ];
 }
+
+/** Centro y altitud de cámara para react-globe.gl, derivados de un ViewBounds. */
+export interface GlobeFocus {
+  lat: number;
+  lng: number;
+  altitude: number;
+}
+
+/** Altitud mínima y máxima, en radios de globo (mismo rango que FOCUS_ALTITUDE de eventos). */
+const MIN_AREA_ALTITUDE = 1.4;
+const MAX_AREA_ALTITUDE = 2.8;
+
+/**
+ * Traduce un ViewBounds (formato Leaflet, [lat, lon]) al foco que espera
+ * `globe.pointOfView()`: centro en [-180, 180] y una altitud proporcional al
+ * lado más largo del área, para que una falla local acerque la cámara y un
+ * área tan ancha como el Anillo de Fuego se vea completa.
+ */
+export function globeFocusFromBounds(bounds: ViewBounds): GlobeFocus {
+  const [[south, west], [north, east]] = bounds;
+
+  const lat = (south + north) / 2;
+  // west/east pueden salir "desenrollados" más allá de ±180 (ver split arriba):
+  // el centro se calcula sobre esos valores y recién después se normaliza, o el
+  // promedio de un área partida por el antimeridiano cae del lado equivocado.
+  const lngRaw = (west + east) / 2;
+  const lng = ((((lngRaw + 180) % 360) + 360) % 360) - 180;
+
+  const latSpan = north - south;
+  const lngSpan = east - west;
+  const span = Math.max(latSpan, lngSpan);
+
+  // 180° de lado (un área del tamaño del planeta) mapea a la altitud máxima;
+  // 0° a la mínima. Lineal y clampeado: no hace falta más precisión que "más
+  // grande el área, más lejos la cámara".
+  const altitude =
+    MIN_AREA_ALTITUDE +
+    (Math.min(span, 180) / 180) * (MAX_AREA_ALTITUDE - MIN_AREA_ALTITUDE);
+
+  return { lat, lng, altitude };
+}

@@ -13,7 +13,8 @@
 
 'use client';
 
-import { Search, X } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, Search, X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,19 @@ import {
   type EventFilters,
 } from '@/lib/event-filters';
 import { cn } from '@/lib/utils';
+
+/** Filtros que cuentan para el badge "N activos" del toggle "Más filtros"
+ * cuando ese bloque está colapsado — todo salvo la búsqueda de texto, que
+ * queda siempre visible y no necesita ese aviso. */
+function hasHiddenActiveFilters(filters: EventFilters): boolean {
+  return (
+    filters.minMagnitude !== null ||
+    filters.maxMagnitude !== null ||
+    filters.period !== 'all' ||
+    filters.sources.length > 0 ||
+    filters.onlyFelt
+  );
+}
 
 interface EventFiltersBarProps {
   filters: EventFilters;
@@ -49,6 +63,14 @@ export function EventFiltersBar({
   className,
 }: EventFiltersBarProps) {
   const isFiltered = hasActiveFilters(filters);
+
+  // Colapsado por defecto: en un panel angosto (la columna lateral del
+  // Dashboard) Magnitud+Período+Fuente+Sólo sentidos apilados ocupaban más
+  // alto que la propia tabla de eventos. Se abre solo si el usuario lo pide,
+  // o si ya había un filtro de esos activo al montar (por ejemplo, volviendo
+  // de otra pantalla con un filtro que quedó aplicado) — así nunca esconde
+  // silenciosamente un filtro que ya está filtrando algo.
+  const [showMoreFilters, setShowMoreFilters] = useState(() => hasHiddenActiveFilters(filters));
 
   const update = (patch: Partial<EventFilters>) => {
     onChange({ ...filters, ...patch });
@@ -97,67 +119,22 @@ export function EventFiltersBar({
           </div>
         </div>
 
-        <div>
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Magnitud
-          </span>
-          <div className="flex items-center gap-1">
-            <Input
-              aria-label="Magnitud mínima"
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={filters.minMagnitude ?? ''}
-              onChange={(event) =>
-                update({ minMagnitude: parseMagnitude(event.target.value) })
-              }
-              placeholder="mín"
-              className="w-20 font-data"
-            />
-            <span className="text-muted-foreground">–</span>
-            <Input
-              aria-label="Magnitud máxima"
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={filters.maxMagnitude ?? ''}
-              onChange={(event) =>
-                update({ maxMagnitude: parseMagnitude(event.target.value) })
-              }
-              placeholder="máx"
-              className="w-20 font-data"
-            />
-          </div>
-        </div>
-
-        <div>
-          <span
-            id="event-filter-period"
-            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-          >
-            Período
-          </span>
-          {/* Botones de período en vez de un calendario: /report trae una
-              ventana de horas, así que un `<input type="date">` quedaba con
-              casi todos los días deshabilitados y parecía roto. */}
-          <div role="group" aria-labelledby="event-filter-period" className="flex flex-wrap gap-1">
-            {TIME_PERIODS.map(({ value, label }) => {
-              const isOn = filters.period === value;
-              return (
-                <Button
-                  key={value}
-                  type="button"
-                  variant={isOn ? 'default' : 'outline'}
-                  size="sm"
-                  aria-pressed={isOn}
-                  onClick={() => update({ period: value })}
-                >
-                  {label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setShowMoreFilters((open) => !open)}
+          aria-expanded={showMoreFilters}
+          className="gap-1"
+        >
+          <ChevronDown className={cn('h-4 w-4 transition-transform', showMoreFilters && 'rotate-180')} />
+          Más filtros
+          {!showMoreFilters && hasHiddenActiveFilters(filters) && (
+            <Badge variant="default" className="ml-1 h-4 min-w-4 rounded-full px-1 font-data text-[10px]">
+              •
+            </Badge>
+          )}
+        </Button>
 
         {isFiltered && (
           <Button
@@ -170,52 +147,13 @@ export function EventFiltersBar({
             Limpiar
           </Button>
         )}
-      </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {sources.length > 1 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Fuente
-            </span>
-            {sources.map((source) => {
-              const isOn = filters.sources.includes(source);
-              return (
-                <button
-                  key={source}
-                  type="button"
-                  onClick={() => toggleSource(source)}
-                  aria-pressed={isOn}
-                  className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Badge
-                    variant={isOn ? 'default' : 'secondary'}
-                    className={cn('cursor-pointer font-data', !isOn && 'opacity-60')}
-                  >
-                    {source}
-                  </Badge>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={filters.onlyFelt}
-            onChange={(event) => update({ onlyFelt: event.target.checked })}
-            className="h-4 w-4 cursor-pointer accent-seismic-600"
-          />
-          Sólo sentidos
-        </label>
-
-        {/* `aria-live` para que un lector de pantalla anuncie el resultado: sin
-            esto, quien no ve la tabla no se entera de que el filtro hizo algo. */}
-        <span
-          aria-live="polite"
-          className="ml-auto text-sm text-muted-foreground"
-        >
+        {/* `aria-live` para que un lector de pantalla anuncie el resultado:
+            sin esto, quien no ve la tabla no se entera de que el filtro hizo
+            algo. Vive junto a la búsqueda (siempre visible) y no dentro del
+            bloque colapsable, para que el conteo se vea aunque "Más filtros"
+            esté cerrado. */}
+        <span aria-live="polite" className="ml-auto text-sm text-muted-foreground">
           {isFiltered ? (
             <>
               <span className="font-data font-semibold text-foreground">{matched}</span>
@@ -229,6 +167,111 @@ export function EventFiltersBar({
           )}
         </span>
       </div>
+
+      {showMoreFilters && (
+        <div className="flex flex-wrap items-end gap-3 border-t border-border pt-3">
+          <div>
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Magnitud
+            </span>
+            <div className="flex items-center gap-1">
+              <Input
+                aria-label="Magnitud mínima"
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                value={filters.minMagnitude ?? ''}
+                onChange={(event) =>
+                  update({ minMagnitude: parseMagnitude(event.target.value) })
+                }
+                placeholder="mín"
+                className="w-20 font-data"
+              />
+              <span className="text-muted-foreground">–</span>
+              <Input
+                aria-label="Magnitud máxima"
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                value={filters.maxMagnitude ?? ''}
+                onChange={(event) =>
+                  update({ maxMagnitude: parseMagnitude(event.target.value) })
+                }
+                placeholder="máx"
+                className="w-20 font-data"
+              />
+            </div>
+          </div>
+
+          <div>
+            <span
+              id="event-filter-period"
+              className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+            >
+              Período
+            </span>
+            {/* Botones de período en vez de un calendario: /report trae una
+                ventana de horas, así que un `<input type="date">` quedaba con
+                casi todos los días deshabilitados y parecía roto. */}
+            <div role="group" aria-labelledby="event-filter-period" className="flex flex-wrap gap-1">
+              {TIME_PERIODS.map(({ value, label }) => {
+                const isOn = filters.period === value;
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant={isOn ? 'default' : 'outline'}
+                    size="sm"
+                    aria-pressed={isOn}
+                    onClick={() => update({ period: value })}
+                  >
+                    {label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
+          {sources.length > 1 && (
+            <div>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Fuente
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {sources.map((source) => {
+                  const isOn = filters.sources.includes(source);
+                  return (
+                    <button
+                      key={source}
+                      type="button"
+                      onClick={() => toggleSource(source)}
+                      aria-pressed={isOn}
+                      className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Badge
+                        variant={isOn ? 'default' : 'secondary'}
+                        className={cn('cursor-pointer font-data', !isOn && 'opacity-60')}
+                      >
+                        {source}
+                      </Badge>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={filters.onlyFelt}
+              onChange={(event) => update({ onlyFelt: event.target.checked })}
+              className="h-4 w-4 cursor-pointer accent-seismic-600"
+            />
+            Sólo sentidos
+          </label>
+        </div>
+      )}
 
       {isFiltered && matched === 0 && (
         <p className="text-sm text-severity-moderate">

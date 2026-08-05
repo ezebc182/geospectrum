@@ -54,7 +54,7 @@
     --card-foreground: 210 25% 92%;
     --popover: 216 38% 10%;
     --popover-foreground: 210 25% 92%;
-    --primary: 172 75% 45%;
+    --primary: 172 55% 38%;
     --primary-foreground: 217 40% 7%;
     --secondary: 216 30% 15%;
     --secondary-foreground: 210 25% 92%;
@@ -66,15 +66,15 @@
     --destructive-foreground: 0 0% 100%;
     --border: 216 30% 18%;
     --input: 216 30% 18%;
-    --ring: 172 75% 45%;
+    --ring: 172 55% 38%;
     --sidebar: 218 42% 6%;
     --sidebar-foreground: 210 25% 85%;
-    --sidebar-primary: 172 75% 45%;
+    --sidebar-primary: 172 55% 38%;
     --sidebar-primary-foreground: 217 40% 7%;
     --sidebar-accent: 216 35% 13%;
     --sidebar-accent-foreground: 210 25% 92%;
     --sidebar-border: 216 30% 15%;
-    --sidebar-ring: 172 75% 45%;
+    --sidebar-ring: 172 55% 38%;
 
     --severity-low: 172 65% 45%;
     --severity-ok: 172 45% 52%;
@@ -97,6 +97,35 @@
   font-family: var(--font-mono), ui-monospace, monospace;
   font-feature-settings: 'tnum' 1, 'zero' 1;
   font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* Scrollbar temática: por defecto el navegador dibuja la suya (gris claro
+   plano), que desentona en una paleta "sala de control" casi negra. Se usan
+   los mismos tokens HSL que el resto (--muted-foreground, --muted) para que
+   se vea consistente en claro y oscuro, no un valor hex suelto. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.4);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.6);
 }
 
 /* Leaflet overrides for dark mode */

@@ -5,19 +5,20 @@
  * propia ruta a propósito, para poder evaluarla sin tocar el Dashboard ni
  * /live ni /explore.
  *
- * Pendiente y deliberadamente fuera de esta primera versión: foco automático
- * al evento, panel de detalle y marcar eventos como favoritos.
+ * Pendiente: marcar eventos como favoritos.
  */
 
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { Globe2, RefreshCw } from 'lucide-react';
 
 import { reportFetcher } from '@/lib/api';
+import { getActiveArea } from '@/lib/areas';
+import { areaViewBounds, globeFocusFromBounds, type GlobeFocus } from '@/lib/area-view-bounds';
 import { globePointId } from '@/lib/globe-data';
 import { EVENT_PARAM } from '@/lib/share-event';
 import { useAreaRefresh } from '@/lib/use-area-refresh';
@@ -62,6 +63,7 @@ function GlobeView() {
   const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
     refreshInterval: 60_000,
   });
+  const { data: activeArea, mutate: mutateArea } = useSWR('/areas/active', getActiveArea);
 
   // Se guarda el id, no el evento: con el refresco cada 60s el objeto guardado
   // queda viejo, y el panel mostraría datos de hace un minuto mientras el globo
@@ -75,7 +77,19 @@ function GlobeView() {
     () => searchParams.get(EVENT_PARAM),
   );
 
-  const isRefreshingArea = useAreaRefresh(() => mutate());
+  // El área nueva gana el foco de cámara: cambiar de área es una acción
+  // explícita y más reciente que cualquier evento que ya estuviera enfocado.
+  const isRefreshingArea = useAreaRefresh(() => {
+    setSelectedEventId(null);
+    return Promise.all([mutate(), mutateArea()]);
+  });
+
+  const focusArea: GlobeFocus | null = useMemo(() => {
+    const area = activeArea?.area;
+    if (!area) return null;
+    const bounds = areaViewBounds(area.geometry, area.bbox);
+    return bounds ? globeFocusFromBounds(bounds) : null;
+  }, [activeArea]);
 
   // La URL sigue al evento seleccionado para que copiarla del navegador o
   // compartirla lleven al mismo lugar.
@@ -146,6 +160,7 @@ function GlobeView() {
             // refresco se lleva el evento del reporte, el foco se suelta y el
             // globo vuelve a rotar en vez de quedar trabado apuntando a nada.
             selectedEventId={selectedEvent ? selectedEventId : null}
+            focusArea={focusArea}
           />
         )}
       </AreaRefreshIndicator>

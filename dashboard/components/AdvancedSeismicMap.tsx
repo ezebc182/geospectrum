@@ -8,7 +8,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AreaGeometry, SeismicEvent } from '@/lib/types';
 import { areaViewBounds } from '@/lib/area-view-bounds';
-import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
+import {
+  getMagnitudeColor,
+  getMagnitudeCategory,
+  formatMagnitude,
+  formatDateTime,
+  MAGNITUDE_CATEGORIES,
+  type MagnitudeCategory,
+} from '@/lib/utils';
 import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
 import { shouldShowCityLabel } from '@/lib/city-labels';
@@ -82,6 +89,19 @@ export function AdvancedSeismicMap({
   const [currentLayer, setCurrentLayer] = useState<keyof typeof BASE_LAYERS>(defaultLayer);
   const [activeOverlays, setActiveOverlays] = useState<string[]>([]);
   const [showLayerControl, setShowLayerControl] = useState(false);
+  // Categorías de magnitud ocultas por click en la leyenda. Vacío por defecto:
+  // todo visible, igual que antes de que la leyenda fuera interactiva.
+  const [hiddenCategories, setHiddenCategories] = useState<Set<MagnitudeCategory>>(
+    () => new Set()
+  );
+  const toggleCategory = (category: MagnitudeCategory) => {
+    setHiddenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
   // `showPlateBoundaries` es solo el valor INICIAL: el usuario puede togglear la capa desde el panel
   // (Decisión 3 de 2026-07-27-plate-boundaries-usgs-style-design.md). Antes era una prop fija, así
   // que las placas quedaban prendidas en el Dashboard y apagadas en /explore sin forma de cambiarlo.
@@ -131,6 +151,24 @@ export function AdvancedSeismicMap({
     // del array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapInstance, viewBoundsKey]);
+
+  // Leaflet nunca se entera solo de que su contenedor cambió de tamaño: si
+  // algo externo a este componente (ej. un panel hermano que colapsa/expande
+  // en la página que lo usa) hace que el <div> del mapa cambie de ancho,
+  // Leaflet sigue pintando los tiles con las dimensiones viejas hasta que
+  // algo fuerza un recálculo (zoom, por ejemplo). El síntoma es una franja
+  // sin tiles y elementos (rutas de placas, marcadores) cortados a mitad de
+  // camino, como si el mapa no ocupara todo su contenedor real.
+  useEffect(() => {
+    if (!mapInstance || !mapRef.current) return;
+
+    const observer = new ResizeObserver(() => {
+      mapInstance.invalidateSize();
+    });
+    observer.observe(mapRef.current);
+
+    return () => observer.disconnect();
+  }, [mapInstance]);
 
   // Inicializar mapa
   useEffect(() => {
@@ -333,51 +371,55 @@ export function AdvancedSeismicMap({
         });
         eventMarkersRef.current.clear();
 
-        // Agregar nuevos eventos
-        eventos.forEach((evento) => {
-          const color = getMagnitudeColor(evento.mag);
-          const radius = Math.max(4, Math.min(evento.mag * 4, 30));
+        // Agregar nuevos eventos, salvo los de una categoría oculta por la
+        // leyenda: se filtra acá (no en el padre) para que "N of M events in
+        // map area" siga contando sobre el total real, no sobre lo visible.
+        eventos
+          .filter((evento) => !hiddenCategories.has(getMagnitudeCategory(evento.mag)))
+          .forEach((evento) => {
+            const color = getMagnitudeColor(evento.mag);
+            const radius = Math.max(4, Math.min(evento.mag * 4, 30));
 
-          // Determinar icono de fuente
-          const sourceIcon = evento.fuentes.includes('EMSC') ? '🇪🇺' :
-                           evento.fuentes.includes('INPRES') ? '🇦🇷' :
-                           '🇺🇸';
+            // Determinar icono de fuente
+            const sourceIcon = evento.fuentes.includes('EMSC') ? '🇪🇺' :
+                             evento.fuentes.includes('INPRES') ? '🇦🇷' :
+                             '🇺🇸';
 
-          const marker = L.circleMarker([evento.lat, evento.lon], {
-            radius,
-            fillColor: color,
-            color: '#ffffff',
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.6,
-          })
-            .bindPopup(`
-              <div class="text-sm">
-                <p class="font-bold text-lg">M${formatMagnitude(evento.mag)} ${sourceIcon}</p>
-                <p class="font-medium">${evento.lugar || 'Ubicación desconocida'}</p>
-                <p class="text-xs text-gray-600 mt-1">${formatDateTime(evento.hora_utc)}</p>
-                <p class="text-xs">Profundidad: ${evento.prof_km ? `${evento.prof_km.toFixed(1)} km` : 'N/A'}</p>
-                <p class="text-xs">Coordenadas: ${evento.lat.toFixed(3)}°, ${evento.lon.toFixed(3)}°</p>
-                <p class="text-xs mt-1">
-                  ${evento.sentido ? '👥 Sentido' : ''}
-                  ${evento.revisado ? ' ✓ Revisado' : ' ~ Preliminar'}
-                </p>
-                <p class="text-xs font-mono mt-1">Fuente: ${evento.fuentes.join(', ').toUpperCase()}</p>
-              </div>
-            `)
-            .addTo(leafletMapRef.current);
+            const marker = L.circleMarker([evento.lat, evento.lon], {
+              radius,
+              fillColor: color,
+              color: '#ffffff',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.6,
+            })
+              .bindPopup(`
+                <div class="text-sm">
+                  <p class="font-bold text-lg">M${formatMagnitude(evento.mag)} ${sourceIcon}</p>
+                  <p class="font-medium">${evento.lugar || 'Ubicación desconocida'}</p>
+                  <p class="text-xs text-gray-600 mt-1">${formatDateTime(evento.hora_utc)}</p>
+                  <p class="text-xs">Profundidad: ${evento.prof_km ? `${evento.prof_km.toFixed(1)} km` : 'N/A'}</p>
+                  <p class="text-xs">Coordenadas: ${evento.lat.toFixed(3)}°, ${evento.lon.toFixed(3)}°</p>
+                  <p class="text-xs mt-1">
+                    ${evento.sentido ? '👥 Sentido' : ''}
+                    ${evento.revisado ? ' ✓ Revisado' : ' ~ Preliminar'}
+                  </p>
+                  <p class="text-xs font-mono mt-1">Fuente: ${evento.fuentes.join(', ').toUpperCase()}</p>
+                </div>
+              `)
+              .addTo(leafletMapRef.current);
 
-          // Sincronización mapa→tabla es opcional/bonus (Decisión 3 de design.md);
-          // no afecta la sincronización principal tabla→mapa, que es unidireccional.
-          if (onEventClick) {
-            marker.on('click', () => onEventClick(evento.id));
-          }
+            // Sincronización mapa→tabla es opcional/bonus (Decisión 3 de design.md);
+            // no afecta la sincronización principal tabla→mapa, que es unidireccional.
+            if (onEventClick) {
+              marker.on('click', () => onEventClick(evento.id));
+            }
 
-          eventMarkersRef.current.set(evento.id, marker);
-        });
+            eventMarkersRef.current.set(evento.id, marker);
+          });
       });
     }
-  }, [eventos, onEventClick]);
+  }, [eventos, onEventClick, hiddenCategories]);
 
   // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado), estilizados por
   // tipo de contacto como el mapa Latest Earthquakes del USGS: los 73 tramos de subducción llevan
@@ -663,26 +705,36 @@ export function AdvancedSeismicMap({
         )}
       </div>
 
-      {/* Leyenda */}
+      {/* Leyenda: cada categoría es un toggle — clickearla oculta/muestra esos
+          eventos en el mapa, para poder aislar visualmente una franja de
+          magnitud sin que las demás "molesten". */}
       <div className="absolute bottom-4 left-4 right-4 z-[1000] flex justify-center pointer-events-none sm:right-auto sm:justify-start">
         <div className="pointer-events-auto bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-lg p-3">
           <div className="flex flex-wrap gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white"></div>
-              <span className="text-gray-900 dark:text-white">M &lt; 4.0</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-full bg-yellow-500 border-2 border-white"></div>
-              <span className="text-gray-900 dark:text-white">M 4.0-5.0</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-orange-500 border-2 border-white"></div>
-              <span className="text-gray-900 dark:text-white">M 5.0-6.0</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-red-500 border-2 border-white"></div>
-              <span className="text-gray-900 dark:text-white">M &gt; 6.0</span>
-            </div>
+            {MAGNITUDE_CATEGORIES.map(({ id, label, color }) => {
+              const isHidden = hiddenCategories.has(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => toggleCategory(id)}
+                  aria-pressed={!isHidden}
+                  className={`flex items-center gap-2 rounded px-1 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                    isHidden ? 'opacity-40' : ''
+                  }`}
+                >
+                  <div
+                    className="h-4 w-4 rounded-full border-2 border-white"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span
+                    className={`text-gray-900 dark:text-white ${isHidden ? 'line-through' : ''}`}
+                  >
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

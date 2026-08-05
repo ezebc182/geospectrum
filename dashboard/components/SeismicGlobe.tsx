@@ -22,6 +22,7 @@ import {
   type GlobePath,
   type GlobePoint,
 } from '@/lib/globe-data';
+import type { GlobeFocus } from '@/lib/area-view-bounds';
 import type { SeismicEvent } from '@/lib/types';
 
 interface SeismicGlobeProps {
@@ -34,6 +35,12 @@ interface SeismicGlobeProps {
   onSelectEvent?: (evento: SeismicEvent | null) => void;
   /** Id del evento enfocado. El globo gira hacia él y frena la rotación. */
   selectedEventId?: string | null;
+  /**
+   * Centro y altitud del área activa. Gana sobre `selectedEventId`: cambiar de
+   * área es una acción explícita del usuario y no debería quedar tapada por un
+   * evento que ya estaba enfocado.
+   */
+  focusArea?: GlobeFocus | null;
 }
 
 /**
@@ -60,12 +67,26 @@ const FOCUS_TRANSITION_MS = 900;
  */
 const FOCUS_ALTITUDE = 1.6;
 
+/**
+ * Rango de altitud para zoom manual y factor de paso por click.
+ *
+ * El mínimo no llega a 1 (superficie): a esa distancia three-globe empieza a
+ * recortar el near plane y el globo se ve por dentro. El máximo es bastante
+ * más que MAX_AREA_ALTITUDE (2.8) para que zoom-out siga teniendo margen
+ * incluso partiendo de la vista más alejada que produce un área.
+ */
+const MIN_ZOOM_ALTITUDE = 0.5;
+const MAX_ZOOM_ALTITUDE = 4;
+const ZOOM_STEP_FACTOR = 0.7;
+const ZOOM_TRANSITION_MS = 300;
+
 export function SeismicGlobe({
   eventos,
   showPlates = true,
   height = 600,
   onSelectEvent,
   selectedEventId = null,
+  focusArea = null,
 }: SeismicGlobeProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [plates, setPlates] = useState<GlobePath[]>([]);
@@ -108,33 +129,62 @@ export function SeismicGlobe({
     };
   }, [showPlates]);
 
+  // A diferencia del foco de evento (que frena la rotación mientras el panel
+  // sigue abierto), el foco de área es una animación de paso: acompaña el
+  // giro hacia la zona elegida y devuelve la rotación libre apenas termina.
+  // Si no fuera así, como siempre hay un área activa (hay preset por
+  // defecto), el globo quedaría frenado para siempre después del primer
+  // foco. `isAreaAnimating` vive el mismo tiempo que la transición de
+  // pointOfView; no hay callback de "terminó" en react-globe.gl.
+  const [isAreaAnimating, setIsAreaAnimating] = useState(false);
+
   // Los controles de órbita viven fuera de React: se configuran sobre la
   // instancia imperativa que expone react-globe.gl.
   //
-  // `selectedEventId` está en las dependencias porque la rotación se frena
-  // mientras hay un evento enfocado: sin esa dependencia el efecto corre una
-  // sola vez y el globo sigue girando bajo el panel abierto, llevándose de la
-  // vista justo el evento que se quiso mirar.
+  // `selectedEventId`/`isAreaAnimating` están en las dependencias porque la
+  // rotación se frena mientras hay algo enfocado: sin esa dependencia el
+  // efecto corre una sola vez y el globo sigue girando bajo el panel abierto,
+  // llevándose de la vista justo lo que se quiso mirar.
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
 
     const controls = globe.controls();
-    controls.autoRotate = selectedEventId === null;
+    controls.autoRotate = selectedEventId === null && !isAreaAnimating;
     controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
     controls.enableDamping = true;
-  }, [width, selectedEventId]);
+  }, [width, selectedEventId, isAreaAnimating]);
 
   const points = useMemo(() => eventsToPoints(eventos), [eventos]);
+
+  // Gira la cámara hacia el área activa. Gana sobre el foco de evento: cambiar
+  // de área es la acción más reciente del usuario, y el padre ya cierra el
+  // panel de evento cuando esto pasa (ver GlobeView), así que no compiten de
+  // hecho — pero el orden de los efectos igual documenta la prioridad.
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!globe || !focusArea) return;
+
+    setIsAreaAnimating(true);
+    globe.pointOfView(focusArea, FOCUS_TRANSITION_MS);
+
+    const timer = setTimeout(() => setIsAreaAnimating(false), FOCUS_TRANSITION_MS);
+    return () => clearTimeout(timer);
+  }, [focusArea]);
 
   // Gira la cámara hacia el evento enfocado.
   //
   // Se busca el punto en `points` y no en `eventos` porque points ya descartó
   // los que no tienen coordenadas usables: apuntar la cámara a un evento sin
   // lat/lon la mandaría a (0,0) sin que nadie entienda por qué.
+  //
+  // `isAreaAnimating` (no `focusArea`) es la condición de exclusión: focusArea
+  // queda no-null para siempre en cuanto hay área activa, así que usarlo acá
+  // bloquearía el foco de evento permanentemente. Lo que importa es no pisar
+  // la animación de área MIENTRAS ocurre, no para siempre.
   useEffect(() => {
     const globe = globeRef.current;
-    if (!globe || !selectedEventId) return;
+    if (!globe || !selectedEventId || isAreaAnimating) return;
 
     const target = points.find((p) => p.id === selectedEventId);
     if (!target) return;
@@ -143,7 +193,7 @@ export function SeismicGlobe({
       { lat: target.lat, lng: target.lng, altitude: FOCUS_ALTITUDE },
       FOCUS_TRANSITION_MS,
     );
-  }, [selectedEventId, points]);
+  }, [selectedEventId, points, isAreaAnimating]);
 
   // Índice de id de punto al evento original: globe.gl entrega el punto que
   // dibujó, no el evento del que salió.
@@ -166,8 +216,65 @@ export function SeismicGlobe({
     [eventsById, onSelectEvent, selectedEventId],
   );
 
+  // Zoom manual: reusa la posición actual de pointOfView() y sólo cambia la
+  // altitud, para no perder de dónde se estaba mirando al acercar/alejar.
+  const zoom = useCallback((factor: number) => {
+    const globe = globeRef.current;
+    if (!globe) return;
+
+    const current = globe.pointOfView();
+    const altitude = Math.min(
+      MAX_ZOOM_ALTITUDE,
+      Math.max(MIN_ZOOM_ALTITUDE, current.altitude * factor),
+    );
+
+    globe.pointOfView({ altitude }, ZOOM_TRANSITION_MS);
+  }, []);
+
+  const handleZoomIn = useCallback(() => zoom(ZOOM_STEP_FACTOR), [zoom]);
+  const handleZoomOut = useCallback(() => zoom(1 / ZOOM_STEP_FACTOR), [zoom]);
+
+  // Reset vuelve al área activa si hay una, o a una vista neutral del globo
+  // completo si todavía no cargó ninguna (usuario anónimo sin sesión, por ej).
+  const handleResetView = useCallback(() => {
+    const globe = globeRef.current;
+    if (!globe) return;
+
+    setIsAreaAnimating(true);
+    globe.pointOfView(focusArea ?? { lat: 0, lng: 0, altitude: 2.5 }, FOCUS_TRANSITION_MS);
+    setTimeout(() => setIsAreaAnimating(false), FOCUS_TRANSITION_MS);
+  }, [focusArea]);
+
   return (
-    <div ref={containerRef} className="w-full overflow-hidden rounded-xl">
+    <div ref={containerRef} className="relative w-full overflow-hidden rounded-xl">
+      {width > 0 && (
+        <div className="absolute right-3 top-3 z-10 flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            aria-label="Acercar"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-gray-300 bg-background/80 text-lg leading-none backdrop-blur transition-colors hover:bg-muted/60 dark:border-gray-700"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            aria-label="Alejar"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-gray-300 bg-background/80 text-lg leading-none backdrop-blur transition-colors hover:bg-muted/60 dark:border-gray-700"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={handleResetView}
+            aria-label="Restablecer vista"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-gray-300 bg-background/80 text-xs backdrop-blur transition-colors hover:bg-muted/60 dark:border-gray-700"
+          >
+            ⟲
+          </button>
+        </div>
+      )}
       {width > 0 && (
         <Globe
           ref={globeRef}
