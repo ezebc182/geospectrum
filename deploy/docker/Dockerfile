@@ -58,6 +58,13 @@ COPY --from=dependencies /usr/local/bin /usr/local/bin
 COPY --chown=appuser:appuser src /app/src
 COPY --chown=appuser:appuser .env.example /app/.env.example
 
+# Migraciones + runner: la API las aplica al arranque cuando
+# RUN_MIGRATIONS_ON_STARTUP=true (ver src/main.py lifespan). Sin estos COPY
+# el flag es un no-op silencioso — los .sql no existirían en el contenedor.
+COPY --chown=appuser:appuser scripts /app/scripts
+COPY --chown=appuser:appuser deploy/sql/migrations /app/deploy/sql/migrations
+COPY --chown=appuser:appuser db/migrations /app/db/migrations
+
 # Cambiar a usuario no root
 USER appuser
 

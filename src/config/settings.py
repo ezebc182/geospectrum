@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
 
+    # Migraciones al arranque (scripts/apply_migrations.py). False por
+    # default: en dev local se siguen aplicando a mano; en Railway SOLO el
+    # servicio api lo activa — seedlink/inpres comparten imagen y base pero
+    # no deben competir por el DDL en cada deploy.
+    run_migrations_on_startup: bool = False
+
     # Storage opcional
     timescaledb_host: Optional[str] = None
     timescaledb_port: int = 5432

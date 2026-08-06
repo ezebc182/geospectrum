@@ -243,6 +243,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "table (auth_service) — configure TIMESCALEDB_HOST/USER/PASSWORD"
         )
 
+    # Migraciones ANTES de abrir el pool: el resto del arranque asume el
+    # schema al día. Sin try/except a propósito — una migración rota debe
+    # abortar el deploy (Railway conserva el contenedor anterior), no dejar
+    # la API corriendo contra un schema a medias. Gateado por env: sólo el
+    # servicio api lo activa (ver scripts/apply_migrations.py).
+    if settings.run_migrations_on_startup:
+        from scripts.apply_migrations import apply_migrations
+
+        await apply_migrations(dsn)
+        logger.info("Migraciones aplicadas al arranque (RUN_MIGRATIONS_ON_STARTUP)")
+
     # Pool de Postgres COMPARTIDO (areas-of-interest / AOI-1). Antes vivía
     # encapsulado dentro de AuthService; se extrae acá porque area_service lo
     # necesita también y abrir un segundo pool contra la misma base duplicaría
