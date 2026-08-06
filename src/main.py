@@ -814,6 +814,7 @@ async def login(
         secure=True,
         samesite="lax",
         max_age=settings.auth_token_expire_minutes * 60,
+        domain=settings.auth_cookie_domain,
     )
 
     requests_total.labels(endpoint="/auth/login", status="200").inc()
@@ -834,7 +835,9 @@ async def logout(response: Response) -> None:
     incluso sin sesión activa [Requirement: Logout / Scenario: Logout sin
     sesión activa no falla].
     """
-    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax")
+    response.delete_cookie(
+        SESSION_COOKIE_NAME, samesite="lax", domain=settings.auth_cookie_domain
+    )
     requests_total.labels(endpoint="/auth/logout", status="204").inc()
 
 
@@ -984,6 +987,7 @@ async def login_verify_2fa(
         secure=True,
         samesite="lax",
         max_age=settings.auth_token_expire_minutes * 60,
+        domain=settings.auth_cookie_domain,
     )
     response.delete_cookie(PENDING_2FA_COOKIE_NAME, samesite="lax")
 
@@ -1134,7 +1138,9 @@ async def delete_account(
             },
         )
 
-    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax")
+    response.delete_cookie(
+        SESSION_COOKIE_NAME, samesite="lax", domain=settings.auth_cookie_domain
+    )
     requests_total.labels(endpoint="/account", status="200").inc()
     return {}
 
@@ -1292,6 +1298,7 @@ async def google_callback(
         secure=True,
         samesite="lax",
         max_age=settings.auth_token_expire_minutes * 60,
+        domain=settings.auth_cookie_domain,
     )
 
     requests_total.labels(endpoint="/auth/google/callback", status="302").inc()

@@ -108,6 +108,15 @@ class Settings(BaseSettings):
     # que el primer origen de cors_allowed_origins (dashboard local en dev).
     dashboard_url: str = "http://localhost:3008"
 
+    # Dominio de la cookie de sesión. En dev queda None (cookie host-only:
+    # localhost comparte cookies entre puertos y funciona sola). En
+    # producción DEBE ser el dominio registrable con punto inicial
+    # (".geospectrum.org"): la API vive en api.geospectrum.org y el
+    # middleware del dashboard corre en geospectrum.org — una cookie
+    # host-only de la API nunca llega al dashboard y el login "vuelve a
+    # /login" sin error visible (bug real del primer deploy, 2026-08-05).
+    auth_cookie_domain: Optional[str] = None
+
     # SSE
     max_sse_clients: int = 200
     sse_heartbeat_seconds: int = 30
