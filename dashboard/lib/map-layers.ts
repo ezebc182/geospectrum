@@ -10,13 +10,6 @@ export interface MapLayer {
   maxZoom?: number;
 }
 
-export interface GeologicalOverlay {
-  name: string;
-  url: string;
-  description: string;
-  enabled: boolean;
-}
-
 // Capas base de mapas
 export const BASE_LAYERS: Record<string, MapLayer> = {
   terrain: {
@@ -47,34 +40,13 @@ export const BASE_LAYERS: Record<string, MapLayer> = {
   },
 };
 
-// Overlays geológicos
-// Nota: Estos son URLs de servicios WMS reales para datos geológicos.
-// `plateBoundaries` (límites de placas tectónicas) se retiró de este mecanismo de tile layer:
-// la URL apuntaba en realidad a un servicio de fronteras políticas (World_Boundaries_and_Places),
-// mal etiquetado como "límites de placas tectónicas". El reemplazo real (dataset GeoJSON PB2002 de
-// fraxen/tectonicplates) se renderiza directamente en AdvancedSeismicMap.tsx vía L.geoJSON(), ya
-// que es una capa vectorial (líneas), no un tile layer — no encaja en el tipo GeologicalOverlay/MapLayer
-// de este archivo. Ver Decisión 1 de openspec/changes/redesign-dashboard-page/design.md.
-export const GEOLOGICAL_OVERLAYS: Record<string, GeologicalOverlay> = {
-  populationDensity: {
-    name: 'Densidad de Población',
-    url: 'https://tiles.arcgis.com/tiles/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Population_Density/MapServer/tile/{z}/{y}/{x}',
-    description: 'Densidad poblacional para evaluar riesgo sísmico',
-    enabled: false,
-  },
-  usFaults: {
-    name: 'Fallas Geológicas (US)',
-    url: 'https://earthquake.usgs.gov/arcgis/rest/services/eq/quaternaryfaults/MapServer/tile/{z}/{y}/{x}',
-    description: 'Fallas cuaternarias activas en Estados Unidos (USGS)',
-    enabled: false,
-  },
-  usHazard: {
-    name: 'Peligro Sísmico (US)',
-    url: 'https://earthquake.usgs.gov/arcgis/rest/services/haz/hazard2014/MapServer/tile/{z}/{y}/{x}',
-    description: 'Mapa de peligro sísmico de USGS',
-    enabled: false,
-  },
-};
+// Los GEOLOGICAL_OVERLAYS (densidad de población, fallas US, peligro sísmico
+// US) se retiraron el 2026-08-05: los tres endpoints de tiles estaban muertos
+// (dos 404 del USGS, uno de ArcGIS devolviendo HTML con status 200), así que
+// los checkboxes del panel no hacían nada. Los límites de placas tectónicas
+// no pasaron por acá: son GeoJSON vectorial renderizado con L.geoJSON() en
+// AdvancedSeismicMap.tsx. Si se reincorporan overlays, verificar los
+// endpoints con un tile real ANTES de sumarlos al panel.
 
 // Data sources disponibles
 export const DATA_SOURCES = [

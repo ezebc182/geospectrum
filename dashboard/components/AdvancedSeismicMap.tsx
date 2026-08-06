@@ -16,7 +16,7 @@ import {
   MAGNITUDE_CATEGORIES,
   type MagnitudeCategory,
 } from '@/lib/utils';
-import { BASE_LAYERS, GEOLOGICAL_OVERLAYS, type DataSourceId } from '@/lib/map-layers';
+import { BASE_LAYERS, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
 import { shouldShowCityLabel } from '@/lib/city-labels';
 import { MAJOR_CITIES } from '@/lib/major-cities';
@@ -81,13 +81,11 @@ export function AdvancedSeismicMap({
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const layersRef = useRef<any>({});
-  const overlaysRef = useRef<any>({});
   const plateBoundariesLayerRef = useRef<any>(null);
   // Lookup de marcador de evento por id, para centrar/resaltar vía selectedEventId (Decisión 2/3 de design.md).
   const eventMarkersRef = useRef<Map<string, any>>(new Map());
 
   const [currentLayer, setCurrentLayer] = useState<keyof typeof BASE_LAYERS>(defaultLayer);
-  const [activeOverlays, setActiveOverlays] = useState<string[]>([]);
   const [showLayerControl, setShowLayerControl] = useState(false);
   // Categorías de magnitud ocultas por click en la leyenda. Vacío por defecto:
   // todo visible, igual que antes de que la leyenda fuera interactiva.
@@ -212,13 +210,6 @@ export function AdvancedSeismicMap({
         // Agregar capa por defecto
         layersRef.current[currentLayer].addTo(map);
 
-        // Crear overlays geológicos
-        Object.entries(GEOLOGICAL_OVERLAYS).forEach(([key, overlay]) => {
-          overlaysRef.current[key] = L.tileLayer(overlay.url, {
-            opacity: 0.6,
-          });
-        });
-
         // Agregar ciudades si está habilitado
         if (showCities) {
           const cityLayerGroup = L.layerGroup();
@@ -227,15 +218,18 @@ export function AdvancedSeismicMap({
           const cityLabelGroup = L.layerGroup();
 
           MAJOR_CITIES.forEach((city) => {
-            const size = city.population > 5000000 ? 8 : city.population > 2000000 ? 6 : 5;
+            // Las ciudades son referencia, no dato: puntos chicos y apagados
+            // para que no compitan con los eventos. Con el negro anterior se
+            // leían como "puntos negros" más fuertes que los sismos.
+            const size = city.population > 5000000 ? 4 : city.population > 2000000 ? 3 : 2.5;
 
             L.circleMarker([city.lat, city.lon], {
               radius: size,
-              fillColor: '#000000',
+              fillColor: '#94a3b8',
               color: '#ffffff',
-              weight: 2,
-              opacity: 1,
-              fillOpacity: 0.8,
+              weight: 1,
+              opacity: 0.7,
+              fillOpacity: 0.7,
             })
               .bindPopup(`
                 <div class="text-sm">
@@ -265,17 +259,20 @@ export function AdvancedSeismicMap({
                 bounds.contains([city.lat, city.lon]),
             ).forEach(
               (city) => {
-                const size = city.population > 5000000 ? 8 : city.population > 2000000 ? 6 : 5;
+                const size = city.population > 5000000 ? 4 : city.population > 2000000 ? 3 : 2.5;
+                const isMegacity = city.population > 5000000;
 
+                // Texto con halo oscuro en vez de píldora con fondo: el
+                // rectángulo negro se leía como una franja pegada al punto y
+                // ensuciaba el mapa (feedback del usuario, 2026-08-05). El
+                // halo mantiene la legibilidad sobre cualquier capa base.
                 const icon = L.divIcon({
                   className: 'city-label',
                   html: `<div style="
-                background-color: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 2px 6px;
-                border-radius: 3px;
-                font-size: ${size > 6 ? '11px' : '9px'};
-                font-weight: ${size > 6 ? 'bold' : 'normal'};
+                color: #f1f5f9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.8);
+                font-size: ${isMegacity ? '11px' : '9px'};
+                font-weight: ${isMegacity ? 'bold' : 'normal'};
                 white-space: nowrap;
                 pointer-events: none;
               ">${city.name}</div>`,
@@ -340,32 +337,15 @@ export function AdvancedSeismicMap({
     }
   }, [currentLayer]);
 
-  // Actualizar overlays
-  useEffect(() => {
-    if (leafletMapRef.current) {
-      // Primero remover todos los overlays
-      Object.entries(overlaysRef.current).forEach(([key, layer]: [string, any]) => {
-        if (leafletMapRef.current.hasLayer(layer)) {
-          leafletMapRef.current.removeLayer(layer);
-        }
-      });
-
-      // Agregar overlays activos
-      activeOverlays.forEach((key) => {
-        if (overlaysRef.current[key]) {
-          overlaysRef.current[key].addTo(leafletMapRef.current);
-        }
-      });
-    }
-  }, [activeOverlays]);
-
   // Actualizar eventos sísmicos
   useEffect(() => {
     if (leafletMapRef.current && typeof window !== 'undefined') {
       import('leaflet').then((L) => {
-        // Remover marcadores de eventos previos
+        // Remover marcadores de eventos previos. Se identifican por la marca
+        // explícita, no por color: el criterio anterior ("todo lo que no sea
+        // negro es evento") borraba las ciudades apenas cambiara su paleta.
         leafletMapRef.current.eachLayer((layer: any) => {
-          if (layer instanceof L.CircleMarker && layer.options.fillColor !== '#000000') {
+          if (layer instanceof L.CircleMarker && (layer.options as any).isEventMarker) {
             leafletMapRef.current.removeLayer(layer);
           }
         });
@@ -385,6 +365,9 @@ export function AdvancedSeismicMap({
                              evento.fuentes.includes('INPRES') ? '🇦🇷' :
                              '🇺🇸';
 
+            // `isEventMarker` no es una opción de Leaflet: es la marca que usa
+            // el guard de limpieza para distinguir eventos de ciudades.
+            // Leaflet conserva las opciones extra en layer.options.
             const marker = L.circleMarker([evento.lat, evento.lon], {
               radius,
               fillColor: color,
@@ -392,7 +375,8 @@ export function AdvancedSeismicMap({
               weight: 2,
               opacity: 1,
               fillOpacity: 0.6,
-            })
+              isEventMarker: true,
+            } as any)
               .bindPopup(`
                 <div class="text-sm">
                   <p class="font-bold text-lg">M${formatMagnitude(evento.mag)} ${sourceIcon}</p>
@@ -609,14 +593,6 @@ export function AdvancedSeismicMap({
     };
   }, [eventos, onBoundsChange]);
 
-  const toggleOverlay = (overlayKey: string) => {
-    setActiveOverlays(prev =>
-      prev.includes(overlayKey)
-        ? prev.filter(k => k !== overlayKey)
-        : [...prev, overlayKey]
-    );
-  };
-
   return (
     <div className={`relative ${className}`}>
       <div
@@ -642,7 +618,7 @@ export function AdvancedSeismicMap({
         </button>
 
         {showLayerControl && (
-          <div className="absolute top-14 right-0 w-72 bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-xl p-4">
+          <div className="absolute top-14 right-0 max-h-[70vh] w-72 overflow-y-auto bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-xl p-4">
             {/* Capas Base */}
             <div className="mb-4">
               <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Capa Base</h4>
@@ -662,8 +638,14 @@ export function AdvancedSeismicMap({
               </div>
             </div>
 
-            {/* Capas Tectónicas: vectoriales (GeoJSON), no tiles — por eso no están en GEOLOGICAL_OVERLAYS. */}
-            <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-4 mb-4">
+            {/*
+              Capas Tectónicas: vectoriales (GeoJSON), no tiles — por eso no
+              son una capa base. Los "Overlays Geológicos" que vivían debajo
+              se retiraron el 2026-08-05: los tres endpoints estaban muertos
+              (dos 404 del USGS y uno devolviendo HTML con status 200), así
+              que eran checkboxes que no hacían nada y estiraban el panel.
+            */}
+            <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-4">
               <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Capas Tectónicas</h4>
               <label className="flex items-start gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                 <input
@@ -679,27 +661,6 @@ export function AdvancedSeismicMap({
                   </div>
                 </div>
               </label>
-            </div>
-
-            {/* Overlays Geológicos */}
-            <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-4">
-              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Overlays Geológicos</h4>
-              <div className="space-y-1">
-                {Object.entries(GEOLOGICAL_OVERLAYS).map(([key, overlay]) => (
-                  <label key={key} className="flex items-start gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-                    <input
-                      type="checkbox"
-                      checked={activeOverlays.includes(key)}
-                      onChange={() => toggleOverlay(key)}
-                      className="mt-0.5 h-4 w-4"
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">{overlay.name}</div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">{overlay.description}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
             </div>
           </div>
         )}
