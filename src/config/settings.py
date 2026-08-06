@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     auth_secret_key: Optional[str] = None
     auth_token_expire_minutes: int = 1440
 
+    # Invitaciones (email-invitations). Días de vigencia de una invitación
+    # desde su creación (Decision 9 del design: default 7, configurable por
+    # env, SIN fail-fast — a diferencia de auth_secret_key, la ausencia de la
+    # variable no impide el arranque). La expiración se evalúa en lectura
+    # (`expires_at > now()`), sin worker que marque expiradas: el estado es
+    # derivado de timestamps (Decision 1).
+    invitation_expire_days: int = 7
+
     # Google OAuth (opcional — ver openspec/changes/google-oauth/design.md
     # Decision 1). A diferencia de auth_secret_key, la AUSENCIA de estas tres
     # variables NO impide el arranque del servidor: solo deshabilita la vía
