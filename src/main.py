@@ -22,7 +22,17 @@ import asyncpg
 import redis.asyncio as aioredis
 from authlib.integrations.starlette_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
-from fastapi import Depends, FastAPI, Response, status, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Response,
+    status,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -32,6 +42,7 @@ from src.config.settings import settings
 from src.observability.glitchtip import init_glitchtip
 from src.observability.logging_config import configure_logging
 from src.observability.request_context import request_id_ctx
+from src.models.beta import BetaSignupRequest
 from src.models.event import MonitorReport, SeismicEvent, Alert
 from src.models.user import (
     AccountExport,
@@ -594,6 +605,79 @@ async def get_alerts() -> list[Alert]:
 
         requests_total.labels(endpoint="/alerts", status="200").inc()
         return report_obj.alertas
+
+
+# Presupuesto de altas a la beta por IP. 5/hora alcanza para cualquier humano
+# (es UN formulario) y convierte el spam masivo desde una IP en goteo.
+BETA_SIGNUP_MAX_PER_HOUR = 5
+BETA_SIGNUP_WINDOW_SECONDS = 3600
+
+
+def _client_ip(request: Request) -> str:
+    """IP real del cliente, detrás del proxy de Railway o directa en dev.
+
+    En producción el proxy pone la IP original como primer valor de
+    X-Forwarded-For y `request.client.host` es la IP del proxy (inútil como
+    clave de rate limit: todas las requests compartirían presupuesto). En dev
+    no hay header y se usa la conexión directa. Un cliente directo puede
+    falsear el header, pero en prod el proxy lo sobreescribe.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.post("/beta-signups", status_code=status.HTTP_201_CREATED, tags=["beta"])
+async def create_beta_signup(payload: BetaSignupRequest, request: Request) -> dict[str, bool]:
+    """
+    Alta pública en la lista de espera de la beta (landing).
+
+    Defensa en capas contra spam (es el único endpoint público de escritura):
+
+    * Honeypot: si `website` llega con contenido lo llenó un bot — se
+      responde 201 normal SIN insertar (ver BetaSignupRequest).
+    * Rate limit por IP en Redis: INCR + EXPIRE, misma conexión y mismo
+      razonamiento multi-worker que Login2FAAttemptLimiter (auth_service.py).
+      Si Redis no responde se degrada a aceptar el alta: perder protección
+      anti-spam un rato es mejor que perder interesados reales.
+    * EmailStr valida formato y largo; la tabla tiene UNIQUE.
+
+    Idempotente a propósito: repetir un email ya anotado devuelve 201 igual
+    (ON CONFLICT DO NOTHING). Distinguir "nuevo" de "ya existía" convertiría
+    el endpoint en un oráculo de qué emails hay en la base — mismo criterio
+    de no-enumeración que usa el login.
+    """
+    if payload.website:
+        requests_total.labels(endpoint="/beta-signups", status="201").inc()
+        return {"ok": True}
+
+    try:
+        key = f"beta_signup:{_client_ip(request)}"
+        attempts = await totp_login_attempt_redis.incr(key)
+        if attempts == 1:
+            await totp_login_attempt_redis.expire(key, BETA_SIGNUP_WINDOW_SECONDS)
+        if attempts > BETA_SIGNUP_MAX_PER_HOUR:
+            requests_total.labels(endpoint="/beta-signups", status="429").inc()
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Demasiados intentos. Probá de nuevo más tarde.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("Rate limit de /beta-signups no disponible (Redis caído?)", exc_info=True)
+
+    email = payload.email.strip().lower()
+
+    pool = request.app.state.db_pool
+    await pool.execute(
+        "INSERT INTO beta_signups (email) VALUES ($1) ON CONFLICT (email) DO NOTHING",
+        email,
+    )
+
+    requests_total.labels(endpoint="/beta-signups", status="201").inc()
+    return {"ok": True}
 
 
 @app.get("/events/search", response_model=list[SeismicEvent], tags=["monitoring"])
