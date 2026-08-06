@@ -21,6 +21,7 @@ from src.services.auth_service import (
     AuthService,
     InvalidTokenError,
     InvalidTotpCodeError,
+    InvitationRequiredError,
     LastSuperadminError,
     Login2FAAttemptLimiter,
     MAX_TOTP_LOGIN_ATTEMPTS,
@@ -249,9 +250,12 @@ async def test_create_user_forces_superadmin_when_users_table_is_empty():
 
 
 @pytest.mark.asyncio
-async def test_create_user_forces_viewer_when_users_table_is_not_empty():
-    """[Requirement: Bootstrap del primer superadmin / Scenario: Un registro
-    posterior siempre crea viewer, incluso si pide un rol superior]"""
+async def test_create_user_requires_invitation_when_users_table_is_not_empty():
+    """Cierre invitation-only (email-invitations, Decision 5): con la tabla
+    NO vacía y sin token de invitación, el registro se RECHAZA — reemplaza
+    al contrato anterior ("registro posterior crea viewer"), que era
+    exactamente el auto-provisioning que permitía entrar sin invitación.
+    El rol pedido (superadmin) sigue sin tener ningún efecto."""
     svc = _service()
     user_id = uuid4()
     svc._pool = _fake_pool_for_bootstrap(
@@ -259,19 +263,18 @@ async def test_create_user_forces_viewer_when_users_table_is_not_empty():
         inserted_row={"id": user_id, "email": "otro@example.com", "role": "viewer"},
     )
 
-    # El payload pide explícitamente "superadmin" — debe ser ignorado.
-    result = await svc.create_user(
-        email="otro@example.com", password="Sismo2026!", role=UserRole.SUPERADMIN
-    )
-
-    assert result.role == UserRole.VIEWER
+    with pytest.raises(InvitationRequiredError):
+        await svc.create_user(
+            email="otro@example.com", password="Sismo2026!", role=UserRole.SUPERADMIN
+        )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("requested_role", [UserRole.ADMIN, UserRole.MODERADOR, UserRole.SUPERADMIN])
-async def test_create_user_ignores_any_requested_role_when_table_not_empty(requested_role):
-    """Todos los roles pedidos (admin, moderador, superadmin) resultan en
-    viewer cuando la tabla ya tiene usuarios — no solo superadmin."""
+async def test_create_user_rejects_any_requested_role_without_invitation(requested_role):
+    """Ningún rol pedido (admin, moderador, superadmin) abre la puerta: con
+    la tabla no vacía y sin invitación, TODOS los registros se rechazan —
+    versión invitation-only del viejo "todos resultan en viewer"."""
     svc = _service()
     user_id = uuid4()
     svc._pool = _fake_pool_for_bootstrap(
@@ -279,11 +282,10 @@ async def test_create_user_ignores_any_requested_role_when_table_not_empty(reque
         inserted_row={"id": user_id, "email": "cualquiera@example.com", "role": "viewer"},
     )
 
-    result = await svc.create_user(
-        email="cualquiera@example.com", password="Sismo2026!", role=requested_role
-    )
-
-    assert result.role == UserRole.VIEWER
+    with pytest.raises(InvitationRequiredError):
+        await svc.create_user(
+            email="cualquiera@example.com", password="Sismo2026!", role=requested_role
+        )
 
 
 @pytest.mark.asyncio
@@ -307,9 +309,11 @@ async def test_create_user_still_forces_superadmin_after_bootstrap_role_extracti
 
 
 @pytest.mark.asyncio
-async def test_create_user_still_forces_viewer_after_bootstrap_role_extraction():
-    """[Tarea 2.2 — regresión post-refactor 2.1] Confirma que create_user()
-    sigue asignando viewer en tabla no vacía después del refactor de 2.1."""
+async def test_create_user_still_rejects_after_bootstrap_role_extraction():
+    """[Tarea 2.2 — regresión post-refactor 2.1, actualizado por el cierre
+    invitation-only] En tabla no vacía y sin token, create_user() rechaza —
+    la extracción de _determine_bootstrap_role() sigue decidiendo que NO es
+    bootstrap, y eso ahora significa invitación obligatoria."""
     svc = _service()
     user_id = uuid4()
     svc._pool = _fake_pool_for_bootstrap(
@@ -317,11 +321,10 @@ async def test_create_user_still_forces_viewer_after_bootstrap_role_extraction()
         inserted_row={"id": user_id, "email": "segundo@example.com", "role": "viewer"},
     )
 
-    result = await svc.create_user(
-        email="segundo@example.com", password="Sismo2026!", role=UserRole.SUPERADMIN
-    )
-
-    assert result.role == UserRole.VIEWER
+    with pytest.raises(InvitationRequiredError):
+        await svc.create_user(
+            email="segundo@example.com", password="Sismo2026!", role=UserRole.SUPERADMIN
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -401,9 +404,11 @@ async def test_resolve_or_create_google_user_new_user_persists_name_and_avatar()
     pool, conn = _fake_pool_for_google(
         google_id_row=None,
         email_row=None,
-        final_row={"id": user_id, "email": "nuevo@example.com", "role": "viewer"},
+        final_row={"id": user_id, "email": "nuevo@example.com", "role": "superadmin"},
     )
-    conn.fetchval = AsyncMock(return_value=1)  # tabla no vacía -> viewer
+    # Tabla VACÍA -> bootstrap: acá se testea la persistencia de perfil, no
+    # el gate de invitación (que sólo aplica cuando no es bootstrap).
+    conn.fetchval = AsyncMock(return_value=0)
     svc._pool = pool
 
     result = await svc.resolve_or_create_google_user(
@@ -427,9 +432,10 @@ async def test_resolve_or_create_google_user_new_user_without_name_or_avatar_sta
     pool, conn = _fake_pool_for_google(
         google_id_row=None,
         email_row=None,
-        final_row={"id": user_id, "email": "sinperfil@example.com", "role": "viewer"},
+        final_row={"id": user_id, "email": "sinperfil@example.com", "role": "superadmin"},
     )
-    conn.fetchval = AsyncMock(return_value=1)
+    # Tabla vacía -> bootstrap, mismo criterio que el test de arriba.
+    conn.fetchval = AsyncMock(return_value=0)
     svc._pool = pool
 
     result = await svc.resolve_or_create_google_user(
@@ -441,24 +447,61 @@ async def test_resolve_or_create_google_user_new_user_without_name_or_avatar_sta
 
 
 @pytest.mark.asyncio
-async def test_resolve_or_create_google_user_new_user_nonempty_table_becomes_viewer():
-    """[Requirement: Bootstrap del primer superadmin vía Google / Scenario:
-    Un registro posterior vía Google siempre crea viewer]"""
+async def test_resolve_or_create_google_user_new_user_requires_invitation():
+    """Cierre invitation-only (email-invitations, Decision 5): una cuenta de
+    Google SIN usuario existente ni invitación vigente NO entra — reemplaza
+    al contrato anterior ("registro posterior vía Google crea viewer"), que
+    era el auto-provisioning del incidente del 2026-08-06. El tercer
+    fetchrow (None) es el UPDATE de consumo que no matchea invitación."""
     svc = _service()
-    user_id = uuid4()
     pool, conn = _fake_pool_for_google(
         google_id_row=None,
         email_row=None,
-        final_row={"id": user_id, "email": "otro@example.com", "role": "viewer"},
+        final_row=None,  # UPDATE invitations ... RETURNING -> sin invitación
+    )
+    conn.fetchval = AsyncMock(return_value=7)  # tabla no vacía
+    svc._pool = pool
+
+    with pytest.raises(InvitationRequiredError):
+        await svc.resolve_or_create_google_user(
+            google_id="google-sub-456", email="otro@example.com"
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_or_create_google_user_new_user_consumes_invitation_role():
+    """Camino feliz del gate Google: hay invitación pendiente para el email
+    (consumida por match case-insensitive) y el usuario nuevo hereda el ROL
+    de la invitación, no el viewer de bootstrap."""
+    svc = _service()
+    user_id = uuid4()
+    invitation_id = uuid4()
+    pool, conn = _fake_pool_for_google(
+        google_id_row=None,
+        email_row=None,
+        final_row=None,
+    )
+    # Secuencia real de fetchrow en la rama nuevo-usuario con invitación:
+    # UPDATE por google_id -> None; SELECT por email -> None;
+    # UPDATE invitations (consumo) -> fila de invitación; INSERT users -> fila.
+    conn.fetchrow = AsyncMock(
+        side_effect=[
+            None,
+            None,
+            {"id": invitation_id, "email": "invitada@example.com", "role": "moderador"},
+            {"id": user_id, "email": "invitada@example.com", "role": "moderador"},
+        ]
     )
     conn.fetchval = AsyncMock(return_value=7)  # tabla no vacía
     svc._pool = pool
 
     result = await svc.resolve_or_create_google_user(
-        google_id="google-sub-456", email="otro@example.com"
+        google_id="google-sub-789", email="invitada@example.com"
     )
 
-    assert result.role == UserRole.VIEWER
+    assert result.role == UserRole.MODERADOR
+    # accepted_by se setea con el id del usuario recién creado.
+    conn.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio

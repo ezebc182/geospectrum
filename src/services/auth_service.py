@@ -11,6 +11,7 @@ Ver openspec/changes/multi-user-auth/design.md para las decisiones de diseño.
 """
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -31,6 +32,7 @@ from src.models.user import (
     UserPublic,
     UserRole,
 )
+from src.services.invitation_service import PENDING_PREDICATE_SQL
 
 JWT_ALGORITHM = "HS256"
 
@@ -49,6 +51,13 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class EmailAlreadyRegisteredError(Exception):
     """Se intentó crear un usuario con un email que ya existe en `users`."""
+
+
+class InvitationRequiredError(Exception):
+    """Registro invitation-only (email-invitations, Decision 5): se intentó
+    crear un usuario sin una invitación pendiente y vigente. Aplica a los
+    DOS caminos de creación — password (consume por token) y Google (consume
+    por email verificado) — salvo el bootstrap del primer usuario."""
 
 
 class InvalidTokenError(Exception):
@@ -268,7 +277,55 @@ class AuthService:
         existing_count = await conn.fetchval("SELECT COUNT(*) FROM users")
         return UserRole.SUPERADMIN if existing_count == 0 else UserRole.VIEWER
 
-    async def create_user(self, email: str, password: str, role: UserRole) -> UserPublic:
+    @staticmethod
+    async def _consume_pending_invitation(
+        conn: asyncpg.Connection,
+        *,
+        email: Optional[str] = None,
+        token: Optional[str] = None,
+    ) -> Optional[asyncpg.Record]:
+        """Consume (marca accepted_at) UNA invitación pendiente y vigente.
+
+        Dos modos, según el camino de registro (design.md Decision 5):
+        - `token`: camino password. Sólo el portador del link puede consumir
+          — el email del form NO alcanza porque no está verificado (un
+          atacante que conozca un email invitado se registraría antes que
+          el invitado real).
+        - `email`: camino Google. El email YA viene verificado por Google
+          (email_verified chequeado en el callback), así que el match por
+          email es seguro y elimina el plumbing de pasar el token por el
+          redirect de OAuth.
+
+        DEBE invocarse dentro de la transacción del caller: el consumo y el
+        INSERT del usuario son atómicos — si el INSERT falla, la invitación
+        no queda quemada. Retorna la fila consumida (id, email, role) o None.
+        """
+        if token is not None:
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            return await conn.fetchrow(
+                f"""
+                UPDATE invitations SET accepted_at = now()
+                WHERE token_hash = $1 AND {PENDING_PREDICATE_SQL}
+                RETURNING id, email, role
+                """,
+                token_hash,
+            )
+        return await conn.fetchrow(
+            f"""
+            UPDATE invitations SET accepted_at = now()
+            WHERE lower(email) = lower($1) AND {PENDING_PREDICATE_SQL}
+            RETURNING id, email, role
+            """,
+            email,
+        )
+
+    async def create_user(
+        self,
+        email: str,
+        password: str,
+        role: UserRole,
+        invitation_token: Optional[str] = None,
+    ) -> UserPublic:
         """Crea un usuario respetando la regla de bootstrap (design.md Decision 6).
 
         El `role` recibido se IGNORA deliberadamente — nunca se persiste el
@@ -291,6 +348,20 @@ class AuthService:
                 async with conn.transaction():
                     actual_role = await self._determine_bootstrap_role(conn)
 
+                    # Cierre invitation-only (email-invitations, Decision 5):
+                    # con la tabla NO vacía (no aplica bootstrap), registrarse
+                    # exige consumir una invitación por TOKEN. El rol pasa a
+                    # ser el de la invitación, no el viewer de bootstrap.
+                    invitation = None
+                    if actual_role is not UserRole.SUPERADMIN:
+                        if invitation_token:
+                            invitation = await self._consume_pending_invitation(
+                                conn, token=invitation_token
+                            )
+                        if invitation is None:
+                            raise InvitationRequiredError(email)
+                        actual_role = UserRole(invitation["role"])
+
                     row = await conn.fetchrow(
                         """
                         INSERT INTO users (email, password_hash, role)
@@ -301,6 +372,13 @@ class AuthService:
                         password_hash,
                         actual_role.value,
                     )
+
+                    if invitation is not None:
+                        await conn.execute(
+                            "UPDATE invitations SET accepted_by = $1 WHERE id = $2",
+                            row["id"],
+                            invitation["id"],
+                        )
         except asyncpg.UniqueViolationError as exc:
             raise EmailAlreadyRegisteredError(email) from exc
 
@@ -449,6 +527,20 @@ class AuthService:
                     )
 
                 actual_role = await self._determine_bootstrap_role(conn)
+
+                # Cierre invitation-only (email-invitations, Decision 5):
+                # SOLO esta rama de usuario nuevo se gatea — "ya vinculado" y
+                # "auto-link" quedan intactas arriba. El match es por email
+                # porque el caller ya validó email_verified del ID token de
+                # Google. Sin invitación y sin bootstrap: no se crea nada
+                # (era el agujero por el que entraba cualquier cuenta Google).
+                invitation = None
+                if actual_role is not UserRole.SUPERADMIN:
+                    invitation = await self._consume_pending_invitation(conn, email=email)
+                    if invitation is None:
+                        raise InvitationRequiredError(email)
+                    actual_role = UserRole(invitation["role"])
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO users (email, password_hash, role, google_id, name, avatar_url)
@@ -461,6 +553,13 @@ class AuthService:
                     name,
                     avatar_url,
                 )
+
+                if invitation is not None:
+                    await conn.execute(
+                        "UPDATE invitations SET accepted_by = $1 WHERE id = $2",
+                        row["id"],
+                        invitation["id"],
+                    )
                 return UserPublic(
                     id=row["id"],
                     email=row["email"],

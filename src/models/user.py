@@ -61,6 +61,11 @@ class UserCreate(BaseModel):
     # len(password) < 8, aplicado automáticamente por Pydantic.
     password: str = Field(..., min_length=8)
     role: UserRole = UserRole.VIEWER
+    # Registro invitation-only (email-invitations): token del link de
+    # invitación. Opcional en el shape — el PRIMER usuario del sistema
+    # (bootstrap) registra sin token; todos los demás lo necesitan o
+    # create_user() rechaza con InvitationRequiredError (403).
+    invitation_token: Optional[str] = None
 
 
 class UserPublic(BaseModel):

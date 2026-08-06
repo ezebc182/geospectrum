@@ -67,6 +67,7 @@ from src.services.auth_service import (
     AuthService,
     EmailAlreadyRegisteredError,
     InvalidTokenError,
+    InvitationRequiredError,
     InvalidTotpCodeError,
     LastSuperadminError,
     Login2FAAttemptLimiter,
@@ -806,12 +807,24 @@ async def register(
     """
     try:
         user = await auth_service.create_user(
-            email=payload.email, password=payload.password, role=payload.role
+            email=payload.email,
+            password=payload.password,
+            role=payload.role,
+            invitation_token=payload.invitation_token,
         )
     except EmailAlreadyRegisteredError:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={"error": "email already registered"},
+        )
+    except InvitationRequiredError:
+        # Registro invitation-only (email-invitations, Decision 5): sin
+        # invitación pendiente y vigente no se crea NADA — este endpoint es
+        # público y sin este gate cualquiera se registraba (el bootstrap del
+        # primer usuario es la única excepción, decidida server-side).
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "invitation_required"},
         )
 
     requests_total.labels(endpoint="/auth/register", status="201").inc()
@@ -1377,12 +1390,21 @@ async def google_callback(
     # (ver oauth.register() en lifespan()). A diferencia de sub/email/
     # email_verified, son OPCIONALES en el ID token — .get() con default None,
     # nunca deben bloquear el login si Google no los envía por algún motivo.
-    user = await auth_service.resolve_or_create_google_user(
-        google_id=userinfo["sub"],
-        email=userinfo["email"],
-        name=userinfo.get("name"),
-        avatar_url=userinfo.get("picture"),
-    )
+    try:
+        user = await auth_service.resolve_or_create_google_user(
+            google_id=userinfo["sub"],
+            email=userinfo["email"],
+            name=userinfo.get("name"),
+            avatar_url=userinfo.get("picture"),
+        )
+    except InvitationRequiredError:
+        # Cierre invitation-only (email-invitations, Decision 5): una cuenta
+        # de Google sin usuario existente NI invitación vigente NO entra.
+        # Antes de este gate, cualquier cuenta de Google se auto-provisionaba
+        # como viewer — incidente real reportado el 2026-08-06.
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("google_no_invitation")
+
     access_token = auth_service.create_access_token(user)
 
     redirect = RedirectResponse(url=settings.dashboard_url, status_code=status.HTTP_302_FOUND)
