@@ -35,11 +35,12 @@ const SESSION_COOKIE_NAME = 'session';
 const LOGIN_PATH = '/login';
 
 // Rutas que deben seguir siendo accesibles sin sesión. /login en sí mismo
-// (evita loop de redirección); no hay otras rutas públicas en el dashboard
-// hoy — todo lo demás bajo app/ consume datos vía la API pública pero la
+// (evita loop de redirección) y /landing, la página pública de marketing —
+// todo lo demás bajo app/ consume datos vía la API pública pero la
 // UI del dashboard en sí requiere sesión (ver design.md: distinto de la
 // decisión de dejar /report, /events, /alerts públicos en el backend).
-const PUBLIC_PATHS = [LOGIN_PATH];
+const LANDING_PATH = '/landing';
+const PUBLIC_PATHS = [LOGIN_PATH, LANDING_PATH];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -84,6 +85,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // La raíz sin sesión muestra la landing pública vía rewrite (la URL del
+  // navegador queda en `/`): un visitante anónimo ve el producto, no un
+  // formulario de login. Con sesión, `/` sigue siendo el dashboard — por eso
+  // esto va DESPUÉS del chequeo de sesión.
+  if (pathname === '/') {
+    return NextResponse.rewrite(new URL(LANDING_PATH, request.url));
+  }
+
   const loginUrl = new URL(LOGIN_PATH, request.url);
   return NextResponse.redirect(loginUrl);
 }
@@ -91,6 +100,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Excluye assets estáticos y de Next.js internos del guard — no tiene
   // sentido (ni es seguro en términos de performance) correr jwtVerify en
-  // cada request de _next/static, favicon, etc.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // cada request de _next/static, favicon, etc. `textures` y `geo` son los
+  // assets de /public que consume el globo 3D: sin excluirlos, un visitante
+  // anónimo en la landing recibiría un redirect a /login en vez de la
+  // textura de la Tierra y el globo se vería negro.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|textures|geo).*)'],
 };

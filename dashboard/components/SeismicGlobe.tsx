@@ -29,10 +29,68 @@ import {
 import type { GlobeFocus } from '@/lib/area-view-bounds';
 import type { SeismicEvent } from '@/lib/types';
 
+/**
+ * Cartel HTML anclado a una coordenada del globo (capa htmlElementsData).
+ *
+ * `render` fabrica el nodo cada vez que el spotlight cambia — el dueño del
+ * contenido es quien lo pasa (la landing arma su infocard ahí), este
+ * componente sólo lo ancla a la esfera y lo mueve con ella.
+ */
+export interface GlobeSpotlight {
+  lat: number;
+  lng: number;
+  render: () => HTMLElement;
+}
+
 interface SeismicGlobeProps {
   eventos: SeismicEvent[];
   /** Se muestran las placas tectónicas. Default: true. */
   showPlates?: boolean;
+  /**
+   * Se muestran los controles de zoom/reset. Default: true. La landing lo
+   * apaga: ahí el globo es escenografía, no herramienta de análisis.
+   */
+  showControls?: boolean;
+  /**
+   * Rotación automática. Default: true. La landing lo apaga cuando el
+   * visitante pidió prefers-reduced-motion: la rotación continua es
+   * exactamente el tipo de movimiento que esa preferencia quiere evitar.
+   */
+  autoRotate?: boolean;
+  /**
+   * Zoom con la rueda del mouse / pinch. Default: true. La landing lo apaga:
+   * con enableZoom activo OrbitControls hace preventDefault del wheel sobre
+   * el canvas, y como ahí el globo ocupa toda la pantalla, la página queda
+   * imposible de scrollear con rueda. Desactivado, el wheel atraviesa el
+   * canvas y la página scrollea normal; arrastrar para rotar sigue andando.
+   */
+  enableZoom?: boolean;
+  /**
+   * Altitud inicial de cámara, en radios de globo. Sin definir, queda la
+   * default de react-globe.gl (2.5, globo completo con margen). La landing
+   * usa ~1.35: la esfera llena la pantalla y los epicentros se ven grandes.
+   */
+  initialAltitude?: number;
+  /**
+   * Multiplicador del radio de puntos y anillos. Default: 1 (la escala
+   * calibrada para el dashboard). La landing lo sube: a pantalla completa y
+   * de un vistazo, un M5 tiene que verse desde la otra punta del living.
+   */
+  pointScale?: number;
+  /**
+   * Cartel destacado anclado al globo. Al cambiar, la cámara gira hacia la
+   * coordenada manteniendo la altitud actual (no pelea con initialAltitude).
+   * Se anima sólo si autoRotate está activo: autoRotate apagado significa
+   * prefers-reduced-motion, y ahí el salto sin animación es lo correcto.
+   */
+  spotlight?: GlobeSpotlight | null;
+  /**
+   * Color y grosor del halo atmosférico. Defaults = los de react-globe.gl,
+   * así el dashboard no cambia. La landing usa un teal más presente: el
+   * scattering marcado es puro impacto visual en el hero.
+   */
+  atmosphereColor?: string;
+  atmosphereAltitude?: number;
   /** Alto del canvas en píxeles. */
   height?: number;
   /** Se avisa al padre qué evento se clickeó, o null al deseleccionar. */
@@ -87,6 +145,14 @@ const ZOOM_TRANSITION_MS = 300;
 export function SeismicGlobe({
   eventos,
   showPlates = true,
+  showControls = true,
+  autoRotate = true,
+  enableZoom = true,
+  initialAltitude,
+  pointScale = 1,
+  spotlight = null,
+  atmosphereColor = 'lightskyblue',
+  atmosphereAltitude = 0.15,
   height = 600,
   onSelectEvent,
   selectedEventId = null,
@@ -154,12 +220,37 @@ export function SeismicGlobe({
     if (!globe) return;
 
     const controls = globe.controls();
-    controls.autoRotate = selectedEventId === null && !isAreaAnimating;
+    controls.autoRotate = autoRotate && selectedEventId === null && !isAreaAnimating;
     controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
     controls.enableDamping = true;
-  }, [width, selectedEventId, isAreaAnimating]);
+    controls.enableZoom = enableZoom;
+  }, [width, selectedEventId, isAreaAnimating, autoRotate, enableZoom]);
 
   const points = useMemo(() => eventsToPoints(eventos), [eventos]);
+
+  // Acerca la cámara apenas el canvas existe. Corre también si cambia el
+  // ancho (resize): pointOfView() con sólo altitude preserva lat/lng, así
+  // que re-fijarla no pelea con la rotación ni con el arrastre del usuario.
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!globe || width === 0 || initialAltitude === undefined) return;
+
+    globe.pointOfView({ altitude: initialAltitude }, 0);
+  }, [width, initialAltitude]);
+
+  // Gira la cámara hacia el spotlight preservando la altitud actual: es un
+  // recorrido cinematográfico, no un zoom. Cede ante el foco explícito de
+  // evento/área (acciones del usuario > coreografía automática).
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!globe || !spotlight || selectedEventId || isAreaAnimating) return;
+
+    const { altitude } = globe.pointOfView();
+    globe.pointOfView(
+      { lat: spotlight.lat, lng: spotlight.lng, altitude },
+      autoRotate ? FOCUS_TRANSITION_MS : 0,
+    );
+  }, [spotlight, selectedEventId, isAreaAnimating, autoRotate]);
 
   // Gira la cámara hacia el área activa. Gana sobre el foco de evento: cambiar
   // de área es la acción más reciente del usuario, y el padre ya cierra el
@@ -251,7 +342,7 @@ export function SeismicGlobe({
 
   return (
     <div ref={containerRef} className="relative w-full overflow-hidden rounded-xl">
-      {width > 0 && (
+      {width > 0 && showControls && (
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-1">
           <button
             type="button"
@@ -292,6 +383,8 @@ export function SeismicGlobe({
           // ve negro cuando ese CDN falla. El archivo viene con three-globe
           // (dependencia de react-globe.gl), así que copiarlo no agrega fuentes.
           globeImageUrl="/textures/earth-night.jpg"
+          atmosphereColor={atmosphereColor}
+          atmosphereAltitude={atmosphereAltitude}
           // Los eventos van en la capa de labels, no en la de points: points
           // dibuja cilindros 3D SIEMPRE y por más baja que sea la altura la
           // pared se ve al acercarse ("cilindros verticales cortos", feedback
@@ -303,7 +396,7 @@ export function SeismicGlobe({
           labelLng={(d) => (d as GlobePoint).lng}
           labelText={() => ''}
           labelColor={(d) => (d as GlobePoint).color}
-          labelDotRadius={(d) => pointRadius((d as GlobePoint).magnitude)}
+          labelDotRadius={(d) => pointRadius((d as GlobePoint).magnitude) * pointScale}
           labelAltitude={0.002}
           labelLabel={(d: object) => (d as GlobePoint).label}
           onLabelClick={handlePointClick}
@@ -315,9 +408,20 @@ export function SeismicGlobe({
           ringLat={(d) => (d as GlobePoint).lat}
           ringLng={(d) => (d as GlobePoint).lng}
           ringColor={(d: object) => ringColorInterpolator((d as GlobePoint).color)}
-          ringMaxRadius={(d) => ringMaxRadius((d as GlobePoint).magnitude)}
-          ringPropagationSpeed={(d) => ringMaxRadius((d as GlobePoint).magnitude) / 2.5}
+          ringMaxRadius={(d) => ringMaxRadius((d as GlobePoint).magnitude) * pointScale}
+          ringPropagationSpeed={(d) =>
+            (ringMaxRadius((d as GlobePoint).magnitude) * pointScale) / 2.5
+          }
           ringRepeatPeriod={(d) => ringRepeatPeriod((d as GlobePoint).magnitude)}
+          // Cartel del spotlight: un solo elemento HTML anclado a la esfera.
+          // Sin transición de posición — el cartel se recrea al cambiar de
+          // evento, no se desliza de un sismo al otro.
+          htmlElementsData={spotlight ? [spotlight] : []}
+          htmlLat={(d) => (d as GlobeSpotlight).lat}
+          htmlLng={(d) => (d as GlobeSpotlight).lng}
+          htmlElement={(d: object) => (d as GlobeSpotlight).render()}
+          htmlAltitude={0.015}
+          htmlTransitionDuration={0}
           pathsData={plates}
           pathPoints={(d) => (d as GlobePath).coords}
           pathPointLat={(p) => (p as [number, number])[0]}

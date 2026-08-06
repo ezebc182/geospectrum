@@ -134,3 +134,22 @@ export const seismicAPI = new SeismicAPI();
 export const reportFetcher = () => seismicAPI.getReport();
 export const eventsFetcher = () => seismicAPI.getEvents();
 export const alertsFetcher = () => seismicAPI.getAlerts();
+
+/**
+ * Alta en la lista de espera de la beta (landing pública).
+ *
+ * `website` es el honeypot del form: viaja siempre (vacío para humanos) —
+ * el backend descarta en silencio los payloads donde venga con contenido.
+ * Lanza en 4xx/5xx: el form distingue rate-limit/errores para el mensaje.
+ */
+export async function signupBeta(email: string, website: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/beta-signups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, website }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Beta signup failed: ${response.status}`);
+  }
+}
