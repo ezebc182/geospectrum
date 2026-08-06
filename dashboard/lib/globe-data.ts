@@ -16,8 +16,6 @@ export interface GlobePoint {
   lat: number;
   lng: number;
   magnitude: number;
-  /** Altura del punto sobre la superficie, 0..1 en radios de globo. */
-  altitude: number;
   color: string;
   label: string;
   id: string;
@@ -37,19 +35,57 @@ export function magnitudeColor(magnitude: number): string {
 }
 
 /**
- * Altura del punto sobre la superficie.
+ * Radio del disco del evento, en grados de arco.
  *
- * Escala con la magnitud, no con la profundidad: en una esfera del tamaño de
- * la pantalla, 700 km de profundidad son menos de un píxel y no se distinguen
- * de un evento superficial. La magnitud sí es lo que se quiere comparar de un
- * vistazo, y elevarla hace que los eventos grandes se lean sin tener que girar
- * el globo buscándolos.
- *
- * El techo de 0.35 evita que un M8 quede tan alto que parezca desprendido de
- * la superficie.
+ * Escala cuadrática con la magnitud, como las ciudades por población en el
+ * ejemplo de labels de globe.gl que el usuario tomó de referencia: la
+ * diferencia de tamaño tiene que leerse de un vistazo, no medirse. El piso
+ * mantiene visible y clickeable un M0; el techo evita que en un enjambre el
+ * principal tape a sus réplicas.
  */
-export function pointAltitude(magnitude: number): number {
-  return Math.min(0.35, Math.max(0.01, (magnitude / 10) ** 2 * 1.4));
+export function pointRadius(magnitude: number): number {
+  return Math.min(0.7, Math.max(0.15, (magnitude / 9) ** 2 * 1.3));
+}
+
+/**
+ * Radio máximo del pulso, en grados de arco.
+ *
+ * Escala cuadrática, no lineal: con pendiente lineal un M3 y un M6 pulsaban
+ * casi igual y la magnitud no se leía de un vistazo (feedback del usuario,
+ * 2026-08-05). Al cuadrado, el M6 pulsa ~4 veces más grande que el M3.
+ *
+ * Siempre por encima de pointRadius —un anillo que muere dentro del disco no
+ * se ve nunca— y con techo: un pulso de M9 sin límite cruza medio hemisferio
+ * y se lee como artefacto de render, no como indicador.
+ */
+export function ringMaxRadius(magnitude: number): number {
+  return Math.min(8, Math.max(0.6, (magnitude / 9) ** 2 * 8));
+}
+
+/**
+ * Milisegundos entre pulsos.
+ *
+ * Decrece con la magnitud: la frecuencia es jerarquía visual, un M7 llama la
+ * atención antes que un M3, igual que el color. El piso evita el parpadeo
+ * frenético; el techo, que un M0 pulse tan cada tanto que parezca estático.
+ */
+export function ringRepeatPeriod(magnitude: number): number {
+  return Math.min(4000, Math.max(1200, 3800 - magnitude * 260));
+}
+
+/**
+ * Interpolador de color del anillo: nace opaco en el epicentro y muere
+ * transparente en el radio máximo.
+ *
+ * globe.gl llama esta función con t en 0..1 según la expansión del anillo.
+ * Devuelve #rrggbbaa: mismo color base del evento (el de la tabla y el mapa
+ * 2D) con sólo el alfa desvaneciéndose.
+ */
+export function ringColorInterpolator(color: string): (t: number) => string {
+  return (t) =>
+    `${color}${Math.round((1 - t) * 255)
+      .toString(16)
+      .padStart(2, '0')}`;
 }
 
 /**
@@ -99,7 +135,6 @@ export function eventsToPoints(eventos: SeismicEvent[]): GlobePoint[] {
       lat,
       lng,
       magnitude,
-      altitude: pointAltitude(magnitude),
       color: magnitudeColor(magnitude),
       label: `M${magnitude.toFixed(1)} — ${evento.lugar ?? 'sin ubicación'}`,
       id: globePointId(evento),

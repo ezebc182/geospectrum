@@ -5,7 +5,10 @@ import {
   globePointId,
   magnitudeColor,
   plateBoundariesToPaths,
-  pointAltitude,
+  pointRadius,
+  ringColorInterpolator,
+  ringMaxRadius,
+  ringRepeatPeriod,
 } from './globe-data';
 import type { SeismicEvent } from '@/lib/types';
 
@@ -45,23 +48,85 @@ describe('magnitudeColor', () => {
   });
 });
 
-describe('pointAltitude', () => {
+describe('pointRadius', () => {
   it('crece con la magnitud', () => {
-    expect(pointAltitude(6)).toBeGreaterThan(pointAltitude(4));
-    expect(pointAltitude(4)).toBeGreaterThan(pointAltitude(2));
+    // Mismo criterio que el circleMarker del mapa 2D: la magnitud se compara
+    // por tamaño del disco, ya no por altura de barra.
+    expect(pointRadius(6)).toBeGreaterThan(pointRadius(4));
+    expect(pointRadius(4)).toBeGreaterThan(pointRadius(2));
   });
 
-  it('nunca supera el techo de 0.35', () => {
-    // Sin techo, un M9 queda tan alto que se lee como desprendido de la
-    // superficie y deja de verse dónde ocurrió.
-    expect(pointAltitude(9)).toBeLessThanOrEqual(0.35);
-    expect(pointAltitude(12)).toBeLessThanOrEqual(0.35);
+  it('mantiene clickeable un evento de magnitud cero', () => {
+    // Sin piso, un M0 sería un disco de radio 0: invisible e imposible de
+    // clickear, y el evento parecería no estar en el globo.
+    expect(pointRadius(0)).toBeGreaterThanOrEqual(0.15);
   });
 
-  it('mantiene visible un evento de magnitud cero', () => {
-    // El piso de 0.01 existe para que un M0 no quede enterrado en la esfera:
-    // altura 0 en globe.gl es un punto que no se ve.
-    expect(pointAltitude(0)).toBeGreaterThan(0);
+  it('no deja que un M9 tape a sus vecinos', () => {
+    // En un enjambre las réplicas caen alrededor del principal: un disco sin
+    // techo se come los puntos de al lado y no se pueden seleccionar.
+    expect(pointRadius(9)).toBeLessThanOrEqual(0.7);
+    expect(pointRadius(12)).toBeLessThanOrEqual(0.7);
+  });
+});
+
+describe('ringMaxRadius', () => {
+  it('crece con la magnitud', () => {
+    expect(ringMaxRadius(7)).toBeGreaterThan(ringMaxRadius(5));
+    expect(ringMaxRadius(5)).toBeGreaterThan(ringMaxRadius(3));
+  });
+
+  it('siempre supera al disco para que el pulso se note', () => {
+    // Un anillo que muere dentro del disco no se ve nunca: el pulso tiene que
+    // salir del punto, en toda magnitud.
+    for (const mag of [0, 3, 5, 7, 9]) {
+      expect(ringMaxRadius(mag)).toBeGreaterThan(pointRadius(mag));
+    }
+  });
+
+  it('tiene techo para no envolver el globo', () => {
+    // Un pulso de M9 sin techo cruza medio hemisferio y se lee como un
+    // artefacto de render, no como un indicador.
+    expect(ringMaxRadius(9)).toBeLessThanOrEqual(8);
+    expect(ringMaxRadius(12)).toBeLessThanOrEqual(8);
+  });
+});
+
+describe('ringRepeatPeriod', () => {
+  it('pulsa más seguido cuanto mayor la magnitud', () => {
+    // La frecuencia es jerarquía visual: un M7 tiene que llamar la atención
+    // antes que un M3, igual que el color.
+    expect(ringRepeatPeriod(7)).toBeLessThan(ringRepeatPeriod(3));
+  });
+
+  it('no baja del piso que vuelve frenético al pulso', () => {
+    expect(ringRepeatPeriod(9)).toBeGreaterThanOrEqual(1200);
+    expect(ringRepeatPeriod(12)).toBeGreaterThanOrEqual(1200);
+  });
+
+  it('no supera el techo que hace parecer muerto al indicador', () => {
+    // Con períodos muy largos el anillo desaparece varios segundos y el punto
+    // parece estático: el usuario no descubre que la capa existe.
+    expect(ringRepeatPeriod(0)).toBeLessThanOrEqual(4000);
+  });
+});
+
+describe('ringColorInterpolator', () => {
+  it('parte del color del evento y se desvanece al expandirse', () => {
+    const interpolate = ringColorInterpolator('#dc2626');
+
+    // t=0 es el anillo naciendo en el epicentro; t=1, muriendo en el radio
+    // máximo. El formato #rrggbbaa mantiene el color base y sólo baja el alfa.
+    expect(interpolate(0)).toBe('#dc2626ff');
+    expect(interpolate(1)).toBe('#dc262600');
+  });
+
+  it('interpola el alfa de forma monótona', () => {
+    const interpolate = ringColorInterpolator('#22c55e');
+    const alphaAt = (t: number) => parseInt(interpolate(t).slice(7), 16);
+
+    expect(alphaAt(0.25)).toBeGreaterThan(alphaAt(0.5));
+    expect(alphaAt(0.5)).toBeGreaterThan(alphaAt(0.75));
   });
 });
 

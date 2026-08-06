@@ -19,6 +19,10 @@ import {
   eventsToPoints,
   globePointId,
   plateBoundariesToPaths,
+  pointRadius,
+  ringColorInterpolator,
+  ringMaxRadius,
+  ringRepeatPeriod,
   type GlobePath,
   type GlobePoint,
 } from '@/lib/globe-data';
@@ -288,14 +292,32 @@ export function SeismicGlobe({
           // ve negro cuando ese CDN falla. El archivo viene con three-globe
           // (dependencia de react-globe.gl), así que copiarlo no agrega fuentes.
           globeImageUrl="/textures/earth-night.jpg"
-          pointsData={points}
-          pointLat={(d) => (d as GlobePoint).lat}
-          pointLng={(d) => (d as GlobePoint).lng}
-          pointColor={(d) => (d as GlobePoint).color}
-          pointAltitude={(d) => (d as GlobePoint).altitude}
-          pointRadius={0.28}
-          pointLabel={(d) => (d as GlobePoint).label}
-          onPointClick={handlePointClick}
+          // Los eventos van en la capa de labels, no en la de points: points
+          // dibuja cilindros 3D SIEMPRE y por más baja que sea la altura la
+          // pared se ve al acercarse ("cilindros verticales cortos", feedback
+          // del usuario). El dot del label sí es un disco plano conformado a
+          // la esfera, como los circleMarker del mapa 2D. Sin texto: la
+          // magnitud se lee por tamaño, color y el pulso de abajo.
+          labelsData={points}
+          labelLat={(d) => (d as GlobePoint).lat}
+          labelLng={(d) => (d as GlobePoint).lng}
+          labelText={() => ''}
+          labelColor={(d) => (d as GlobePoint).color}
+          labelDotRadius={(d) => pointRadius((d as GlobePoint).magnitude)}
+          labelAltitude={0.002}
+          labelLabel={(d: object) => (d as GlobePoint).label}
+          onLabelClick={handlePointClick}
+          // Pulso expandiéndose desde cada epicentro: radio y frecuencia
+          // escalan con la magnitud, así un M7 llama la atención antes que un
+          // M3 aun con el globo girando. Reusa `points`: misma fuente que los
+          // discos, no puede divergir.
+          ringsData={points}
+          ringLat={(d) => (d as GlobePoint).lat}
+          ringLng={(d) => (d as GlobePoint).lng}
+          ringColor={(d: object) => ringColorInterpolator((d as GlobePoint).color)}
+          ringMaxRadius={(d) => ringMaxRadius((d as GlobePoint).magnitude)}
+          ringPropagationSpeed={(d) => ringMaxRadius((d as GlobePoint).magnitude) / 2.5}
+          ringRepeatPeriod={(d) => ringRepeatPeriod((d as GlobePoint).magnitude)}
           pathsData={plates}
           pathPoints={(d) => (d as GlobePath).coords}
           pathPointLat={(p) => (p as [number, number])[0]}
