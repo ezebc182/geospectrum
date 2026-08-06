@@ -12,7 +12,9 @@ Endpoints:
 - GET /alerts: Solo alertas activas
 """
 import asyncio
+import hashlib
 import logging
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, List
@@ -42,7 +44,7 @@ from src.config.settings import settings
 from src.observability.glitchtip import init_glitchtip
 from src.observability.logging_config import configure_logging
 from src.observability.request_context import request_id_ctx
-from src.models.beta import BetaSignupRequest
+from src.models.beta import BetaSignupItem, BetaSignupRequest
 from src.models.event import MonitorReport, SeismicEvent, Alert
 from src.models.user import (
     AccountExport,
@@ -53,6 +55,7 @@ from src.models.user import (
     UserProfile,
     UserProfileUpdate,
     UserPublic,
+    UserRole,
 )
 from src.services.usgs_service import fetch_usgs_events
 from src.services.inpres_service import fetch_inpres_events
@@ -80,7 +83,10 @@ from src.api.deps import (
     SESSION_COOKIE_NAME,
     get_current_user,
     get_current_user_optional,
+    require_min_role,
 )
+from src.services.email_service import EmailService
+from src.services.invitation_service import PENDING_PREDICATE_SQL
 from src.api.routers import areas as areas_router
 from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
@@ -283,6 +289,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # igual que AuthService, el dueño del ciclo de vida es este lifespan.
     # No tiene connect(): el pool ya está abierto cuando llega acá.
     app.state.area_service = AreaService(db_pool)
+
+    # Emails del flujo de beta (email_service.py). Sin estado ni conexión
+    # persistente: un cliente httpx por envío — no participa del shutdown.
+    app.state.email_service = EmailService(
+        api_key=settings.resend_api_key,
+        sender=settings.resend_from,
+        admin_email=settings.beta_notify_email,
+        dashboard_url=settings.dashboard_url,
+    )
     logger.info("AreaService conectado (areas_of_interest)")
 
     # --------------------------------------------------------------------
@@ -683,13 +698,108 @@ async def create_beta_signup(payload: BetaSignupRequest, request: Request) -> di
     email = payload.email.strip().lower()
 
     pool = request.app.state.db_pool
-    await pool.execute(
-        "INSERT INTO beta_signups (email) VALUES ($1) ON CONFLICT (email) DO NOTHING",
+    # RETURNING distingue alta nueva de repetida SIN cambiar la respuesta
+    # (el 201 idéntico preserva la no-enumeración): los emails salen sólo
+    # en el alta nueva — reenviar confirmación en cada repost sería spam.
+    inserted = await pool.fetchrow(
+        "INSERT INTO beta_signups (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING id",
         email,
     )
 
+    if inserted is not None:
+        # Confirmación al interesado + aviso al admin. EmailService nunca
+        # lanza: un Resend caído no rompe el alta ya persistida.
+        await request.app.state.email_service.send_beta_signup_emails(email)
+
     requests_total.labels(endpoint="/beta-signups", status="201").inc()
     return {"ok": True}
+
+
+@app.get("/beta-signups", response_model=list[BetaSignupItem], tags=["beta"])
+async def list_beta_signups(
+    request: Request,
+    _admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+) -> list[BetaSignupItem]:
+    """Listado de interesados en la beta, para la vista admin del dashboard.
+
+    Pendientes primero (approved_at NULL), más nuevos arriba — es la cola de
+    trabajo del admin, no un log histórico.
+    """
+    pool = request.app.state.db_pool
+    rows = await pool.fetch(
+        """
+        SELECT id, email, created_at, approved_at
+        FROM beta_signups
+        ORDER BY (approved_at IS NULL) DESC, created_at DESC
+        """
+    )
+    return [BetaSignupItem(**dict(row)) for row in rows]
+
+
+@app.post("/beta-signups/{signup_id}/approve", tags=["beta"])
+async def approve_beta_signup(
+    signup_id: uuid.UUID,
+    request: Request,
+    admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+) -> dict[str, bool]:
+    """Aprueba un interesado: crea su invitación y dispara la bienvenida.
+
+    La invitación (rol viewer, vigencia settings.invitation_expire_days) se
+    consume sola cuando el aprobado entra con Google — el email de
+    bienvenida lleva link directo a /login, sin token (email-invitations,
+    Decision 5). Todo lo persistente corre en UNA transacción; el email va
+    DESPUÉS del commit, porque un Resend caído no debe deshacer una
+    aprobación.
+
+    Idempotente: re-aprobar a alguien ya aprobado (o con invitación pendiente
+    vigente) no crea invitaciones duplicadas — respeta el invariante "una
+    sola invitación pendiente y vigente por email" (migración 007).
+    """
+    pool = request.app.state.db_pool
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # FOR UPDATE: dos admins aprobando a la vez serializan acá.
+            signup = await conn.fetchrow(
+                "SELECT id, email, approved_at FROM beta_signups WHERE id = $1 FOR UPDATE",
+                signup_id,
+            )
+            if signup is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="beta signup not found",
+                )
+
+            already_approved = signup["approved_at"] is not None
+
+            pending = await conn.fetchrow(
+                f"SELECT id FROM invitations WHERE lower(email) = lower($1) AND {PENDING_PREDICATE_SQL}",
+                signup["email"],
+            )
+            if pending is None and not already_approved:
+                # El token se genera porque el schema lo exige (NOT NULL) y
+                # habilita el futuro camino por password, pero este flujo no
+                # lo manda a ningún lado: el consumo es por email (Google).
+                token_hash = hashlib.sha256(secrets.token_urlsafe(32).encode()).hexdigest()
+                await conn.execute(
+                    """
+                    INSERT INTO invitations (email, role, token_hash, invited_by, expires_at)
+                    VALUES ($1, 'viewer', $2, $3, now() + make_interval(days => $4))
+                    """,
+                    signup["email"],
+                    token_hash,
+                    admin.id,
+                    settings.invitation_expire_days,
+                )
+
+            await conn.execute(
+                "UPDATE beta_signups SET approved_at = COALESCE(approved_at, now()) WHERE id = $1",
+                signup_id,
+            )
+
+    if not already_approved:
+        await request.app.state.email_service.send_beta_approved_email(signup["email"])
+
+    return {"ok": True, "already_approved": already_approved}
 
 
 @app.get("/events/search", response_model=list[SeismicEvent], tags=["monitoring"])

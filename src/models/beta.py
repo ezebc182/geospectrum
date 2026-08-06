@@ -6,7 +6,23 @@ no tiene rol, ni password, ni sesión. Mezclarlo con los modelos de auth
 invitaría a tratarlo como tal.
 """
 
+from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field
+
+
+class BetaSignupItem(BaseModel):
+    """Fila del listado admin de beta testers (GET /beta-signups).
+
+    El estado se deriva de `approved_at` (mismo criterio que invitations:
+    timestamps, no columnas de estado que puedan desincronizarse)."""
+
+    id: UUID
+    email: str
+    created_at: datetime
+    approved_at: Optional[datetime] = None
 
 
 class BetaSignupRequest(BaseModel):

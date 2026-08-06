@@ -137,6 +137,17 @@ export interface UserPublic {
   avatar_url?: string | null;
 }
 
+/**
+ * Interesado en la beta (GET /beta-signups, solo admin+). El estado se
+ * deriva de approved_at: null = pendiente de aprobación.
+ */
+export interface BetaSignup {
+  id: string;
+  email: string;
+  created_at: string;
+  approved_at: string | null;
+}
+
 export interface ChartDataPoint {
   timestamp: number;
   mag: number;

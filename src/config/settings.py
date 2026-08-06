@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
 
+    # Emails transaccionales del flujo de beta (email_service.py). Sin
+    # resend_api_key el servicio queda deshabilitado y sólo loguea (dev
+    # local). resend_from DEBE ser del dominio verificado en Resend.
+    # beta_notify_email: destinatario del aviso "nuevo interesado".
+    resend_api_key: Optional[str] = None
+    resend_from: str = "GeoSpectrum <noreply@geospectrum.org>"
+    beta_notify_email: Optional[str] = None
+
     # Migraciones al arranque (scripts/apply_migrations.py). False por
     # default: en dev local se siguen aplicando a mano; en Railway SOLO el
     # servicio api lo activa — seedlink/inpres comparten imagen y base pero

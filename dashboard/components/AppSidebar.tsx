@@ -9,7 +9,10 @@ import {
   Globe2,
   LineChart,
   RadioTower,
+  UserCheck,
 } from 'lucide-react';
+
+import { useAuth } from '@/hooks/use-auth';
 import {
   Sidebar,
   SidebarContent,
@@ -30,8 +33,16 @@ const routes = [
   { href: '/analytics', label: 'Análisis', icon: LineChart },
 ];
 
+// Rutas de administración: sólo visibles para admin+. El gate real de
+// permisos vive en el backend (require_min_role); esto es no mostrar
+// puertas que la API va a cerrar igual.
+const ADMIN_ROUTES = [{ href: '/beta', label: 'Beta testers', icon: UserCheck }];
+const ADMIN_ROLES = ['admin', 'superadmin'];
+
 export function AppSidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const isAdmin = user !== null && ADMIN_ROLES.includes(user.role);
 
   return (
     <Sidebar collapsible="icon">
@@ -62,6 +73,30 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administración</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {ADMIN_ROUTES.map((route) => (
+                  <SidebarMenuItem key={route.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === route.href}
+                      tooltip={route.label}
+                    >
+                      <Link href={route.href}>
+                        <route.icon />
+                        <span>{route.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

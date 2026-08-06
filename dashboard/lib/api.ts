@@ -2,7 +2,7 @@
  * Cliente API para GeoSpectrum Service
  */
 
-import type { MonitorReport, SeismicEvent, Alert } from './types';
+import type { BetaSignup, MonitorReport, SeismicEvent, Alert } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -134,6 +134,26 @@ export const seismicAPI = new SeismicAPI();
 export const reportFetcher = () => seismicAPI.getReport();
 export const eventsFetcher = () => seismicAPI.getEvents();
 export const alertsFetcher = () => seismicAPI.getAlerts();
+
+/**
+ * Administración de beta testers (solo admin+, sesión por cookie httpOnly:
+ * `credentials: 'include'` obligatorio — mismo criterio que lib/auth.ts).
+ */
+export async function getBetaSignups(): Promise<BetaSignup[]> {
+  const response = await fetch(`${API_BASE_URL}/beta-signups`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(`Beta list failed: ${response.status}`);
+  return response.json();
+}
+
+export async function approveBetaSignup(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/beta-signups/${id}/approve`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error(`Beta approve failed: ${response.status}`);
+}
 
 /**
  * Alta en la lista de espera de la beta (landing pública).
