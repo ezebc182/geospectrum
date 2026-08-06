@@ -1,22 +1,22 @@
 # =============================================================================
-# Multi-stage Dockerfile para GeoSpectrum Service
-# Imagen production-ready con security hardening
+# Dockerfile para el ingestor SeedLink (Railway)
+#
+# Mismo build que deploy/docker/Dockerfile (la API): comparte requirements y
+# código fuente. Existe como archivo aparte porque el ingestor es un PROCESO
+# SEPARADO del API (ver src/services/seedlink_ingestor.py) y Railway elige el
+# Dockerfile por servicio vía RAILWAY_DOCKERFILE_PATH — la única diferencia
+# real es el CMD final. Sin EXPOSE ni healthcheck HTTP: este proceso no
+# escucha ningún puerto, consume SeedLink y escribe en TimescaleDB.
 # =============================================================================
 
 FROM python:3.11-slim AS base
 
-# Metadata
-LABEL maintainer="geospectrum-ops@example.com"
-LABEL description="Production-grade seismic monitoring service"
-
-# Security: usuario no root
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app && \
     chown appuser:appuser /app
 
 WORKDIR /app
 
-# Dependencias del sistema (mínimas)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libpq5 \
@@ -29,7 +29,6 @@ RUN apt-get update && \
 
 FROM base AS dependencies
 
-# Dependencias de build
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
@@ -37,10 +36,8 @@ RUN apt-get update && \
         && \
     rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements
 COPY requirements.txt .
 
-# Instalar dependencias Python
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -50,27 +47,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 FROM base AS production
 
-# Copiar dependencias instaladas
 COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=dependencies /usr/local/bin /usr/local/bin
 
-# Copiar código fuente
 COPY --chown=appuser:appuser src /app/src
 COPY --chown=appuser:appuser .env.example /app/.env.example
 
-# Cambiar a usuario no root
 USER appuser
 
-# Exponer puerto
-EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health', timeout=2)" || exit 1
-
-# Entry point
-# Host 0.0.0.0 verificado contra Railway el 2026-08-05: su red privada y su
-# edge proxy conectan por IPv4 (api.railway.internal resuelve a 10.x). El bind
-# "::" NO sirve ahí: el contenedor tiene v6only y rechaza IPv4 con
-# "connection refused" → 502 en el edge.
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "src.services.seedlink_ingestor"]
