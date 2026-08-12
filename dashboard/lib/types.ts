@@ -138,6 +138,53 @@ export interface UserPublic {
 }
 
 /**
+ * Respuesta de `GET /auth/me` (email-invitations, Decision 6): el shape de
+ * `UserPublic` + `onboarding_completed_at` leído de la BASE en cada request
+ * (nunca del JWT — dato mutable). `null` = onboarding pendiente, el layout
+ * de `(app)` monta el wizard. Espejo de `MeResponse` en src/models/user.py.
+ */
+export interface MeResponse extends UserPublic {
+  onboarding_completed_at: string | null;
+}
+
+/**
+ * Invitaciones (email-invitations). El `status` viene DERIVADO de los
+ * timestamps por el backend (no existe columna status, design.md Decision 1);
+ * la UI lo muestra tal cual sin recalcularlo.
+ */
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+
+/** Shape de `GET /auth/invitations` — espejo de InvitationPublic del backend.
+ * NUNCA incluye token ni hash (garantía por construcción de tipos, server-side). */
+export interface Invitation {
+  id: string;
+  email: string;
+  role: UserRole;
+  status: InvitationStatus;
+  invited_by: string | null;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  /** `null` mientras la route de envío no confirmó el email — la UI lo
+   * muestra como badge "email sin confirmar" con "reenviar" como recuperación. */
+  email_sent_at: string | null;
+}
+
+/** Respuesta de `POST /auth/invitations` y `POST .../resend`: la ÚNICA vez
+ * que el token viaja en claro — la UI lo usa de inmediato para el paso 2
+ * (envío del email) y no lo persiste en ningún lado. */
+export interface InvitationWithToken extends Invitation {
+  token: string;
+}
+
+/** Respuesta 200 de `GET /auth/invitations/validate?token=` (público). */
+export interface InvitationValidation {
+  email: string;
+  role: UserRole;
+  expires_at: string;
+}
+
+/**
  * Interesado en la beta (GET /beta-signups, solo admin+). El estado se
  * deriva de approved_at: null = pendiente de aprobación.
  */

@@ -10,14 +10,43 @@
 
 import type {
   AccountExport,
+  Invitation,
+  InvitationValidation,
+  InvitationWithToken,
   LoginResult,
+  MeResponse,
   TotpSetupResponse,
   UserProfile,
   UserProfileUpdate,
   UserPublic,
+  UserRole,
 } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+/**
+ * Error con el status HTTP adjunto. Los helpers de invitaciones lo lanzan
+ * en vez de un Error pelado porque la UI NECESITA distinguir códigos de la
+ * matriz de design.md Decision 3 (403 escalación de rol, 409 duplicado,
+ * 404/410 de validate, 410/422 de register) para mostrar el mensaje y la
+ * recuperación correctos — un string no alcanza.
+ */
+export class ApiStatusError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiStatusError';
+    this.status = status;
+  }
+}
+
+/** Extrae el `{"error": "..."}` del shape de error estándar del backend,
+ * con fallback si el body no es JSON o no trae el campo. */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof body?.error === 'string' ? body.error : fallback;
+}
 
 /**
  * Login. Lanza en cualquier respuesta que no sea 200 (incluye 401 por
@@ -91,7 +120,7 @@ export async function logout(): Promise<void> {
  * Cualquier otro fallo (red caída, 500, etc.) se propaga como excepción
  * para que el caller lo distinga de "simplemente no hay sesión".
  */
-export async function getMe(): Promise<UserPublic | null> {
+export async function getMe(): Promise<MeResponse | null> {
   const response = await fetch(`${API_BASE_URL}/auth/me`, {
     credentials: 'include',
     cache: 'no-store',
@@ -219,5 +248,179 @@ export async function deleteAccount(): Promise<void> {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(body?.error ?? `API Error: ${response.status}`);
+  }
+}
+
+// ============================================================================
+// Invitaciones (email-invitations, Fase 6). El flujo de creación es en DOS
+// pasos orquestados por la UI admin: (1) createInvitation() contra el backend
+// devuelve el token en claro UNA sola vez; (2) sendInvitationEmail() contra la
+// route de Next dispara el email. Todos lanzan ApiStatusError para que la UI
+// distinga los códigos de la matriz de Decision 3 y muestre el resultado de
+// cada paso por separado.
+// ============================================================================
+
+/**
+ * Paso 1: crea la invitación en el backend (admin+). El `token` de la
+ * respuesta es la única vez que el sistema entrega el claro — usarlo YA para
+ * el paso 2 y no guardarlo. Errores: 403 (rol superior al propio), 409
+ * (email con cuenta, o pendiente vigente duplicada — el mensaje del backend
+ * distingue), 401 sin sesión.
+ */
+export async function createInvitation(
+  email: string,
+  role: UserRole,
+): Promise<InvitationWithToken> {
+  const response = await fetch(`${API_BASE_URL}/auth/invitations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, role }),
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo crear la invitación'),
+    );
+  }
+
+  return response.json();
+}
+
+/** Listado admin+ con `status` derivado por el backend. */
+export async function listInvitations(): Promise<Invitation[]> {
+  const response = await fetch(`${API_BASE_URL}/auth/invitations`, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo listar las invitaciones'),
+    );
+  }
+
+  return response.json();
+}
+
+/** Revoca una invitación (204). 409 si ya fue aceptada — revocar una
+ * invitación consumida no des-crea al usuario, el backend la rechaza. */
+export async function revokeInvitation(invitationId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/invitations/${invitationId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo revocar la invitación'),
+    );
+  }
+}
+
+/**
+ * Reenvío: el backend regenera token + expiración (el link anterior queda
+ * MUERTO) y resetea `email_sent_at`. El caller debe encadenar
+ * `sendInvitationEmail()` con el token NUEVO. 409 si aceptada o revocada;
+ * una expirada revive.
+ */
+export async function resendInvitation(invitationId: string): Promise<InvitationWithToken> {
+  const response = await fetch(`${API_BASE_URL}/auth/invitations/${invitationId}/resend`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo regenerar la invitación'),
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Validación PÚBLICA del token (página /invite/[token], sin sesión — por
+ * eso NO lleva `credentials`). NO consume la invitación. 404 = token
+ * desconocido ("invitación no válida"); 410 = conocida pero expirada,
+ * revocada o ya usada ("vencida — pedí un reenvío"). La página traduce
+ * ambos códigos a mensajes distintos (design.md Decision 3).
+ */
+export async function validateInvitationToken(token: string): Promise<InvitationValidation> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/invitations/validate?token=${encodeURIComponent(token)}`,
+    { cache: 'no-store' },
+  );
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'invitación no válida'),
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Registro por invitación (`POST /auth/register` con `invitation_token`).
+ * No emite cookie de sesión (Decision 5) — tras el 201 el caller encadena
+ * `login()` con las mismas credenciales. Errores de la matriz: 403 sin
+ * invitación, 410 token inválido/expirado/consumido, 422 email distinto del
+ * invitado, 409 email ya registrado.
+ */
+export async function registerWithInvitation(
+  email: string,
+  password: string,
+  invitationToken: string,
+): Promise<UserPublic> {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, invitation_token: invitationToken }),
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo crear la cuenta'),
+    );
+  }
+
+  return response.json();
+}
+
+/** Input del paso 2 — exactamente lo que devolvió `createInvitation()` /
+ * `resendInvitation()`, con los nombres que espera la route de Next. */
+export interface SendInvitationEmailInput {
+  invitationId: string;
+  email: string;
+  role: UserRole;
+  token: string;
+  expiresAt: string;
+}
+
+/**
+ * Paso 2: dispara el email vía `POST /api/invitations/send` (route de Next,
+ * mismo origen — la cookie `session` viaja sola). Un fallo acá NO rompe la
+ * invitación del paso 1: queda `pending` con "email sin confirmar" y
+ * "reenviar" como recuperación. Errores: 401/403 sesión o rol, 502 Resend.
+ */
+export async function sendInvitationEmail(input: SendInvitationEmailInput): Promise<void> {
+  const response = await fetch('/api/invitations/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo enviar el email de invitación'),
+    );
   }
 }

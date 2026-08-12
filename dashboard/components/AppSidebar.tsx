@@ -8,6 +8,7 @@ import {
   Gauge,
   Globe2,
   LineChart,
+  MailPlus,
   RadioTower,
   UserCheck,
 } from 'lucide-react';
@@ -36,7 +37,10 @@ const routes = [
 // Rutas de administración: sólo visibles para admin+. El gate real de
 // permisos vive en el backend (require_min_role); esto es no mostrar
 // puertas que la API va a cerrar igual.
-const ADMIN_ROUTES = [{ href: '/beta', label: 'Beta testers', icon: UserCheck }];
+const ADMIN_ROUTES = [
+  { href: '/beta', label: 'Beta testers', icon: UserCheck },
+  { href: '/admin/invitations', label: 'Invitaciones', icon: MailPlus },
+];
 const ADMIN_ROLES = ['admin', 'superadmin'];
 
 export function AppSidebar() {
