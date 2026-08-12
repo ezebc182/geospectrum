@@ -1,4 +1,5 @@
 """Tests del middleware X-Request-ID (M1.5)."""
+
 import pytest
 from fastapi.testclient import TestClient
 from src.main import app

@@ -19,6 +19,7 @@ que depende el filtro de dos etapas —si el bbox fuera más chico que la
 geometría, point_in_area() descartaría eventos que sí están dentro del área
 (ver tests/unit/test_geo_filter.py::test_point_in_area_bbox_incoherente_...).
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,7 @@ from uuid import UUID
 import asyncpg
 
 from src.models.area import AreaBbox, AreaPublic
-from src.services.geo_filter import InvalidGeometryError, bbox_of
+from src.services.geo_filter import bbox_of
 
 # Preset que se usa cuando el usuario no eligió ninguno (users.active_area_id
 # IS NULL). DEBE coincidir con `default_slug` del catálogo generado por

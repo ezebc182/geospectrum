@@ -10,6 +10,7 @@ NOTA PRODUCTIVA:
 - En producción ideal: INPRES debería proveer API, o mantener este adapter
   como servicio separado con monitoreo de cambios de estructura
 """
+
 import httpx
 import re
 from typing import List, Dict, Optional
@@ -84,7 +85,7 @@ class INPRESAdapter:
                     event = self._parse_row(row)
                     if event:
                         events.append(event)
-                except Exception as e:
+                except Exception:
                     # Row malformada → skip
                     continue
 
@@ -153,7 +154,7 @@ class INPRESAdapter:
                 "sentido": sentido,
             }
 
-        except Exception as e:
+        except Exception:
             return None
 
     def _determine_status(self, row, cols) -> tuple[bool, bool]:
@@ -212,9 +213,7 @@ class INPRESAdapter:
                 return None
         return None
 
-    def _parse_datetime_local_to_utc(
-        self, dt_str: str, tz_offset_hours: int
-    ) -> Optional[str]:
+    def _parse_datetime_local_to_utc(self, dt_str: str, tz_offset_hours: int) -> Optional[str]:
         """
         Convierte datetime local Argentina a UTC ISO.
 

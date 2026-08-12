@@ -7,6 +7,7 @@ encargarse de scrapear el sitio oficial y exponer JSON normalizado.
 
 Si INPRES_PROXY_URL no está configurado, simplemente retornamos lista vacía.
 """
+
 import httpx
 import logging
 import time

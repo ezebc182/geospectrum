@@ -82,13 +82,16 @@ class EMSCDetailService:
                             # Igual criterio que emsc_service.py: coordinates[2] es
                             # elevación GeoJSON (negativa bajo superficie), se
                             # normaliza a profundidad positiva.
-                            "depth_km": abs(coordinates[2]) if len(coordinates) > 2 and coordinates[2] is not None else None,
+                            "depth_km": (
+                                abs(coordinates[2])
+                                if len(coordinates) > 2 and coordinates[2] is not None
+                                else None
+                            ),
                             "place": properties.get("flynn_region") or properties.get("place"),
                             "felt": properties.get("felt"),
                             "reviewed": properties.get("status") == "reviewed",
                             "type": properties.get("type"),
                             "url": properties.get("url"),
-
                             # Información adicional
                             "magnitudes": properties.get("magnitudes", []),
                             "origins": properties.get("origins", []),
@@ -97,7 +100,6 @@ class EMSCDetailService:
                             "source_catalog": properties.get("source_catalog"),
                             "evaluation_mode": properties.get("evaluation_mode"),
                             "evaluation_status": properties.get("evaluation_status"),
-
                             # Parámetros de calidad
                             "horizontal_error": properties.get("horizontal_error"),
                             "depth_error": properties.get("depth_error"),
@@ -105,7 +107,6 @@ class EMSCDetailService:
                             "azimuthal_gap": properties.get("azimuthal_gap"),
                             "num_stations_used": properties.get("num_stations_used"),
                             "num_phases_used": properties.get("num_phases_used"),
-
                             # Datos de intensidad si están disponibles
                             "max_intensity": properties.get("maxmmi"),
                             "felt_reports": properties.get("felt"),
@@ -136,10 +137,7 @@ class EMSCDetailService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Endpoint de SRCMOD asociado con EMSC
                 url = f"{cls.BASE_URL}/srcmod/query"
-                params = {
-                    "unid": event_id,
-                    "format": "json"
-                }
+                params = {"unid": event_id, "format": "json"}
 
                 response = await client.get(url, params=params)
 
@@ -214,7 +212,7 @@ class EMSCDetailService:
         max_lon: Optional[float] = None,
         min_depth: Optional[float] = None,
         max_depth: Optional[float] = None,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         Buscar eventos con detalles completos
@@ -262,19 +260,21 @@ class EMSCDetailService:
                         props = feature.get("properties", {})
                         coords = feature.get("geometry", {}).get("coordinates", [None, None, None])
 
-                        events.append({
-                            "id": props.get("unid") or props.get("id"),
-                            "time": props.get("time"),
-                            "mag": props.get("mag"),
-                            "mag_type": props.get("magtype"),
-                            "lat": coords[1] if len(coords) > 1 else None,
-                            "lon": coords[0] if len(coords) > 0 else None,
-                            "depth_km": coords[2] if len(coords) > 2 else None,
-                            "place": props.get("flynn_region") or props.get("place"),
-                            "felt": props.get("felt"),
-                            "reviewed": props.get("status") == "reviewed",
-                            "url": props.get("url"),
-                        })
+                        events.append(
+                            {
+                                "id": props.get("unid") or props.get("id"),
+                                "time": props.get("time"),
+                                "mag": props.get("mag"),
+                                "mag_type": props.get("magtype"),
+                                "lat": coords[1] if len(coords) > 1 else None,
+                                "lon": coords[0] if len(coords) > 0 else None,
+                                "depth_km": coords[2] if len(coords) > 2 else None,
+                                "place": props.get("flynn_region") or props.get("place"),
+                                "felt": props.get("felt"),
+                                "reviewed": props.get("status") == "reviewed",
+                                "url": props.get("url"),
+                            }
+                        )
 
                     return events
 
@@ -286,10 +286,7 @@ class EMSCDetailService:
 
     @classmethod
     async def get_nearby_stations(
-        cls,
-        lat: float,
-        lon: float,
-        radius_km: float = 200
+        cls, lat: float, lon: float, radius_km: float = 200
     ) -> List[Dict[str, Any]]:
         """
         Obtener estaciones sísmicas cercanas a una ubicación

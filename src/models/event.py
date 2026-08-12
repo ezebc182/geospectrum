@@ -1,9 +1,9 @@
 """
 Modelos de datos para eventos sísmicos.
 """
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
 
 
 class SeismicEvent(BaseModel):
@@ -34,7 +34,7 @@ class SeismicEvent(BaseModel):
                 "mag_tipo": "Mw",
                 "lugar": "43 km SE de San Juan, Argentina",
                 "sentido": True,
-                "revisado": True
+                "revisado": True,
             }
         }
 
@@ -46,18 +46,15 @@ class KPIs(BaseModel):
     tasa_eventos_por_hora: float = Field(..., description="Tasa horaria de eventos")
     magnitud_max: Optional[float] = Field(None, description="Magnitud máxima registrada")
     magnitud_promedio_ponderada_por_energia: Optional[float] = Field(
-        None,
-        description="Magnitud promedio ponderada por energía liberada"
+        None, description="Magnitud promedio ponderada por energía liberada"
     )
     profundidad_media_M_ge_4: Optional[float] = Field(
-        None,
-        description="Profundidad media de eventos M≥4"
+        None, description="Profundidad media de eventos M≥4"
     )
     eventos_sentidos: int = Field(..., description="Cantidad de eventos sentidos")
     porcentaje_eventos_sentidos: float = Field(..., description="% de eventos sentidos")
     minutos_desde_M_ge_5: Optional[float] = Field(
-        None,
-        description="Minutos desde último evento M≥5"
+        None, description="Minutos desde último evento M≥5"
     )
 
 
@@ -75,8 +72,7 @@ class MonitorReport(BaseModel):
     timestamp_utc_generacion: str = Field(..., description="Timestamp generación reporte")
     region_monitorizada: dict = Field(..., description="Bounding box región")
     data_source_errors: List[str] = Field(
-        default_factory=list,
-        description="Errores al consultar fuentes externas"
+        default_factory=list, description="Errores al consultar fuentes externas"
     )
     kpis: KPIs
     alertas: List[Alert] = Field(default_factory=list)
@@ -86,12 +82,7 @@ class MonitorReport(BaseModel):
         json_schema_extra = {
             "example": {
                 "timestamp_utc_generacion": "2025-10-28T23:59:59Z",
-                "region_monitorizada": {
-                    "minlat": -40,
-                    "maxlat": -20,
-                    "minlon": -75,
-                    "maxlon": -60
-                },
+                "region_monitorizada": {"minlat": -40, "maxlat": -20, "minlon": -75, "maxlon": -60},
                 "data_source_errors": [],
                 "kpis": {
                     "total_eventos": 4,
@@ -101,9 +92,9 @@ class MonitorReport(BaseModel):
                     "profundidad_media_M_ge_4": 102.5,
                     "eventos_sentidos": 1,
                     "porcentaje_eventos_sentidos": 0.25,
-                    "minutos_desde_M_ge_5": 1800
+                    "minutos_desde_M_ge_5": 1800,
                 },
                 "alertas": [],
-                "eventos": []
+                "eventos": [],
             }
         }

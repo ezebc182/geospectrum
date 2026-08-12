@@ -93,7 +93,9 @@ def test_report_endpoint_structure(client):
     las 3 fuentes vía report_service, en vez de pegar a red real/vacía)."""
     with (
         patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
-        patch("src.services.report_service.fetch_inpres_events", new_callable=AsyncMock) as mock_inpres,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
         patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
     ):
         mock_usgs.return_value = ([], None)
@@ -129,7 +131,9 @@ def test_report_includes_emsc_only_event(client):
     test_search_events_uses_merge_all_sources pero apuntando a /report)."""
     with (
         patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
-        patch("src.services.report_service.fetch_inpres_events", new_callable=AsyncMock) as mock_inpres,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
         patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
     ):
         mock_usgs.return_value = ([], None)
@@ -150,7 +154,9 @@ def test_events_endpoint(client):
     """Test endpoint /events — incluye evento EMSC-only (Fase 5)."""
     with (
         patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
-        patch("src.services.report_service.fetch_inpres_events", new_callable=AsyncMock) as mock_inpres,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
         patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
     ):
         mock_usgs.return_value = ([], None)
@@ -184,7 +190,9 @@ def test_alerts_endpoint(client):
 
     with (
         patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
-        patch("src.services.report_service.fetch_inpres_events", new_callable=AsyncMock) as mock_inpres,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
         patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
     ):
         mock_usgs.return_value = ([], None)
@@ -336,7 +344,9 @@ def test_report_events_alerts_parity(client):
 
     with (
         patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
-        patch("src.services.report_service.fetch_inpres_events", new_callable=AsyncMock) as mock_inpres,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
         patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
     ):
         mock_usgs.return_value = ([], None)
@@ -351,6 +361,8 @@ def test_report_events_alerts_parity(client):
         events_ids = {e["id"] for e in events_data}
         assert report_event_ids == events_ids
 
-        report_alert_keys = {(a["tipo"], tuple(a["eventos_relacionados"])) for a in report_data["alertas"]}
+        report_alert_keys = {
+            (a["tipo"], tuple(a["eventos_relacionados"])) for a in report_data["alertas"]
+        }
         alerts_keys = {(a["tipo"], tuple(a["eventos_relacionados"])) for a in alerts_data}
         assert report_alert_keys == alerts_keys

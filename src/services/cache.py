@@ -6,6 +6,7 @@ Diseño:
 - Thread-safe para uso con asyncio (no se requiere lock: el GIL protege dict ops).
 - TTL configurable por clave; por defecto usa settings.cache_ttl_seconds.
 """
+
 import time
 import logging
 from typing import Any, Optional

@@ -1,5 +1,5 @@
 """Tests para servicio de KPIs."""
-import pytest
+
 from src.models.event import SeismicEvent
 from src.services.kpi_service import compute_kpis_and_alerts
 

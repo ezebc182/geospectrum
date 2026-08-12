@@ -1,6 +1,7 @@
 """
 Cliente para USGS Earthquake Catalog API (ComCat).
 """
+
 import httpx
 import time
 import uuid
@@ -109,7 +110,7 @@ async def fetch_usgs_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
             )
             events.append(event)
 
-        except Exception as e:
+        except Exception:
             # Evento individual malformado → skip sin romper todo
             continue
 

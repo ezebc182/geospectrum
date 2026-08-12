@@ -13,6 +13,7 @@ hace src/services/geo_filter.py, que es donde vive el conocimiento geométrico
 y donde está testeada. Duplicar esa validación acá daría dos fuentes de
 verdad que se desincronizan.
 """
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID

@@ -8,6 +8,7 @@ GET /spectrograms/{channel}/history al reconectar un cliente.
 Escribe en lotes (no INSERT por columna) para no saturar de writes: a
 COLUMN_INTERVAL_SECONDS=4 por canal, son ~15 columnas/min/canal.
 """
+
 from __future__ import annotations
 
 import asyncio

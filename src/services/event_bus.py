@@ -13,6 +13,7 @@ con cualquiera de las dos implementaciones cuando migremos a multi-proceso.
 Disenado para permitir migracion futura a Redis Streams o Kafka sin cambiar
 el codigo de listeners/dispatchers.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -171,9 +172,7 @@ class RedisPubSubBus:
             try:
                 while not self._closed:
                     get_task = asyncio.create_task(
-                        pubsub.get_message(
-                            ignore_subscribe_messages=True, timeout=1.0
-                        )
+                        pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     )
                     done, _ = await asyncio.wait(
                         {get_task, close_task},

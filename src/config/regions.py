@@ -11,6 +11,7 @@ La misma convención se propaga a get_bbox_for_regions, que devuelve [] cuando
 "match all". Esto evita que el caller tenga que ramificar entre "filtrar"
 y "no filtrar".
 """
+
 from typing import Optional, TypedDict
 
 
@@ -73,10 +74,7 @@ def event_in_bbox(event: dict, bbox: Optional[Bbox]) -> bool:
         return True
     lat = event["lat"]
     lon = event["lon"]
-    return (
-        bbox["minlat"] <= lat <= bbox["maxlat"]
-        and bbox["minlon"] <= lon <= bbox["maxlon"]
-    )
+    return bbox["minlat"] <= lat <= bbox["maxlat"] and bbox["minlon"] <= lon <= bbox["maxlon"]
 
 
 def validate_presets(presets: Optional[dict] = None) -> None:
@@ -115,8 +113,7 @@ def get_bbox_for_regions(region_names: list[str]) -> list[Bbox]:
     for name in region_names:
         if name not in REGION_PRESETS:
             raise UnknownRegionError(
-                f"Unknown region preset: {name!r}. "
-                f"Available: {sorted(REGION_PRESETS.keys())}"
+                f"Unknown region preset: {name!r}. " f"Available: {sorted(REGION_PRESETS.keys())}"
             )
         bbox = REGION_PRESETS[name]["bbox"]
         if bbox is None:

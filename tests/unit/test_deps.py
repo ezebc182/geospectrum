@@ -4,6 +4,7 @@ Usa un FastAPI app mínimo montado solo en el test (sin tocar src/main.py,
 que en este batch no gana ningún endpoint nuevo) y mockea AuthService para
 no requerir Postgres real.
 """
+
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient

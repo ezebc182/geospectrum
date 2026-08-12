@@ -15,6 +15,7 @@ Arquitectura (ver memoria del proyecto "architecture-seismic-spectrograms-live")
       -> EventBus.publish("spec:<NET.STA.LOC.CHA>", columna)
       -> FastAPI WebSocket /ws/spectrogram/{channel} reenvía a los navegadores
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -91,9 +92,7 @@ class SeedLinkIngestor:
                 self.bus.publish(f"spec:{channel_id}", column), self._loop
             )
             if self.column_writer is not None:
-                asyncio.run_coroutine_threadsafe(
-                    self.column_writer.add_column(column), self._loop
-                )
+                asyncio.run_coroutine_threadsafe(self.column_writer.add_column(column), self._loop)
 
     def _compute_column(self, trace: Trace, channel_id: str) -> Optional[dict]:
         """Calcula la última columna del espectrograma (instante más reciente)."""
@@ -119,7 +118,9 @@ class SeedLinkIngestor:
                 "power_db": power_db.round(1).tolist(),
             }
         except Exception:
-            logger.warning("seedlink_ingestor: fallo calculando columna de %s", channel_id, exc_info=True)
+            logger.warning(
+                "seedlink_ingestor: fallo calculando columna de %s", channel_id, exc_info=True
+            )
             return None
 
     def run(self, channels: list[tuple[str, str, str]]) -> None:
@@ -136,9 +137,7 @@ class SeedLinkIngestor:
             # usa (add_column corre vía run_coroutine_threadsafe en self._loop);
             # conectarlo en el loop de _main() revienta con "attached to a
             # different loop" en cada flush.
-            asyncio.run_coroutine_threadsafe(
-                self.column_writer.connect(), self._loop
-            ).result()
+            asyncio.run_coroutine_threadsafe(self.column_writer.connect(), self._loop).result()
 
         self._client = create_client(self.server, on_data=self._on_data)
         for net, sta, cha in channels:
@@ -184,7 +183,9 @@ if __name__ == "__main__":
     principal (uvicorn src.main:app) — es un proceso aparte, igual que
     src/adapters/inpres_adapter.py.
     """
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
     async def _main() -> None:
         bus = RedisPubSubBus(settings.redis_url)
@@ -197,7 +198,9 @@ if __name__ == "__main__":
             # ingestor (ver SeedLinkIngestor.run), no en este. Solo se
             # instancia para pasarle el DSN.
             column_writer = TimescaleColumnWriter(settings.timescaledb_dsn)
-            logger.info("seedlink_ingestor: TimescaleDB configurado en %s", settings.timescaledb_host)
+            logger.info(
+                "seedlink_ingestor: TimescaleDB configurado en %s", settings.timescaledb_host
+            )
         else:
             logger.warning(
                 "seedlink_ingestor: TimescaleDB no configurado (TIMESCALEDB_HOST vacío) — "
@@ -216,8 +219,6 @@ if __name__ == "__main__":
         finally:
             if column_writer is not None and ingestor._loop is not None:
                 # close() debe correr en el mismo loop donde vive el pool.
-                asyncio.run_coroutine_threadsafe(
-                    column_writer.close(), ingestor._loop
-                ).result()
+                asyncio.run_coroutine_threadsafe(column_writer.close(), ingestor._loop).result()
 
     asyncio.run(_main())

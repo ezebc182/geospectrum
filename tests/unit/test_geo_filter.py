@@ -1,4 +1,5 @@
 """Tests para el filtro geométrico de eventos por área de interés (AOI-1)."""
+
 import pytest
 
 from src.services.geo_filter import (
@@ -47,9 +48,7 @@ def test_bbox_of_polygon():
 def test_bbox_of_ignora_el_agujero():
     """El bbox lo define el anillo exterior; un agujero no puede agrandarlo."""
     con_agujero = _square(0, 0, 10, 10)
-    con_agujero["coordinates"].append(
-        [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]]
-    )
+    con_agujero["coordinates"].append([[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]])
     assert bbox_of(con_agujero) == {"minlat": 0, "maxlat": 10, "minlon": 0, "maxlon": 10}
 
 
@@ -114,9 +113,7 @@ def test_point_in_geometry_dentro_y_fuera():
 def test_point_in_geometry_respeta_agujeros():
     """El motivo de usar Shapely y no ray-casting propio (Decisión heredada #2)."""
     con_agujero = _square(0, 0, 10, 10)
-    con_agujero["coordinates"].append(
-        [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]]
-    )
+    con_agujero["coordinates"].append([[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]])
     assert point_in_geometry(1, 1, con_agujero) is True
     assert point_in_geometry(5, 5, con_agujero) is False  # dentro del agujero
 
@@ -262,9 +259,7 @@ def test_point_in_area_antimeridiano_end_to_end():
     matchearía el Anillo de Fuego.
     """
     cinturon = _cinturon_antimeridiano()
-    area = {"geometry": cinturon, **{
-        f"bbox_{k}": v for k, v in bbox_of(cinturon).items()
-    }}
+    area = {"geometry": cinturon, **{f"bbox_{k}": v for k, v in bbox_of(cinturon).items()}}
     assert point_in_area(0, 175, area) is True  # lado este del cinturón
     assert point_in_area(0, -175, area) is True  # lado oeste
     assert point_in_area(0, 0, area) is False  # Greenwich: pasa el bbox, no el área

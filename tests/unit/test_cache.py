@@ -1,4 +1,5 @@
 """Tests para módulo de caché TTL."""
+
 import time
 import pytest
 from src.services import cache

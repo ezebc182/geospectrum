@@ -181,9 +181,7 @@ async def build_report(
 
     if area is not None:
         total_before = len(merged_events)
-        merged_events = [
-            e for e in merged_events if point_in_area(e.lat, e.lon, area)
-        ]
+        merged_events = [e for e in merged_events if point_in_area(e.lat, e.lon, area)]
         logger.info(
             "build_report: area filter kept %d/%d events",
             len(merged_events),

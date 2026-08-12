@@ -1,4 +1,5 @@
 """Tests para EventBus implementations."""
+
 import asyncio
 import pytest
 from src.services.event_bus import AsyncioQueueBus

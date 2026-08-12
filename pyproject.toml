@@ -15,10 +15,34 @@ line-length = 100
 target-version = "py311"
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12 = la versión real del venv y de la imagen de deploy. Con "3.11" acá,
+# mypy fallaba al parsear los stubs de numpy 2.x (usan sintaxis de 3.12) y
+# abortaba el análisis antes de revisar el código propio.
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+# asyncpg no publica stubs ni marker py.typed (no es deuda nuestra: el
+# paquete no expone tipos). Sin esto, cada módulo que lo importa arrastra
+# un import-untyped que tapa los errores que sí importan.
+[[tool.mypy.overrides]]
+module = [
+    "asyncpg",
+    "asyncpg.*",
+    # Stack científico y scraping: ninguno publica stubs. Mismo criterio que
+    # asyncpg — silenciar el ruido de "sin tipos" para que un error real no
+    # quede escondido entre ellos.
+    "bs4",
+    "bs4.*",
+    "shapely",
+    "shapely.*",
+    "obspy",
+    "obspy.*",
+    "scipy",
+    "scipy.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

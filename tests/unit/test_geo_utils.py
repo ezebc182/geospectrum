@@ -1,5 +1,5 @@
 """Tests para utilidades geoespaciales."""
-import pytest
+
 from src.utils.geo import haversine_km, energy_weight, ms_to_iso
 
 
@@ -38,9 +38,9 @@ def test_energy_weight_zero():
 
 def test_ms_to_iso():
     """Test conversión timestamp UNIX ms a ISO."""
-    # 2025-10-28 22:26:39 UTC
+    # 2024-10-28 22:46:39 UTC
     ms = 1730155599000
     iso = ms_to_iso(ms)
 
-    assert "2025-10-28" in iso
-    assert "22:26:39" in iso
+    assert "2024-10-28" in iso
+    assert "22:46:39" in iso

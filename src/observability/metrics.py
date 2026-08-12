@@ -9,6 +9,7 @@ phase futura) o se inspeccionan via stdout en debug.
 
 Ver tambien las metricas existentes en src/main.py (requests_total, etc.).
 """
+
 from prometheus_client import Counter, Gauge, Histogram
 
 # ---------------------------------------------------------------------------
@@ -56,8 +57,7 @@ dispatcher_events_processed = Counter(
 
 dispatcher_collisions_total = Counter(
     "seismic_dispatcher_collisions_total",
-    "Veces que un UPDATE difiere demasiado en magnitud "
-    "(potencial colision de canonical_id)",
+    "Veces que un UPDATE difiere demasiado en magnitud " "(potencial colision de canonical_id)",
 )
 
 dispatcher_local_buffer_size = Gauge(

@@ -1,6 +1,7 @@
 """
 Servicio de cálculo de KPIs y generación de alertas.
 """
+
 import logging
 from typing import List, Tuple
 from datetime import datetime, timezone
@@ -63,13 +64,15 @@ def compute_kpis_and_alerts(
 
         try:
             t_dt = parse_datetime_utc(event.hora_utc)
-            cluster_points.append({
-                "t": t_dt,
-                "lat": event.lat,
-                "lon": event.lon,
-                "mag": mag,
-                "id": event.id,
-            })
+            cluster_points.append(
+                {
+                    "t": t_dt,
+                    "lat": event.lat,
+                    "lon": event.lon,
+                    "mag": mag,
+                    "id": event.id,
+                }
+            )
         except Exception:
             logger.warning(
                 "kpi_service: failed to parse hora_utc for cluster detection, event excluded",

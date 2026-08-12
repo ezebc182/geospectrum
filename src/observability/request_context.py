@@ -12,6 +12,7 @@ Uso:
     logger.info("procesando evento", extra={"mag": 4.2})
     # El JsonFormatter incluirá request_id="abc-123" automáticamente
 """
+
 import logging
 from contextvars import ContextVar
 

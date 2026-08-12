@@ -1,6 +1,7 @@
 """
 Servicio de fusión de eventos de múltiples fuentes (USGS + INPRES + EMSC).
 """
+
 import logging
 from typing import List, Set
 from src.models.event import SeismicEvent

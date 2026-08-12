@@ -9,9 +9,9 @@ Campos siempre presentes en cada línea:
 - service="geospectrum"              (campo fijo)
 - request_id                         (inyectado por RequestIdFilter cuando disponible)
 """
+
 import logging
 import sys
-from typing import Optional
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -63,6 +63,7 @@ def configure_logging(level: str = "INFO") -> None:
     # ejecución de configure_logging().
     try:
         from src.observability.request_context import RequestIdFilter
+
         handler.addFilter(RequestIdFilter())
     except ImportError:
         # Durante tests unitarios de logging_config sin el módulo completo

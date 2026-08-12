@@ -163,9 +163,9 @@ en report_service.py): sin un orden canónico fijo, la alerta de
 enjambre sería no determinística ante el mismo input.
 ============================================================================
 """
+
 import math
 
-import pytest
 from src.models.event import SeismicEvent
 from src.services.merge_service import merge_events, merge_all_sources
 from src.services.kpi_service import compute_kpis_and_alerts, _detect_swarms
@@ -254,7 +254,9 @@ def test_merge_with_overlap():
     assert merged[0].sentido is True  # OR lógico
 
 
-def _make_event(event_id: str, source: str, lat: float, lon: float, hora: str, mag: float = 3.0) -> SeismicEvent:
+def _make_event(
+    event_id: str, source: str, lat: float, lon: float, hora: str, mag: float = 3.0
+) -> SeismicEvent:
     return SeismicEvent(
         id=event_id,
         fuentes=[source],
@@ -324,9 +326,7 @@ def _order_sensitivity_fixture():
     USGS<->INPRES ~49.94km (fuera de umbral). EMSC actúa de "puente".
     Timestamps dentro de Δt<=120s entre pares vecinos.
     """
-    usgs = _make_event(
-        "usgs1", "USGS", _LAT0, _LON0, "2025-10-28T22:00:00Z", mag=4.0
-    )
+    usgs = _make_event("usgs1", "USGS", _LAT0, _LON0, "2025-10-28T22:00:00Z", mag=4.0)
     emsc = _make_event(
         "emsc1", "EMSC", _LAT0, _LON0 + 25 * _LON_PER_KM, "2025-10-28T22:00:30Z", mag=4.3
     )
@@ -422,9 +422,7 @@ def test_merge_all_sources_order_impacts_alerts():
         observed[order_name] = {
             "total_eventos": kpis.total_eventos,
             "magnitud_max": kpis.magnitud_max,
-            "alertas": sorted(
-                (a.tipo, tuple(sorted(a.eventos_relacionados))) for a in alertas
-            ),
+            "alertas": sorted((a.tipo, tuple(sorted(a.eventos_relacionados))) for a in alertas),
         }
 
     # magnitud_max es siempre 5.2 (max() gana en _fuse_two_events sin
@@ -434,9 +432,9 @@ def test_merge_all_sources_order_impacts_alerts():
     # La alerta evento_significativo SIEMPRE dispara en los 3 órdenes para
     # este fixture (ningún caso "no dispara" -> "dispara" observado aquí).
     for order_name, data in observed.items():
-        assert data["alertas"][0][0] == "evento_significativo", (
-            f"Orden {order_name} no generó evento_significativo: {data}"
-        )
+        assert (
+            data["alertas"][0][0] == "evento_significativo"
+        ), f"Orden {order_name} no generó evento_significativo: {data}"
 
     # Pero el id asociado a la alerta SÍ cambia según el orden (auditable:
     # el operador vería un id de evento distinto sobreviviendo la fusión).
@@ -454,6 +452,7 @@ def test_merge_all_sources_order_impacts_alerts():
 # Ver bloque de documentación al inicio de este archivo para el detalle
 # completo del mecanismo y el veredicto (CONFIRMADO IMPACTA).
 # ============================================================================
+
 
 def _swarm_order_fixture():
     """

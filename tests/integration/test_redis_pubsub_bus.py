@@ -1,4 +1,5 @@
 """Test de integracion para RedisPubSubBus."""
+
 import asyncio
 import json
 import pytest
@@ -106,6 +107,7 @@ async def test_redis_pubsub_close_unblocks_subscriber_quickly(redis_url):
     # del subscriber antes de cerrar el cliente; el test verifica que el
     # consumer salga rapido (sin polling de 1s).
     import time
+
     t0 = time.monotonic()
     await bus.close()
     await asyncio.wait_for(consumer_task, timeout=0.5)

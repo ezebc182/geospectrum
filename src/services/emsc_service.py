@@ -7,6 +7,7 @@ Mediterráneo, y también eventos significativos a nivel mundial.
 API: https://www.seismicportal.eu/eventdetails.html
 Feed RSS/JSON disponible.
 """
+
 import logging
 import time
 from datetime import datetime, timedelta, timezone

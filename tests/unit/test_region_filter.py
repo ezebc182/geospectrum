@@ -1,4 +1,5 @@
 """Tests para filtrado por región y validación de presets."""
+
 import pytest
 from src.config.regions import (
     REGION_PRESETS,

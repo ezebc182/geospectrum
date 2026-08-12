@@ -7,19 +7,17 @@ import io
 import base64
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
-from typing import Optional, Tuple, Dict
+from datetime import datetime
+from typing import Optional, Dict
 import logging
 
 import numpy as np
 from obspy.clients.fdsn import Client
 from obspy import UTCDateTime
-from obspy.signal.trigger import plot_trigger
-from PIL import Image
 import matplotlib
-matplotlib.use('Agg')  # Backend sin GUI
+
+matplotlib.use("Agg")  # Backend sin GUI
 import matplotlib.pyplot as plt
-from matplotlib import colors
 from scipy import signal
 
 logger = logging.getLogger(__name__)
@@ -29,18 +27,18 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 # Mapeo de códigos de red por país/región
 NETWORK_CODES = {
-    'US': 'US',      # United States National Network
-    'CI': 'CI',      # California Integrated Seismic Network
-    'NC': 'NC',      # Northern California Seismic Network
-    'UW': 'UW',      # Pacific Northwest Seismic Network
-    'AK': 'AK',      # Alaska Seismic Network
-    'JP': 'JP',      # Japanese National Network
-    'CL': 'C',       # Chile National Network
-    'PE': 'PE',      # Peru National Network
-    'NZ': 'NZ',      # GeoNet New Zealand
-    'TW': 'TW',      # Taiwan Seismic Network
-    'TU': 'TU',      # Turkish National Network
-    'IR': 'IR',      # Iranian Seismic Network
+    "US": "US",  # United States National Network
+    "CI": "CI",  # California Integrated Seismic Network
+    "NC": "NC",  # Northern California Seismic Network
+    "UW": "UW",  # Pacific Northwest Seismic Network
+    "AK": "AK",  # Alaska Seismic Network
+    "JP": "JP",  # Japanese National Network
+    "CL": "C",  # Chile National Network
+    "PE": "PE",  # Peru National Network
+    "NZ": "NZ",  # GeoNet New Zealand
+    "TW": "TW",  # Taiwan Seismic Network
+    "TU": "TU",  # Turkish National Network
+    "IR": "IR",  # Iranian Seismic Network
 }
 
 # Canales SEED completos (con location code) para las ciudades que además
@@ -121,12 +119,20 @@ class SpectrogramService:
 
     # Lista de servidores FDSN con sus características (ordenados por confiabilidad)
     FDSN_SERVERS = [
-        {"name": "IRIS", "coverage": "global", "priority": 1},       # IRIS DMC - Más confiable y completo
-        {"name": "USGS", "coverage": "global", "priority": 2},       # US Geological Survey
-        {"name": "GEOFON", "coverage": "global", "priority": 3},     # GFZ Potsdam - Bueno para Europa/Asia
-        {"name": "ORFEUS", "coverage": "europe", "priority": 4},     # ORFEUS - Europa
-        {"name": "RESIF", "coverage": "europe", "priority": 5},      # RESIF - Francia/Europa
-        {"name": "INGV", "coverage": "mediterranean", "priority": 6}, # INGV - Italia/Mediterráneo
+        {
+            "name": "IRIS",
+            "coverage": "global",
+            "priority": 1,
+        },  # IRIS DMC - Más confiable y completo
+        {"name": "USGS", "coverage": "global", "priority": 2},  # US Geological Survey
+        {
+            "name": "GEOFON",
+            "coverage": "global",
+            "priority": 3,
+        },  # GFZ Potsdam - Bueno para Europa/Asia
+        {"name": "ORFEUS", "coverage": "europe", "priority": 4},  # ORFEUS - Europa
+        {"name": "RESIF", "coverage": "europe", "priority": 5},  # RESIF - Francia/Europa
+        {"name": "INGV", "coverage": "mediterranean", "priority": 6},  # INGV - Italia/Mediterráneo
     ]
 
     # Estaciones pre-configuradas para ciudades importantes (para acelerar búsqueda)
@@ -135,35 +141,39 @@ class SpectrogramService:
     # no devolvían datos (HTTP 204) — estaciones dadas de baja o códigos incorrectos.
     KNOWN_STATIONS = {
         # Japón - red GSN (IU) e II, más confiables que la red nacional JP en IRIS
-        "tokyo": [{"network": "IU", "station": "MAJO", "channel": "BHZ"},
-                  {"network": "IU", "station": "TATO", "channel": "BHZ"}],
+        "tokyo": [
+            {"network": "IU", "station": "MAJO", "channel": "BHZ"},
+            {"network": "IU", "station": "TATO", "channel": "BHZ"},
+        ],
         "osaka": [{"network": "II", "station": "ERM", "channel": "BHZ"}],
-
         # USA - USGS/IRIS excelente cobertura
         # NOTA: los IDs deben coincidir con dashboard/lib/seismic-cities.ts (sin guión bajo)
-        "losangeles": [{"network": "CI", "station": "USC", "channel": "BHZ"},
-                      {"network": "AZ", "station": "FRD", "channel": "BHZ"}],
-        "sanfrancisco": [{"network": "BK", "station": "CMB", "channel": "BHZ"},
-                         {"network": "BK", "station": "SAO", "channel": "BHZ"}],
+        "losangeles": [
+            {"network": "CI", "station": "USC", "channel": "BHZ"},
+            {"network": "AZ", "station": "FRD", "channel": "BHZ"},
+        ],
+        "sanfrancisco": [
+            {"network": "BK", "station": "CMB", "channel": "BHZ"},
+            {"network": "BK", "station": "SAO", "channel": "BHZ"},
+        ],
         "seattle": [{"network": "UW", "station": "LON", "channel": "HHZ"}],
-
         # Chile - Red nacional
-        "santiago": [{"network": "C1", "station": "CO01", "channel": "HHZ"},
-                     {"network": "IU", "station": "LCO", "channel": "BHZ"}],
-
+        "santiago": [
+            {"network": "C1", "station": "CO01", "channel": "HHZ"},
+            {"network": "IU", "station": "LCO", "channel": "BHZ"},
+        ],
         # Perú - II.NNA (verificado, reemplaza al IU.NNA original que fallaba)
         "lima": [{"network": "II", "station": "NNA", "channel": "BHZ"}],
         "arequipa": [{"network": "BV", "station": "SOEP", "channel": "EHZ"}],
-
         # Nueva Zelanda - GeoNet (vía IU/GSN, la red nacional NZ no respondía)
         "wellington": [{"network": "IU", "station": "SNZO", "channel": "BHZ"}],
         "christchurch": [{"network": "IU", "station": "SNZO", "channel": "BHZ"}],
         "auckland": [{"network": "NZ", "station": "BKZ", "channel": "HHZ"}],
-
         # México
-        "mexicocity": [{"network": "IU", "station": "TEIG", "channel": "BHZ"},
-                       {"network": "G", "station": "UNM", "channel": "BHZ"}],
-
+        "mexicocity": [
+            {"network": "IU", "station": "TEIG", "channel": "BHZ"},
+            {"network": "G", "station": "UNM", "channel": "BHZ"},
+        ],
         # Resto de ciudades de alto riesgo (dashboard/lib/seismic-cities.ts).
         # Sin estación verificada con datos recientes -> quedan en fallback sintético:
         # manila, jakarta, tehran, valparaiso.
@@ -204,14 +214,16 @@ class SpectrogramService:
         if not self.clients:
             logger.error("No FDSN servers available!")
         else:
-            logger.info(f"Initialized with {len(self.clients)} FDSN servers: {list(self.clients.keys())}")
+            logger.info(
+                f"Initialized with {len(self.clients)} FDSN servers: {list(self.clients.keys())}"
+            )
 
     def _get_stations_sync(
         self,
         latitude: float,
         longitude: float,
         max_radius: float = 5.0,  # Incrementado de 2.0 a 5.0 grados
-        network: Optional[str] = None
+        network: Optional[str] = None,
     ) -> list:
         """
         Synchronous wrapper for ObsPy get_stations (for thread executor)
@@ -244,14 +256,19 @@ class SpectrogramService:
                             "latitude": sta.latitude,
                             "longitude": sta.longitude,
                             "channels": [ch.code for ch in sta],
-                            "source_server": server_name
+                            "source_server": server_name,
                         }
                         # Evitar duplicados
-                        if not any(s["network"] == station_info["network"] and
-                                 s["station"] == station_info["station"] for s in all_stations):
+                        if not any(
+                            s["network"] == station_info["network"]
+                            and s["station"] == station_info["station"]
+                            for s in all_stations
+                        ):
                             all_stations.append(station_info)
 
-                logger.info(f"{server_name}: Found {len([s for s in all_stations if s['source_server'] == server_name])} stations")
+                logger.info(
+                    f"{server_name}: Found {len([s for s in all_stations if s['source_server'] == server_name])} stations"
+                )
 
                 # Si encontramos suficientes estaciones, podemos detenernos
                 if len(all_stations) >= 5:
@@ -261,7 +278,9 @@ class SpectrogramService:
                 logger.warning(f"{server_name}: Error getting stations: {e}")
                 continue
 
-        logger.info(f"Total: Found {len(all_stations)} unique stations near ({latitude}, {longitude}) from {len(self.clients)} servers")
+        logger.info(
+            f"Total: Found {len(all_stations)} unique stations near ({latitude}, {longitude}) from {len(self.clients)} servers"
+        )
         return all_stations
 
     async def get_stations_near_location(
@@ -270,7 +289,7 @@ class SpectrogramService:
         longitude: float,
         max_radius: float = 5.0,  # Incrementado de 2.0 a 5.0
         network: Optional[str] = None,
-        timeout: int = 30  # Incrementado timeout para múltiples servidores
+        timeout: int = 30,  # Incrementado timeout para múltiples servidores
     ) -> list:
         """
         Obtener estaciones sísmicas cerca de una ubicación
@@ -293,14 +312,9 @@ class SpectrogramService:
             loop = asyncio.get_event_loop()
             stations = await asyncio.wait_for(
                 loop.run_in_executor(
-                    _executor,
-                    self._get_stations_sync,
-                    latitude,
-                    longitude,
-                    max_radius,
-                    network
+                    _executor, self._get_stations_sync, latitude, longitude, max_radius, network
                 ),
-                timeout=timeout
+                timeout=timeout,
             )
             return stations
 
@@ -318,7 +332,7 @@ class SpectrogramService:
         location: str = "*",
         channel: str = "BHZ",
         duration_hours: int = 24,
-        source_server: Optional[str] = None
+        source_server: Optional[str] = None,
     ) -> Optional[any]:
         """
         Synchronous wrapper for ObsPy get_waveforms (for thread executor)
@@ -355,7 +369,7 @@ class SpectrogramService:
                     location=location,
                     channel=channel,
                     starttime=start_time,
-                    endtime=end_time
+                    endtime=end_time,
                 )
 
                 if len(stream) > 0:
@@ -379,7 +393,7 @@ class SpectrogramService:
         channel: str = "BHZ",
         duration_hours: int = 24,
         timeout: int = 30,  # Incrementado para múltiples servidores
-        source_server: Optional[str] = None
+        source_server: Optional[str] = None,
     ) -> Optional[any]:
         """
         Obtener datos de forma de onda desde FDSN
@@ -412,9 +426,9 @@ class SpectrogramService:
                     location,
                     channel,
                     duration_hours,
-                    source_server
+                    source_server,
                 ),
-                timeout=timeout
+                timeout=timeout,
             )
             return stream
 
@@ -431,7 +445,7 @@ class SpectrogramService:
         width: int = 800,
         height: int = 400,
         fmin: float = 0.1,
-        fmax: float = 20.0
+        fmax: float = 20.0,
     ) -> Optional[str]:
         """
         Generar imagen de espectrograma desde stream de ObsPy
@@ -455,8 +469,8 @@ class SpectrogramService:
             trace = max(stream, key=lambda tr: tr.stats.npts)
 
             # Preprocesamiento
-            trace.detrend('demean')
-            trace.filter('bandpass', freqmin=fmin, freqmax=fmax, corners=2, zerophase=True)
+            trace.detrend("demean")
+            trace.filter("bandpass", freqmin=fmin, freqmax=fmax, corners=2, zerophase=True)
 
             # Calcular espectrograma
             fs = trace.stats.sampling_rate
@@ -467,12 +481,7 @@ class SpectrogramService:
             noverlap = int(nperseg * 0.5)  # 50% overlap (suficiente resolución temporal)
 
             f, t, Sxx = signal.spectrogram(
-                data,
-                fs=fs,
-                window='hann',
-                nperseg=nperseg,
-                noverlap=noverlap,
-                scaling='density'
+                data, fs=fs, window="hann", nperseg=nperseg, noverlap=noverlap, scaling="density"
             )
 
             # Convertir a dB
@@ -488,36 +497,36 @@ class SpectrogramService:
                 t = t[::step]
 
             # Crear figura
-            fig, ax = plt.subplots(figsize=(width/100, height/100), dpi=100)
+            fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
 
             # Plot espectrograma
             im = ax.pcolormesh(
                 t / 3600,  # Convertir a horas
                 f,
                 Sxx_db,
-                cmap='viridis',
-                shading='auto',
+                cmap="viridis",
+                shading="auto",
                 vmin=np.percentile(Sxx_db, 5),
-                vmax=np.percentile(Sxx_db, 95)
+                vmax=np.percentile(Sxx_db, 95),
             )
 
             # Configurar ejes
-            ax.set_ylabel('Frecuencia [Hz]')
-            ax.set_xlabel('Tiempo [horas desde ahora]')
+            ax.set_ylabel("Frecuencia [Hz]")
+            ax.set_xlabel("Tiempo [horas desde ahora]")
             ax.set_ylim([fmin, fmax])
-            ax.set_xlim([t[0]/3600, t[-1]/3600])
+            ax.set_xlim([t[0] / 3600, t[-1] / 3600])
 
             # Ajustar para que se vea limpio
             plt.tight_layout(pad=0.5)
 
             # Convertir a imagen
             buf = io.BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+            plt.savefig(buf, format="png", bbox_inches="tight", dpi=100)
             buf.seek(0)
             plt.close(fig)
 
             # Convertir a base64
-            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            img_base64 = base64.b64encode(buf.read()).decode("utf-8")
 
             return img_base64
 
@@ -531,7 +540,7 @@ class SpectrogramService:
         longitude: float,
         city_id: Optional[str] = None,
         width: int = 800,
-        height: int = 400
+        height: int = 400,
     ) -> Optional[str]:
         """
         Generar espectrograma sintético realista basado en ubicación
@@ -561,29 +570,31 @@ class SpectrogramService:
             for _ in range(num_events):
                 event_time = np.random.randint(0, time_blocks)
                 event_width = np.random.randint(1, 5)
-                Sxx[:, max(0, event_time-event_width):min(time_blocks, event_time+event_width)] += np.random.randn(freq_bins, 1) * 10
+                Sxx[
+                    :, max(0, event_time - event_width) : min(time_blocks, event_time + event_width)
+                ] += (np.random.randn(freq_bins, 1) * 10)
 
             # Crear ejes de frecuencia y tiempo
             f = np.linspace(0.1, 20, freq_bins)
             t = np.linspace(0, 24, time_blocks)
 
             # Crear figura
-            fig, ax = plt.subplots(figsize=(width/100, height/100), dpi=100)
+            fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
 
             # Plot espectrograma
             im = ax.pcolormesh(
                 t,
                 f,
                 Sxx,
-                cmap='viridis',
-                shading='gouraud',
+                cmap="viridis",
+                shading="gouraud",
                 vmin=np.percentile(Sxx, 5),
-                vmax=np.percentile(Sxx, 95)
+                vmax=np.percentile(Sxx, 95),
             )
 
             # Configurar ejes
-            ax.set_ylabel('Frecuencia [Hz]', fontsize=8)
-            ax.set_xlabel('Tiempo [horas]', fontsize=8)
+            ax.set_ylabel("Frecuencia [Hz]", fontsize=8)
+            ax.set_xlabel("Tiempo [horas]", fontsize=8)
             ax.set_ylim([0.1, 20])
             ax.set_xlim([0, 24])
             ax.tick_params(labelsize=7)
@@ -593,12 +604,12 @@ class SpectrogramService:
 
             # Convertir a imagen
             buf = io.BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+            plt.savefig(buf, format="png", bbox_inches="tight", dpi=100)
             buf.seek(0)
             plt.close(fig)
 
             # Convertir a base64
-            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            img_base64 = base64.b64encode(buf.read()).decode("utf-8")
 
             return img_base64
 
@@ -612,7 +623,7 @@ class SpectrogramService:
         longitude: float,
         network_code: Optional[str] = None,
         duration_hours: int = 24,
-        city_id: Optional[str] = None
+        city_id: Optional[str] = None,
     ) -> Dict:
         """
         Generar espectrograma para una ubicación geográfica.
@@ -638,9 +649,7 @@ class SpectrogramService:
             return real_result
 
         logger.info(f"Falling back to synthetic spectrogram for {city_id or 'location'}")
-        synthetic_image = self.generate_synthetic_spectrogram(
-            latitude, longitude, city_id
-        )
+        synthetic_image = self.generate_synthetic_spectrogram(latitude, longitude, city_id)
 
         if synthetic_image:
             return {
@@ -653,15 +662,15 @@ class SpectrogramService:
                     "longitude": longitude,
                     "duration_hours": duration_hours,
                     "generated_at": datetime.utcnow().isoformat(),
-                    "data_type": "synthetic"
-                }
+                    "data_type": "synthetic",
+                },
             }
 
         return {
             "success": False,
             "error": "Failed to generate spectrogram",
             "image": None,
-            "metadata": None
+            "metadata": None,
         }
 
     async def _try_real_spectrogram(
@@ -670,7 +679,7 @@ class SpectrogramService:
         longitude: float,
         network_code: Optional[str],
         duration_hours: int,
-        city_id: Optional[str]
+        city_id: Optional[str],
     ) -> Optional[Dict]:
         """
         Intenta generar un espectrograma con datos reales de FDSN.
@@ -702,9 +711,7 @@ class SpectrogramService:
                 continue
 
             loop = asyncio.get_event_loop()
-            image = await loop.run_in_executor(
-                _executor, self.generate_spectrogram_image, stream
-            )
+            image = await loop.run_in_executor(_executor, self.generate_spectrogram_image, stream)
             if not image:
                 continue
 
@@ -721,7 +728,7 @@ class SpectrogramService:
                     "duration_hours": duration_hours,
                     "generated_at": datetime.utcnow().isoformat(),
                     "data_type": "real",
-                }
+                },
             }
 
         return None
@@ -729,6 +736,7 @@ class SpectrogramService:
 
 # Singleton
 _spectrogram_service: Optional[SpectrogramService] = None
+
 
 def get_spectrogram_service() -> SpectrogramService:
     """

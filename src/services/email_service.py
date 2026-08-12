@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 RESEND_API_URL = "https://api.resend.com/emails"
 
 # Paleta: los tokens de la "sala de control" traducidos a hex planos.
-_DARK = "#0b1526"        # banda de marca (azul casi-negro del theme)
-_ACCENT = "#14b8a6"      # teal primario
+_DARK = "#0b1526"  # banda de marca (azul casi-negro del theme)
+_ACCENT = "#14b8a6"  # teal primario
 _ACCENT_DARK = "#0d9488"
-_AMBER = "#f59e0b"       # severidad moderada — divider decorativo
-_RED = "#ef4444"         # severidad crítica — divider decorativo
+_AMBER = "#f59e0b"  # severidad moderada — divider decorativo
+_RED = "#ef4444"  # severidad crítica — divider decorativo
 _TEXT = "#0f172a"
 _MUTED = "#64748b"
 _CHIP_BG = "#f1f5f9"
@@ -170,7 +170,10 @@ class EmailService:
             if response.status_code >= 400:
                 logger.error(
                     "Resend rechazó el email '%s' a %s: %s %s",
-                    subject, to, response.status_code, response.text,
+                    subject,
+                    to,
+                    response.status_code,
+                    response.text,
                 )
                 return False
             logger.info("Email enviado a %s: %s", to, subject)
@@ -197,7 +200,9 @@ class EmailService:
                     "Cuando se abra tu cupo te va a llegar un email de "
                     "bienvenida con el acceso — no hace falta que hagas nada más."
                 )
-                + _paragraph("You're on the waitlist — we'll email you when your spot opens.", muted=True),
+                + _paragraph(
+                    "You're on the waitlist — we'll email you when your spot opens.", muted=True
+                ),
             ),
         )
 

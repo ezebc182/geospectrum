@@ -16,6 +16,7 @@ request: si app.state.auth_service no existe, es un error de configuración
 del servidor, no una condición de sesión inválida del cliente (se levanta
 tal cual, no se atrapa como 401/403).
 """
+
 from __future__ import annotations
 
 from typing import Optional

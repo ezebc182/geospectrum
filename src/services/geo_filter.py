@@ -32,6 +32,7 @@ descarta poco y el trabajo real lo hace Shapely. La alternativa (un bbox que
 "envuelva" con minlon > maxlon) rompería el índice de la base y el CHECK
 areas_of_interest_bbox_ordered, y está deliberadamente descartada.
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional, TypedDict
@@ -144,10 +145,7 @@ def point_in_bbox(lat: float, lon: float, bbox: Optional[Bbox]) -> bool:
     """
     if bbox is None:
         return True
-    return (
-        bbox["minlat"] <= lat <= bbox["maxlat"]
-        and bbox["minlon"] <= lon <= bbox["maxlon"]
-    )
+    return bbox["minlat"] <= lat <= bbox["maxlat"] and bbox["minlon"] <= lon <= bbox["maxlon"]
 
 
 def point_in_geometry(lat: float, lon: float, geometry: dict) -> bool:

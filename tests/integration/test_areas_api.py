@@ -7,6 +7,7 @@ rechaza — justamente la clase de bug que apareció en AOI-1 durante el
 desarrollo. Estos tests corren sobre las migraciones 001-006 y el catálogo
 sembrado (ver tests/integration/conftest.py).
 """
+
 import pytest
 
 from src.api.deps import get_current_user_optional
@@ -22,7 +23,9 @@ pytestmark = pytest.mark.asyncio
 # Polígono chico y convexo sobre Buenos Aires, para las áreas propias.
 BUENOS_AIRES = {
     "type": "Polygon",
-    "coordinates": [[[-59.0, -35.0], [-57.0, -35.0], [-57.0, -34.0], [-59.0, -34.0], [-59.0, -35.0]]],
+    "coordinates": [
+        [[-59.0, -35.0], [-57.0, -35.0], [-57.0, -34.0], [-59.0, -34.0], [-59.0, -35.0]]
+    ],
 }
 
 
@@ -76,9 +79,7 @@ class TestSeedYPresets:
         )
         esperados = {a["slug"] for a in json.loads(seed_path.read_text())["areas"]}
 
-        filas = await db_pool.fetch(
-            "SELECT slug FROM areas_of_interest WHERE is_system"
-        )
+        filas = await db_pool.fetch("SELECT slug FROM areas_of_interest WHERE is_system")
         sembrados = {fila["slug"] for fila in filas}
 
         assert sembrados == esperados
@@ -223,14 +224,14 @@ class TestFiltroDeReporte:
         from src.services.geo_filter import area_to_filter_dict
 
         japon = next(
-            a for a in await service.list_for_user(
-                await self._any_user(service)
-            ) if a.slug == "japon"
+            a
+            for a in await service.list_for_user(await self._any_user(service))
+            if a.slug == "japon"
         )
         eventos = [
-            self._evt("tokio", 35.68, 139.65),      # dentro
+            self._evt("tokio", 35.68, 139.65),  # dentro
             self._evt("santiago", -33.45, -70.67),  # fuera
-            self._evt("seul", 37.57, 126.98),       # fuera
+            self._evt("seul", 37.57, 126.98),  # fuera
         ]
         rep = await self._build(monkeypatch, eventos, area_to_filter_dict(japon))
         assert [e.id for e in rep.eventos] == ["tokio"]
@@ -241,9 +242,9 @@ class TestFiltroDeReporte:
         from src.services.geo_filter import area_to_filter_dict
 
         japon = next(
-            a for a in await service.list_for_user(
-                await self._any_user(service)
-            ) if a.slug == "japon"
+            a
+            for a in await service.list_for_user(await self._any_user(service))
+            if a.slug == "japon"
         )
         eventos = [
             self._evt("tokio", 35.68, 139.65),
@@ -259,16 +260,22 @@ class TestFiltroDeReporte:
         from src.services.geo_filter import area_to_filter_dict
 
         japon = next(
-            a for a in await service.list_for_user(
-                await self._any_user(service)
-            ) if a.slug == "japon"
+            a
+            for a in await service.list_for_user(await self._any_user(service))
+            if a.slug == "japon"
         )
         rep = await self._build(monkeypatch, [], area_to_filter_dict(japon))
         assert sorted(rep.region_monitorizada.keys()) == [
-            "maxlat", "maxlon", "minlat", "minlon",
+            "maxlat",
+            "maxlon",
+            "minlat",
+            "minlon",
         ]
         assert rep.region_monitorizada == {
-            "minlat": 30.0, "maxlat": 46.0, "minlon": 128.0, "maxlon": 148.0,
+            "minlat": 30.0,
+            "maxlat": 46.0,
+            "minlon": 128.0,
+            "maxlon": 148.0,
         }
 
     async def test_area_global_no_descarta_nada(self, monkeypatch, service):

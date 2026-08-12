@@ -28,6 +28,7 @@ condición del cliente sino una base sin seed
 (scripts/seed_areas_of_interest.py). Se deja propagar en vez de atraparse, para
 que llegue a los logs y a GlitchTip como el error de configuración que es.
 """
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -91,9 +92,7 @@ async def create_area(
     (ver src/models/area.py). El bbox lo deriva siempre el service.
     """
     try:
-        return await area_service.create(
-            current_user.id, payload.name, payload.geometry
-        )
+        return await area_service.create(current_user.id, payload.name, payload.geometry)
     except InvalidGeometryError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -189,7 +188,6 @@ async def update_area(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-
 
 
 # SIN anotación de retorno, a propósito. FastAPI infiere el `response_model`

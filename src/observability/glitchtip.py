@@ -11,6 +11,7 @@ GlitchTip vs Prometheus:
 
 Son complementarios, no alternativos.
 """
+
 import logging
 from typing import Any
 
