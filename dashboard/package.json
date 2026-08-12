@@ -8,6 +8,7 @@
     "start": "next start -p 3008",
     "lint": "next lint",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "email:dev": "react-email dev --dir emails"
   },
   "dependencies": {
