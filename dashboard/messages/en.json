@@ -158,5 +158,100 @@
       "faults": "Faults",
       "regions": "Regions"
     }
+  },
+  "map": {
+    "layersButton": "Map layers",
+    "baseLayer": "Base Layer",
+    "baseLayers": {
+      "terrain": "Terrain",
+      "street": "Streets",
+      "satellite": "Satellite",
+      "greyscale": "Greyscale",
+      "ocean": "Ocean"
+    },
+    "tectonicLayers": "Tectonic Layers",
+    "plateBoundaries": "Plate Boundaries",
+    "plateBoundariesDescription": "Subduction zones with sawtooth symbols and other tectonic boundaries (PB2002)",
+    "legendCities": "Cities",
+    "sources": {
+      "usgs": "United States Geological Survey - Global",
+      "emsc": "Euro-Mediterranean Seismological Centre",
+      "inpres": "National Institute for Seismic Prevention (Argentina)"
+    },
+    "popup": {
+      "population": "Population",
+      "unknownLocation": "Unknown location",
+      "depth": "Depth",
+      "coordinates": "Coordinates",
+      "felt": "Felt",
+      "feltEvent": "Felt event",
+      "reviewed": "Reviewed",
+      "preliminary": "Preliminary",
+      "source": "Source"
+    }
+  },
+  "globe": {
+    "loadingGlobe": "Loading globe…",
+    "loadingEvents": "Loading events…",
+    "title": "Seismic Globe",
+    "subtitle": "{count} events · tectonic plate boundaries",
+    "refresh": "Refresh",
+    "loadError": "Could not load the seismic report.",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "resetView": "Reset view",
+    "unknownLocation": "unknown location",
+    "panel": {
+      "unknownLocation": "Unknown location",
+      "depth": "Depth",
+      "coordinates": "Coordinates",
+      "magnitudeType": "Magnitude type",
+      "sources": "Sources",
+      "reportedFelt": "Reported as felt",
+      "reviewedByAnalyst": "Reviewed by analyst",
+      "yes": "Yes",
+      "no": "No",
+      "noAutomaticSolution": "No — automatic solution",
+      "share": "Share",
+      "copied": "Copied to clipboard",
+      "shareFailed": "Could not share"
+    },
+    "scale": {
+      "title": "Magnitude scale",
+      "aria": "Magnitude {magnitude}, category {category}",
+      "bands": {
+        "minor": "Minor",
+        "light": "Light",
+        "moderate": "Moderate",
+        "strong": "Strong",
+        "major": "Major"
+      }
+    }
+  },
+  "charts": {
+    "magnitudeVsTime": "Magnitude vs Time",
+    "timeAxis": "Time",
+    "magnitudeAxis": "Magnitude",
+    "depthDistribution": "Depth Distribution",
+    "eventsSeries": "Events",
+    "spectrogram": {
+      "fetchingData": "Fetching FDSN data...",
+      "noNearbyStation": "No real seismic station near this location",
+      "connectionError": "Error connecting to the server",
+      "retry": "Retry",
+      "attempts": "Attempts: {count}",
+      "simulatedMode": "Simulated mode",
+      "enableRealData": "Enable real data",
+      "simulatedData": "Simulated data (no real station nearby)",
+      "station": "Station: {station}",
+      "updated": "Updated: {time}",
+      "imageAlt": "Spectrogram of {city}",
+      "axisNow": "Now",
+      "viewLive": "View live",
+      "viewHistory": "View 24h history",
+      "liveBadge": "Live",
+      "dragToReorder": "Drag to reorder",
+      "removeCity": "Remove city"
+    }
   }
 }

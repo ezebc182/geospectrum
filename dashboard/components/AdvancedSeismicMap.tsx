@@ -5,18 +5,18 @@
 
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import type { AreaGeometry, SeismicEvent } from '@/lib/types';
 import { areaViewBounds } from '@/lib/area-view-bounds';
 import {
   getMagnitudeColor,
   getMagnitudeCategory,
   formatMagnitude,
-  formatDateTime,
   MAGNITUDE_CATEGORIES,
   type MagnitudeCategory,
 } from '@/lib/utils';
-import { BASE_LAYERS, type DataSourceId } from '@/lib/map-layers';
+import { BASE_LAYERS, type BaseLayerId, type DataSourceId } from '@/lib/map-layers';
 import { countEventsInBounds } from '@/lib/map-bounds';
 import { shouldShowCityLabel } from '@/lib/city-labels';
 import { MAJOR_CITIES } from '@/lib/major-cities';
@@ -78,9 +78,38 @@ export function AdvancedSeismicMap({
   onEventClick,
   onBoundsChange,
 }: AdvancedSeismicMapProps) {
+  const t = useTranslations('map');
+  const tCommon = useTranslations('common');
+  const locale = useLocale();
+  const format = useFormatter();
+
+  // Labels de los popups de Leaflet, traducidas ANTES de armar el HTML y
+  // memoizadas POR VALOR: los efectos que construyen los markers dependen de
+  // este objeto (y de `locale`) para regenerar los popups al cambiar de
+  // idioma. La trampa documentada del proyecto es leer un ref en un efecto
+  // sin tenerlo en deps —corre una vez y nunca más—, así que acá nada de lo
+  // que deba re-traducirse viaja por ref.
+  const popupLabels = useMemo(
+    () => ({
+      population: t('popup.population'),
+      unknownLocation: t('popup.unknownLocation'),
+      depth: t('popup.depth'),
+      coordinates: t('popup.coordinates'),
+      felt: t('popup.felt'),
+      reviewed: t('popup.reviewed'),
+      preliminary: t('popup.preliminary'),
+      source: t('popup.source'),
+      notAvailable: tCommon('notAvailable'),
+    }),
+    [t, tCommon],
+  );
+
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const layersRef = useRef<any>({});
+  // Grupos de capas de ciudades (markers + labels), para poder regenerarlos
+  // al cambiar de idioma sin destruir el mapa.
+  const cityLayersRef = useRef<{ markers: any; labels: any } | null>(null);
   const plateBoundariesLayerRef = useRef<any>(null);
   // Lookup de marcador de evento por id, para centrar/resaltar vía selectedEventId (Decisión 2/3 de design.md).
   const eventMarkersRef = useRef<Map<string, any>>(new Map());
@@ -210,92 +239,9 @@ export function AdvancedSeismicMap({
         // Agregar capa por defecto
         layersRef.current[currentLayer].addTo(map);
 
-        // Agregar ciudades si está habilitado
-        if (showCities) {
-          const cityLayerGroup = L.layerGroup();
-          // Los labels van en su propia capa para poder rehacerlos al cambiar
-          // el zoom sin tocar los marcadores, que se dibujan una sola vez.
-          const cityLabelGroup = L.layerGroup();
-
-          MAJOR_CITIES.forEach((city) => {
-            // Las ciudades son referencia, no dato: puntos chicos y apagados
-            // para que no compitan con los eventos. Con el negro anterior se
-            // leían como "puntos negros" más fuertes que los sismos.
-            const size = city.population > 5000000 ? 4 : city.population > 2000000 ? 3 : 2.5;
-
-            L.circleMarker([city.lat, city.lon], {
-              radius: size,
-              fillColor: '#94a3b8',
-              color: '#ffffff',
-              weight: 1,
-              opacity: 0.7,
-              fillOpacity: 0.7,
-            })
-              .bindPopup(`
-                <div class="text-sm">
-                  <p class="font-bold">${city.name}</p>
-                  <p class="text-xs text-gray-600">${city.country}</p>
-                  <p class="text-xs">Población: ${(city.population / 1000000).toFixed(1)}M</p>
-                </div>
-              `)
-              .addTo(cityLayerGroup);
-          });
-
-          // Redibuja los nombres según el zoom: a nivel continental solo las
-          // megaciudades, y el resto va apareciendo al acercarse. Sin esto los
-          // 30 labels se apilan sobre Sudamérica y no se lee ninguno.
-          const renderCityLabels = () => {
-            cityLabelGroup.clearLayers();
-            const zoom = map.getZoom();
-
-            // El filtro por viewport es el que hace el trabajo pesado ahora que
-            // la lista es mundial: mirando Sudamérica, las ciudades de Asia no
-            // compiten por espacio aunque pasen el corte de población.
-            const bounds = map.getBounds();
-
-            MAJOR_CITIES.filter(
-              (city) =>
-                shouldShowCityLabel(city.population, zoom) &&
-                bounds.contains([city.lat, city.lon]),
-            ).forEach(
-              (city) => {
-                const size = city.population > 5000000 ? 4 : city.population > 2000000 ? 3 : 2.5;
-                const isMegacity = city.population > 5000000;
-
-                // Texto con halo oscuro en vez de píldora con fondo: el
-                // rectángulo negro se leía como una franja pegada al punto y
-                // ensuciaba el mapa (feedback del usuario, 2026-08-05). El
-                // halo mantiene la legibilidad sobre cualquier capa base.
-                const icon = L.divIcon({
-                  className: 'city-label',
-                  html: `<div style="
-                color: #f1f5f9;
-                text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.8);
-                font-size: ${isMegacity ? '11px' : '9px'};
-                font-weight: ${isMegacity ? 'bold' : 'normal'};
-                white-space: nowrap;
-                pointer-events: none;
-              ">${city.name}</div>`,
-                  iconSize: [0, 0],
-                  iconAnchor: [-size - 5, 0],
-                });
-
-                L.marker([city.lat, city.lon], { icon, interactive: false }).addTo(
-                  cityLabelGroup,
-                );
-              },
-            );
-          };
-
-          renderCityLabels();
-          // moveend cubre zoom Y paneo: Leaflet lo dispara al terminar
-          // cualquiera de los dos, y al panear también cambia qué ciudades
-          // entran en el viewport.
-          map.on('moveend', renderCityLabels);
-
-          cityLayerGroup.addTo(map);
-          cityLabelGroup.addTo(map);
-        }
+        // Las ciudades viven en su propio efecto (más abajo): sus popups son
+        // HTML strings traducidos y deben regenerarse al cambiar de idioma
+        // sin destruir el mapa (destruirlo perdería zoom, capas y selección).
 
         leafletMapRef.current = map;
         // Publica la instancia como estado para despertar a los efectos que dependen de
@@ -312,7 +258,124 @@ export function AdvancedSeismicMap({
         setMapInstance(null);
       }
     };
-  }, [showCities, currentLayer]);
+    // `showCities` ya no está en las deps: las ciudades tienen efecto propio.
+  }, [currentLayer]);
+
+  // Ciudades: efecto separado de la creación del mapa. Sus popups y labels son
+  // HTML strings, así que las labels traducidas entran POR VALOR en las deps
+  // (`popupLabels` memoizado + `locale`): al cambiar el idioma el efecto corre
+  // de nuevo y reconstruye la capa entera con los textos del idioma activo.
+  useEffect(() => {
+    if (!mapInstance || !showCities) return;
+
+    let cancelled = false;
+    let onMoveEnd: (() => void) | null = null;
+
+    import('leaflet').then((L) => {
+      if (cancelled || !leafletMapRef.current) return;
+      const map = mapInstance;
+
+      const cityLayerGroup = L.layerGroup();
+      // Los labels van en su propia capa para poder rehacerlos al cambiar
+      // el zoom sin tocar los marcadores, que se dibujan una sola vez.
+      const cityLabelGroup = L.layerGroup();
+
+      MAJOR_CITIES.forEach((city) => {
+        // Las ciudades son referencia, no dato: puntos chicos y apagados
+        // para que no compitan con los eventos. Con el negro anterior se
+        // leían como "puntos negros" más fuertes que los sismos.
+        const size = city.population > 5000000 ? 4 : city.population > 2000000 ? 3 : 2.5;
+
+        L.circleMarker([city.lat, city.lon], {
+          radius: size,
+          fillColor: '#94a3b8',
+          color: '#ffffff',
+          weight: 1,
+          opacity: 0.7,
+          fillOpacity: 0.7,
+        })
+          .bindPopup(`
+            <div class="text-sm">
+              <p class="font-bold">${city.name}</p>
+              <p class="text-xs text-gray-600">${city.country}</p>
+              <p class="text-xs">${popupLabels.population}: ${(city.population / 1000000).toFixed(1)}M</p>
+            </div>
+          `)
+          .addTo(cityLayerGroup);
+      });
+
+      // Redibuja los nombres según el zoom: a nivel continental solo las
+      // megaciudades, y el resto va apareciendo al acercarse. Sin esto los
+      // 30 labels se apilan sobre Sudamérica y no se lee ninguno.
+      const renderCityLabels = () => {
+        cityLabelGroup.clearLayers();
+        const zoom = map.getZoom();
+
+        // El filtro por viewport es el que hace el trabajo pesado ahora que
+        // la lista es mundial: mirando Sudamérica, las ciudades de Asia no
+        // compiten por espacio aunque pasen el corte de población.
+        const bounds = map.getBounds();
+
+        MAJOR_CITIES.filter(
+          (city) =>
+            shouldShowCityLabel(city.population, zoom) &&
+            bounds.contains([city.lat, city.lon]),
+        ).forEach(
+          (city) => {
+            const size = city.population > 5000000 ? 4 : city.population > 2000000 ? 3 : 2.5;
+            const isMegacity = city.population > 5000000;
+
+            // Texto con halo oscuro en vez de píldora con fondo: el
+            // rectángulo negro se leía como una franja pegada al punto y
+            // ensuciaba el mapa (feedback del usuario, 2026-08-05). El
+            // halo mantiene la legibilidad sobre cualquier capa base.
+            const icon = L.divIcon({
+              className: 'city-label',
+              html: `<div style="
+                color: #f1f5f9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.8);
+                font-size: ${isMegacity ? '11px' : '9px'};
+                font-weight: ${isMegacity ? 'bold' : 'normal'};
+                white-space: nowrap;
+                pointer-events: none;
+              ">${city.name}</div>`,
+              iconSize: [0, 0],
+              iconAnchor: [-size - 5, 0],
+            });
+
+            L.marker([city.lat, city.lon], { icon, interactive: false }).addTo(
+              cityLabelGroup,
+            );
+          },
+        );
+      };
+
+      renderCityLabels();
+      // moveend cubre zoom Y paneo: Leaflet lo dispara al terminar
+      // cualquiera de los dos, y al panear también cambia qué ciudades
+      // entran en el viewport.
+      onMoveEnd = renderCityLabels;
+      map.on('moveend', renderCityLabels);
+
+      cityLayerGroup.addTo(map);
+      cityLabelGroup.addTo(map);
+      cityLayersRef.current = { markers: cityLayerGroup, labels: cityLabelGroup };
+    });
+
+    return () => {
+      cancelled = true;
+      // El guard sobre leafletMapRef cubre el desmontaje: si el mapa ya se
+      // destruyó, no queda nada de qué remover.
+      if (leafletMapRef.current) {
+        if (onMoveEnd) leafletMapRef.current.off('moveend', onMoveEnd);
+        if (cityLayersRef.current) {
+          leafletMapRef.current.removeLayer(cityLayersRef.current.markers);
+          leafletMapRef.current.removeLayer(cityLayersRef.current.labels);
+        }
+      }
+      cityLayersRef.current = null;
+    };
+  }, [mapInstance, showCities, popupLabels, locale]);
 
   // Actualizar capa base cuando cambia
   useEffect(() => {
@@ -380,15 +443,15 @@ export function AdvancedSeismicMap({
               .bindPopup(`
                 <div class="text-sm">
                   <p class="font-bold text-lg">M${formatMagnitude(evento.mag)} ${sourceIcon}</p>
-                  <p class="font-medium">${evento.lugar || 'Ubicación desconocida'}</p>
-                  <p class="text-xs text-gray-600 mt-1">${formatDateTime(evento.hora_utc)}</p>
-                  <p class="text-xs">Profundidad: ${evento.prof_km ? `${evento.prof_km.toFixed(1)} km` : 'N/A'}</p>
-                  <p class="text-xs">Coordenadas: ${evento.lat.toFixed(3)}°, ${evento.lon.toFixed(3)}°</p>
+                  <p class="font-medium">${evento.lugar || popupLabels.unknownLocation}</p>
+                  <p class="text-xs text-gray-600 mt-1">${format.dateTime(new Date(evento.hora_utc), 'medium')}</p>
+                  <p class="text-xs">${popupLabels.depth}: ${evento.prof_km ? `${evento.prof_km.toFixed(1)} km` : popupLabels.notAvailable}</p>
+                  <p class="text-xs">${popupLabels.coordinates}: ${evento.lat.toFixed(3)}°, ${evento.lon.toFixed(3)}°</p>
                   <p class="text-xs mt-1">
-                    ${evento.sentido ? '👥 Sentido' : ''}
-                    ${evento.revisado ? ' ✓ Revisado' : ' ~ Preliminar'}
+                    ${evento.sentido ? `👥 ${popupLabels.felt}` : ''}
+                    ${evento.revisado ? ` ✓ ${popupLabels.reviewed}` : ` ~ ${popupLabels.preliminary}`}
                   </p>
-                  <p class="text-xs font-mono mt-1">Fuente: ${evento.fuentes.join(', ').toUpperCase()}</p>
+                  <p class="text-xs font-mono mt-1">${popupLabels.source}: ${evento.fuentes.join(', ').toUpperCase()}</p>
                 </div>
               `)
               .addTo(leafletMapRef.current);
@@ -403,7 +466,9 @@ export function AdvancedSeismicMap({
           });
       });
     }
-  }, [eventos, onEventClick, hiddenCategories]);
+    // `popupLabels` (por valor, memoizado) y `locale` regeneran los popups al
+    // cambiar de idioma; `format` re-formatea la fecha en el locale nuevo.
+  }, [eventos, onEventClick, hiddenCategories, popupLabels, locale, format]);
 
   // Cargar y renderizar límites de placas tectónicas (GeoJSON PB2002 vendorizado), estilizados por
   // tipo de contacto como el mapa Latest Earthquakes del USGS: los 73 tramos de subducción llevan
@@ -612,7 +677,7 @@ export function AdvancedSeismicMap({
         <button
           onClick={() => setShowLayerControl(!showLayerControl)}
           className="p-3 bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          title="Capas del mapa"
+          title={t('layersButton')}
         >
           <Layers className="h-5 w-5 text-gray-700 dark:text-gray-300" />
         </button>
@@ -621,18 +686,18 @@ export function AdvancedSeismicMap({
           <div className="absolute top-14 right-0 max-h-[70vh] w-72 overflow-y-auto bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-lg shadow-xl p-4">
             {/* Capas Base */}
             <div className="mb-4">
-              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Capa Base</h4>
+              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">{t('baseLayer')}</h4>
               <div className="space-y-1">
-                {Object.entries(BASE_LAYERS).map(([key, layer]) => (
+                {(Object.keys(BASE_LAYERS) as BaseLayerId[]).map((key) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                     <input
                       type="radio"
                       name="baseLayer"
                       checked={currentLayer === key}
-                      onChange={() => setCurrentLayer(key as keyof typeof BASE_LAYERS)}
+                      onChange={() => setCurrentLayer(key)}
                       className="h-4 w-4"
                     />
-                    <span className="text-sm text-gray-900 dark:text-white">{layer.name}</span>
+                    <span className="text-sm text-gray-900 dark:text-white">{t(`baseLayers.${key}`)}</span>
                   </label>
                 ))}
               </div>
@@ -646,7 +711,7 @@ export function AdvancedSeismicMap({
               que eran checkboxes que no hacían nada y estiraban el panel.
             */}
             <div className="border-t-2 border-gray-200 dark:border-gray-700 pt-4">
-              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">Capas Tectónicas</h4>
+              <h4 className="font-bold text-sm mb-2 text-gray-900 dark:text-white">{t('tectonicLayers')}</h4>
               <label className="flex items-start gap-2 cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
                 <input
                   type="checkbox"
@@ -655,9 +720,9 @@ export function AdvancedSeismicMap({
                   className="mt-0.5 h-4 w-4"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">Límites de Placas</div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">{t('plateBoundaries')}</div>
                   <div className="text-xs text-gray-600 dark:text-gray-400">
-                    Zonas de subducción con dientes de sierra y otros límites tectónicos (PB2002)
+                    {t('plateBoundariesDescription')}
                   </div>
                 </div>
               </label>

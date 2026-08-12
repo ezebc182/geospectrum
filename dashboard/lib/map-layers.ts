@@ -4,41 +4,44 @@
  */
 
 export interface MapLayer {
-  name: string;
   url: string;
   attribution: string;
   maxZoom?: number;
 }
 
-// Capas base de mapas
-export const BASE_LAYERS: Record<string, MapLayer> = {
+// Capas base de mapas. Sin `name`: el label visible sale del diccionario
+// (`map.baseLayers.<id>`) y lo resuelve el componente con t() — este módulo
+// es lib pura y no importa next-intl (Decision 5 de i18n-dashboard).
+const BASE_LAYER_DEFS = {
   terrain: {
-    name: 'Terreno',
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     attribution: '© OpenTopoMap contributors',
     maxZoom: 17,
   },
   street: {
-    name: 'Calles',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '© OpenStreetMap contributors',
   },
   satellite: {
-    name: 'Satélite',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: '© Esri',
   },
   greyscale: {
-    name: 'Escala de Grises',
     url: 'https://tiles.wmflabs.org/bw-mapnik/{z}/{x}/{y}.png',
     attribution: '© OpenStreetMap contributors',
   },
   ocean: {
-    name: 'Océano',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
     attribution: '© Esri',
   },
-};
+} as const satisfies Record<string, MapLayer>;
+
+export type BaseLayerId = keyof typeof BASE_LAYER_DEFS;
+
+// Claves literales (para t(`baseLayers.${id}`) tipado) con valores anchos
+// (MapLayer): sin el widening, `layer.maxZoom` no tipa en las capas que no
+// lo declaran.
+export const BASE_LAYERS: Record<BaseLayerId, MapLayer> = BASE_LAYER_DEFS;
 
 // Los GEOLOGICAL_OVERLAYS (densidad de población, fallas US, peligro sísmico
 // US) se retiraron el 2026-08-05: los tres endpoints de tiles estaban muertos
@@ -48,11 +51,13 @@ export const BASE_LAYERS: Record<string, MapLayer> = {
 // AdvancedSeismicMap.tsx. Si se reincorporan overlays, verificar los
 // endpoints con un tile real ANTES de sumarlos al panel.
 
-// Data sources disponibles
+// Data sources disponibles. `name` es la sigla oficial del organismo (dato,
+// idéntica en ambos idiomas); la descripción visible vive en el diccionario
+// (`map.sources.<id>`) y la traduce el componente (Decision 5).
 export const DATA_SOURCES = [
-  { id: 'usgs', name: 'USGS', description: 'United States Geological Survey - Global' },
-  { id: 'emsc', name: 'EMSC', description: 'Euro-Mediterranean Seismological Centre' },
-  { id: 'inpres', name: 'INPRES', description: 'Instituto Nacional de Prevención Sísmica (Argentina)' },
+  { id: 'usgs', name: 'USGS' },
+  { id: 'emsc', name: 'EMSC' },
+  { id: 'inpres', name: 'INPRES' },
 ] as const;
 
 export type DataSourceId = typeof DATA_SOURCES[number]['id'];

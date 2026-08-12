@@ -4,8 +4,9 @@
 
 'use client';
 
+import { useFormatter, useTranslations } from 'next-intl';
 import { SeismicEvent } from '@/lib/types';
-import { formatDateTime, getMagnitudeColor } from '@/lib/utils';
+import { getMagnitudeColor } from '@/lib/utils';
 import {
   ScatterChart,
   Scatter,
@@ -24,6 +25,11 @@ interface MagnitudeTimeChartProps {
 }
 
 export function MagnitudeTimeChart({ eventos, className }: MagnitudeTimeChartProps) {
+  const t = useTranslations('charts');
+  // Formatter con el locale activo (Decision 6): reemplaza al 'es-ES'
+  // hardcodeado del tickFormatter y al formatDateTime fijo en es-AR del
+  // tooltip — con la UI en EN, ejes y tooltip salen en formato en-US.
+  const format = useFormatter();
   const data = eventos.map((ev) => ({
     timestamp: new Date(ev.hora_utc).getTime(),
     mag: ev.mag,
@@ -34,7 +40,7 @@ export function MagnitudeTimeChart({ eventos, className }: MagnitudeTimeChartPro
   return (
     <div className={className}>
       <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-        Magnitud vs Tiempo
+        {t('magnitudeVsTime')}
       </h3>
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -42,15 +48,17 @@ export function MagnitudeTimeChart({ eventos, className }: MagnitudeTimeChartPro
           <XAxis
             type="number"
             dataKey="timestamp"
-            name="Tiempo"
+            name={t('timeAxis')}
             domain={['dataMin', 'dataMax']}
-            tickFormatter={(ts) => new Date(ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+            tickFormatter={(ts) =>
+              format.dateTime(new Date(ts), { hour: '2-digit', minute: '2-digit' })
+            }
             stroke="#9ca3af"
           />
           <YAxis
             type="number"
             dataKey="mag"
-            name="Magnitud"
+            name={t('magnitudeAxis')}
             domain={[0, 'dataMax + 1']}
             stroke="#9ca3af"
           />
@@ -61,7 +69,7 @@ export function MagnitudeTimeChart({ eventos, className }: MagnitudeTimeChartPro
               return (
                 <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-white shadow-lg">
                   <p className="font-bold">M{data.mag.toFixed(1)}</p>
-                  <p className="text-sm">{formatDateTime(new Date(data.timestamp).toISOString())}</p>
+                  <p className="text-sm">{format.dateTime(new Date(data.timestamp), 'medium')}</p>
                   <p className="text-xs text-gray-400">{data.lugar}</p>
                 </div>
               );

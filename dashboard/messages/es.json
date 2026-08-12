@@ -158,5 +158,100 @@
       "faults": "Fallas",
       "regions": "Regiones"
     }
+  },
+  "map": {
+    "layersButton": "Capas del mapa",
+    "baseLayer": "Capa Base",
+    "baseLayers": {
+      "terrain": "Terreno",
+      "street": "Calles",
+      "satellite": "Satélite",
+      "greyscale": "Escala de Grises",
+      "ocean": "Océano"
+    },
+    "tectonicLayers": "Capas Tectónicas",
+    "plateBoundaries": "Límites de Placas",
+    "plateBoundariesDescription": "Zonas de subducción con dientes de sierra y otros límites tectónicos (PB2002)",
+    "legendCities": "Ciudades",
+    "sources": {
+      "usgs": "United States Geological Survey - Global",
+      "emsc": "Euro-Mediterranean Seismological Centre",
+      "inpres": "Instituto Nacional de Prevención Sísmica (Argentina)"
+    },
+    "popup": {
+      "population": "Población",
+      "unknownLocation": "Ubicación desconocida",
+      "depth": "Profundidad",
+      "coordinates": "Coordenadas",
+      "felt": "Sentido",
+      "feltEvent": "Evento sentido",
+      "reviewed": "Revisado",
+      "preliminary": "Preliminar",
+      "source": "Fuente"
+    }
+  },
+  "globe": {
+    "loadingGlobe": "Cargando globo…",
+    "loadingEvents": "Cargando eventos…",
+    "title": "Globo Sísmico",
+    "subtitle": "{count} eventos · límites de placas tectónicas",
+    "refresh": "Actualizar",
+    "loadError": "No se pudo cargar el reporte sísmico.",
+    "zoomIn": "Acercar",
+    "zoomOut": "Alejar",
+    "resetView": "Restablecer vista",
+    "unknownLocation": "sin ubicación",
+    "panel": {
+      "unknownLocation": "Ubicación desconocida",
+      "depth": "Profundidad",
+      "coordinates": "Coordenadas",
+      "magnitudeType": "Tipo de magnitud",
+      "sources": "Fuentes",
+      "reportedFelt": "Reportado como sentido",
+      "reviewedByAnalyst": "Revisado por analista",
+      "yes": "Sí",
+      "no": "No",
+      "noAutomaticSolution": "No — solución automática",
+      "share": "Compartir",
+      "copied": "Copiado al portapapeles",
+      "shareFailed": "No se pudo compartir"
+    },
+    "scale": {
+      "title": "Escala de magnitud",
+      "aria": "Magnitud {magnitude}, categoría {category}",
+      "bands": {
+        "minor": "Menor",
+        "light": "Ligero",
+        "moderate": "Moderado",
+        "strong": "Fuerte",
+        "major": "Mayor"
+      }
+    }
+  },
+  "charts": {
+    "magnitudeVsTime": "Magnitud vs Tiempo",
+    "timeAxis": "Tiempo",
+    "magnitudeAxis": "Magnitud",
+    "depthDistribution": "Distribución de Profundidades",
+    "eventsSeries": "Eventos",
+    "spectrogram": {
+      "fetchingData": "Obteniendo datos FDSN...",
+      "noNearbyStation": "Sin estación sísmica real cercana a esta ubicación",
+      "connectionError": "Error al conectar con el servidor",
+      "retry": "Reintentar",
+      "attempts": "Intentos: {count}",
+      "simulatedMode": "Modo simulado",
+      "enableRealData": "Activa datos reales",
+      "simulatedData": "Datos simulados (sin estación real cercana)",
+      "station": "Estación: {station}",
+      "updated": "Actualizado: {time}",
+      "imageAlt": "Espectrograma de {city}",
+      "axisNow": "Ahora",
+      "viewLive": "Ver en vivo",
+      "viewHistory": "Ver histórico 24h",
+      "liveBadge": "Vivo",
+      "dragToReorder": "Arrastrar para reordenar",
+      "removeCity": "Eliminar ciudad"
+    }
   }
 }

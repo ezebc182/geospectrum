@@ -4,6 +4,7 @@
 
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { SeismicEvent } from '@/lib/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { getDepthColor } from '@/lib/utils';
@@ -14,6 +15,7 @@ interface DepthDistributionChartProps {
 }
 
 export function DepthDistributionChart({ eventos, className }: DepthDistributionChartProps) {
+  const t = useTranslations('charts');
   // Agrupar por rangos de profundidad
   const bins = [
     { name: '<70 km', min: 0, max: 70, count: 0, color: '#ef4444' },
@@ -32,7 +34,7 @@ export function DepthDistributionChart({ eventos, className }: DepthDistribution
   return (
     <div className={className}>
       <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-        Distribución de Profundidades
+        {t('depthDistribution')}
       </h3>
       <ResponsiveContainer width="100%" height={250}>
         <BarChart data={bins} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -43,7 +45,7 @@ export function DepthDistributionChart({ eventos, className }: DepthDistribution
             contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
             labelStyle={{ color: '#fff' }}
           />
-          <Bar dataKey="count" name="Eventos">
+          <Bar dataKey="count" name={t('eventsSeries')}>
             {bins.map((entry, index) => (
               <Cell key={index} fill={entry.color} />
             ))}

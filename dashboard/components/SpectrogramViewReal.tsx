@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useFormatter, useTranslations } from 'next-intl';
 import type { SeismicCity } from '@/lib/seismic-cities';
 import { Activity, AlertCircle, RefreshCw } from 'lucide-react';
 import { seismicAPI } from '@/lib/api';
@@ -17,14 +18,22 @@ interface SpectrogramViewRealProps {
   useRealData?: boolean; // Toggle entre datos simulados y reales
 }
 
+/**
+ * Código del error, no el texto resuelto: el mensaje visible se traduce en el
+ * render, así el cambio de idioma en caliente re-traduce un error ya mostrado.
+ */
+type SpectrogramError = 'noNearbyStation' | 'connectionError';
+
 export function SpectrogramViewReal({
   city,
   height = 120,
   showLabel = true,
   useRealData = true
 }: SpectrogramViewRealProps) {
+  const t = useTranslations('charts.spectrogram');
+  const format = useFormatter();
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SpectrogramError | null>(null);
   const [spectrogramImage, setSpectrogramImage] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<any>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -55,13 +64,13 @@ export function SpectrogramViewReal({
       } else {
         // El backend cayó a datos sintéticos (sin estación FDSN real cercana).
         // No mostramos ruido simulado como si fuera señal real: se marca como error.
-        setError('Sin estación sísmica real cercana a esta ubicación');
+        setError('noNearbyStation');
         setSpectrogramImage(null);
         setMetadata(null);
       }
     } catch (err) {
       console.error(`Error fetching spectrogram for ${city.name}:`, err);
-      setError('Error al conectar con el servidor');
+      setError('connectionError');
       setSpectrogramImage(null);
     } finally {
       setIsLoading(false);
@@ -104,7 +113,7 @@ export function SpectrogramViewReal({
         <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-20">
           <div className="flex flex-col items-center gap-2">
             <Activity className="h-8 w-8 animate-spin text-blue-400" />
-            <span className="text-gray-400 text-xs">Obteniendo datos FDSN...</span>
+            <span className="text-gray-400 text-xs">{t('fetchingData')}</span>
           </div>
         </div>
       )}
@@ -112,16 +121,16 @@ export function SpectrogramViewReal({
       {error && !isLoading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-20 p-4">
           <AlertCircle className="h-8 w-8 text-red-400 mb-2" />
-          <p className="text-red-400 text-xs text-center mb-3">{error}</p>
+          <p className="text-red-400 text-xs text-center mb-3">{t(error)}</p>
           <button
             onClick={handleRetry}
             className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors"
           >
             <RefreshCw className="h-3 w-3" />
-            Reintentar
+            {t('retry')}
           </button>
           <p className="text-gray-500 text-[10px] mt-2">
-            Intentos: {retryCount}
+            {t('attempts', { count: retryCount })}
           </p>
         </div>
       )}
@@ -129,7 +138,7 @@ export function SpectrogramViewReal({
       {spectrogramImage && !isLoading && !error && (
         <img
           src={`data:image/png;base64,${spectrogramImage}`}
-          alt={`Espectrograma de ${city.name}`}
+          alt={t('imageAlt', { city: city.name })}
           className="w-full h-full object-cover"
         />
       )}
@@ -138,8 +147,8 @@ export function SpectrogramViewReal({
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-r from-blue-900 to-purple-900">
           <div className="text-center p-4">
             <Activity className="h-12 w-12 text-white/50 mx-auto mb-2" />
-            <p className="text-white/70 text-sm">Modo simulado</p>
-            <p className="text-white/50 text-xs">Activa datos reales</p>
+            <p className="text-white/70 text-sm">{t('simulatedMode')}</p>
+            <p className="text-white/50 text-xs">{t('enableRealData')}</p>
           </div>
         </div>
       )}
@@ -149,10 +158,14 @@ export function SpectrogramViewReal({
         <div className="absolute bottom-1 left-2 z-10 bg-black/60 px-2 py-1 rounded text-[9px] text-gray-300">
           <div>
             {metadata.network === 'SYNTHETIC'
-              ? 'Datos simulados (sin estación real cercana)'
-              : `Estación: ${metadata.network}.${metadata.station}`}
+              ? t('simulatedData')
+              : t('station', { station: `${metadata.network}.${metadata.station}` })}
           </div>
-          <div>Actualizado: {new Date(metadata.generated_at).toLocaleTimeString()}</div>
+          <div>
+            {t('updated', {
+              time: format.dateTime(new Date(metadata.generated_at), 'time'),
+            })}
+          </div>
         </div>
       )}
 
@@ -170,7 +183,7 @@ export function SpectrogramViewReal({
         <span>-18h</span>
         <span>-12h</span>
         <span>-6h</span>
-        <span>Ahora</span>
+        <span>{t('axisNow')}</span>
       </div>
     </div>
   );

@@ -12,6 +12,10 @@ import {
 } from './globe-data';
 import type { SeismicEvent } from '@/lib/types';
 
+// Strings traducidos que el componente pasa por parametro (Decision 5 de
+// i18n-dashboard): en los tests se fijan literales para poder assertar.
+const LABELS = { unknownLocation: 'sin ubicación' };
+
 function makeEvent(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
   return {
     id: 'evt-1',
@@ -163,13 +167,13 @@ describe('globePointId', () => {
       makeEvent({ id: undefined as unknown as string, lat: 12.5, lon: -80.25 }),
     ];
 
-    expect(eventsToPoints(eventos).map((p) => p.id)).toEqual(eventos.map(globePointId));
+    expect(eventsToPoints(eventos, LABELS).map((p) => p.id)).toEqual(eventos.map(globePointId));
   });
 });
 
 describe('eventsToPoints', () => {
   it('conserva las coordenadas del evento', () => {
-    const [point] = eventsToPoints([makeEvent({ lat: -33.4, lon: -70.6 })]);
+    const [point] = eventsToPoints([makeEvent({ lat: -33.4, lon: -70.6 })], LABELS);
 
     expect(point.lat).toBe(-33.4);
     expect(point.lng).toBe(-70.6);
@@ -178,13 +182,16 @@ describe('eventsToPoints', () => {
   it('descarta eventos sin coordenadas numéricas', () => {
     // Un NaN en globe.gl no se ve como un punto faltante: se dibuja como un
     // artefacto en el centro de la Tierra.
-    const points = eventsToPoints([
-      makeEvent({ id: 'ok' }),
-      makeEvent({ id: 'sin-lat', lat: null as unknown as number }),
-      makeEvent({ id: 'lon-invalida', lon: 'x' as unknown as number }),
-      makeEvent({ id: 'nan', lat: NaN }),
-      makeEvent({ id: 'sin-lon', lon: undefined as unknown as number }),
-    ]);
+    const points = eventsToPoints(
+      [
+        makeEvent({ id: 'ok' }),
+        makeEvent({ id: 'sin-lat', lat: null as unknown as number }),
+        makeEvent({ id: 'lon-invalida', lon: 'x' as unknown as number }),
+        makeEvent({ id: 'nan', lat: NaN }),
+        makeEvent({ id: 'sin-lon', lon: undefined as unknown as number }),
+      ],
+      LABELS,
+    );
 
     expect(points.map((p) => p.id)).toEqual(['ok']);
   });
@@ -193,11 +200,14 @@ describe('eventsToPoints', () => {
     // Number(null), Number('') y Number([]) valen 0, no NaN. Sin un guard
     // explícito estos eventos se dibujan en el Golfo de Guinea: agua, así que
     // el punto se ve plausible y el error pasa desapercibido.
-    const points = eventsToPoints([
-      makeEvent({ id: 'lat-null', lat: null as unknown as number }),
-      makeEvent({ id: 'lon-vacia', lon: '' as unknown as number }),
-      makeEvent({ id: 'lat-array', lat: [] as unknown as number }),
-    ]);
+    const points = eventsToPoints(
+      [
+        makeEvent({ id: 'lat-null', lat: null as unknown as number }),
+        makeEvent({ id: 'lon-vacia', lon: '' as unknown as number }),
+        makeEvent({ id: 'lat-array', lat: [] as unknown as number }),
+      ],
+      LABELS,
+    );
 
     expect(points).toEqual([]);
   });
@@ -205,7 +215,7 @@ describe('eventsToPoints', () => {
   it('conserva el (0,0) real cuando las coordenadas son números', () => {
     // El guard descarta valores vacíos, no el origen: un evento en lat 0 /
     // lon 0 es raro pero legítimo y tiene que dibujarse.
-    const [point] = eventsToPoints([makeEvent({ id: 'origen', lat: 0, lon: 0 })]);
+    const [point] = eventsToPoints([makeEvent({ id: 'origen', lat: 0, lon: 0 })], LABELS);
 
     expect(point.id).toBe('origen');
     expect(point.lat).toBe(0);
@@ -214,37 +224,52 @@ describe('eventsToPoints', () => {
 
   it('trata la magnitud faltante como cero en vez de descartar el evento', () => {
     // Un sismo sin magnitud sigue siendo un sismo con ubicación: se muestra.
-    const [point] = eventsToPoints([makeEvent({ mag: null as unknown as number })]);
+    const [point] = eventsToPoints([makeEvent({ mag: null as unknown as number })], LABELS);
 
     expect(point.magnitude).toBe(0);
     expect(point.color).toBe(magnitudeColor(0));
   });
 
   it('arma la etiqueta con magnitud y lugar', () => {
-    const [point] = eventsToPoints([makeEvent({ mag: 5.24, lugar: 'Valparaíso' })]);
+    const [point] = eventsToPoints([makeEvent({ mag: 5.24, lugar: 'Valparaíso' })], LABELS);
 
     expect(point.label).toBe('M5.2 — Valparaíso');
   });
 
   it('no deja la etiqueta a medias cuando falta el lugar', () => {
-    const [point] = eventsToPoints([makeEvent({ lugar: null })]);
+    const [point] = eventsToPoints([makeEvent({ lugar: null })], LABELS);
 
     expect(point.label).toBe('M5.2 — sin ubicación');
+  });
+
+  it('usa el string traducido recibido por parámetro, no uno propio', () => {
+    // Decision 5: la lib no conoce el idioma — el fallback del label viene del
+    // componente ya traducido. Si la lib clavara su propio texto, el globo
+    // mostraría español residual con la UI en inglés.
+    const [point] = eventsToPoints(
+      [makeEvent({ lugar: null })],
+      { unknownLocation: 'unknown location' },
+    );
+
+    expect(point.label).toBe('M5.2 — unknown location');
   });
 
   it('genera un id de respaldo cuando el evento no lo trae', () => {
     // globe.gl usa el id para reconciliar puntos entre renders: dos undefined
     // se pisan y el segundo evento desaparece del globo.
-    const points = eventsToPoints([
-      makeEvent({ id: undefined as unknown as string, lat: 10, lon: 20 }),
-      makeEvent({ id: undefined as unknown as string, lat: 30, lon: 40 }),
-    ]);
+    const points = eventsToPoints(
+      [
+        makeEvent({ id: undefined as unknown as string, lat: 10, lon: 20 }),
+        makeEvent({ id: undefined as unknown as string, lat: 30, lon: 40 }),
+      ],
+      LABELS,
+    );
 
     expect(points[0].id).not.toBe(points[1].id);
   });
 
   it('devuelve una lista vacía sin eventos', () => {
-    expect(eventsToPoints([])).toEqual([]);
+    expect(eventsToPoints([], LABELS)).toEqual([]);
   });
 });
 

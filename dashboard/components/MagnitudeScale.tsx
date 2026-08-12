@@ -18,12 +18,17 @@
 
 'use client';
 
-const TRAMOS = [
-  { hasta: 3, etiqueta: 'Menor', color: 'var(--color-severity-low, #22c55e)' },
-  { hasta: 4, etiqueta: 'Ligero', color: '#eab308' },
-  { hasta: 5, etiqueta: 'Moderado', color: '#f59e0b' },
-  { hasta: 6, etiqueta: 'Fuerte', color: '#ea580c' },
-  { hasta: 8, etiqueta: 'Mayor', color: '#dc2626' },
+import { useTranslations } from 'next-intl';
+
+/** Identificador de tramo: la etiqueta visible sale del diccionario (`globe.scale.bands.<id>`). */
+export type MagnitudeBand = 'minor' | 'light' | 'moderate' | 'strong' | 'major';
+
+const TRAMOS: { hasta: number; id: MagnitudeBand; color: string }[] = [
+  { hasta: 3, id: 'minor', color: 'var(--color-severity-low, #22c55e)' },
+  { hasta: 4, id: 'light', color: '#eab308' },
+  { hasta: 5, id: 'moderate', color: '#f59e0b' },
+  { hasta: 6, id: 'strong', color: '#ea580c' },
+  { hasta: 8, id: 'major', color: '#dc2626' },
 ];
 
 /** Extremos de la escala dibujada. Un M2 y un M8 son los bordes útiles. */
@@ -40,19 +45,21 @@ function positionPercent(magnitude: number): number {
   return ((acotada - MIN_MAG) / (MAX_MAG - MIN_MAG)) * 100;
 }
 
-/** Nombre del tramo en el que cae la magnitud. */
-export function tramoDe(magnitude: number): string {
-  return TRAMOS.find((t) => magnitude < t.hasta)?.etiqueta ?? 'Mayor';
+/** Id del tramo en el que cae la magnitud (la etiqueta la traduce el componente). */
+export function tramoDe(magnitude: number): MagnitudeBand {
+  return TRAMOS.find((t) => magnitude < t.hasta)?.id ?? 'major';
 }
 
 export function MagnitudeScale({ magnitude }: MagnitudeScaleProps) {
+  const t = useTranslations('globe.scale');
   const left = positionPercent(magnitude);
+  const bandLabel = t(`bands.${tramoDe(magnitude)}`);
 
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <span className="text-sm text-muted-foreground">Escala de magnitud</span>
-        <span className="text-sm font-medium">{tramoDe(magnitude)}</span>
+        <span className="text-sm text-muted-foreground">{t('title')}</span>
+        <span className="text-sm font-medium">{bandLabel}</span>
       </div>
 
       <div className="relative pt-1">
@@ -61,13 +68,13 @@ export function MagnitudeScale({ magnitude }: MagnitudeScaleProps) {
         <div
           className="flex h-2 overflow-hidden rounded-full"
           role="img"
-          aria-label={`Magnitud ${magnitude.toFixed(1)}, categoría ${tramoDe(magnitude)}`}
+          aria-label={t('aria', { magnitude: magnitude.toFixed(1), category: bandLabel })}
         >
           {TRAMOS.map((tramo, i) => {
             const desde = i === 0 ? MIN_MAG : TRAMOS[i - 1].hasta;
             return (
               <div
-                key={tramo.etiqueta}
+                key={tramo.id}
                 style={{
                   width: `${((tramo.hasta - desde) / (MAX_MAG - MIN_MAG)) * 100}%`,
                   backgroundColor: tramo.color,

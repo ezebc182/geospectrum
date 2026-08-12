@@ -12,6 +12,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useFormatter, useTranslations } from 'next-intl';
 import { Check, Share2 } from 'lucide-react';
 
 import { eventUrl, shareEvent, type ShareOutcome } from '@/lib/share-event';
@@ -27,7 +28,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import {
   cn,
-  formatDateTime,
   formatDepth,
   formatMagnitude,
   getMagnitudeSeverity,
@@ -64,15 +64,16 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-/** Texto del botón según cómo haya salido el último intento. */
-function shareLabel(outcome: ShareOutcome | null): string {
-  if (outcome === 'copied') return 'Copiado al portapapeles';
-  if (outcome === 'failed') return 'No se pudo compartir';
-  return 'Compartir';
-}
-
 export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
+  const t = useTranslations('globe.panel');
+  const format = useFormatter();
   const [outcome, setOutcome] = useState<ShareOutcome | null>(null);
+
+  // Texto del botón según cómo haya salido el último intento. Se guarda el
+  // OUTCOME (no el texto resuelto): si el idioma cambia con el estado puesto,
+  // el label se re-traduce solo.
+  const shareLabel =
+    outcome === 'copied' ? t('copied') : outcome === 'failed' ? t('shareFailed') : t('share');
 
   const handleShare = async () => {
     if (!evento) return;
@@ -103,27 +104,27 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
             >
               M{formatMagnitude(evento.mag)}
             </Badge>
-            <span className="text-base">{evento.lugar ?? 'Ubicación desconocida'}</span>
+            <span className="text-base">{evento.lugar ?? t('unknownLocation')}</span>
           </SheetTitle>
-          <SheetDescription>{formatDateTime(evento.hora_utc)}</SheetDescription>
+          <SheetDescription>{format.dateTime(new Date(evento.hora_utc), 'medium')}</SheetDescription>
         </SheetHeader>
 
         <dl className="px-4">
-          <DetailRow label="Profundidad">{formatDepth(evento.prof_km)}</DetailRow>
+          <DetailRow label={t('depth')}>{formatDepth(evento.prof_km)}</DetailRow>
 
-          <DetailRow label="Coordenadas">
+          <DetailRow label={t('coordinates')}>
             <span className="font-data">
               {evento.lat.toFixed(3)}, {evento.lon.toFixed(3)}
             </span>
           </DetailRow>
 
           {evento.mag_tipo && (
-            <DetailRow label="Tipo de magnitud">
+            <DetailRow label={t('magnitudeType')}>
               <span className="font-data uppercase">{evento.mag_tipo}</span>
             </DetailRow>
           )}
 
-          <DetailRow label="Fuentes">
+          <DetailRow label={t('sources')}>
             <span className="flex flex-wrap justify-end gap-1">
               {evento.fuentes.map((fuente) => (
                 <Badge key={fuente} variant="secondary" className="font-data">
@@ -133,12 +134,12 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
             </span>
           </DetailRow>
 
-          <DetailRow label="Reportado como sentido">
-            {evento.sentido ? 'Sí' : 'No'}
+          <DetailRow label={t('reportedFelt')}>
+            {evento.sentido ? t('yes') : t('no')}
           </DetailRow>
 
-          <DetailRow label="Revisado por analista">
-            {evento.revisado ? 'Sí' : 'No — solución automática'}
+          <DetailRow label={t('reviewedByAnalyst')}>
+            {evento.revisado ? t('yes') : t('noAutomaticSolution')}
           </DetailRow>
         </dl>
 
@@ -156,7 +157,7 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
             ) : (
               <Share2 className="h-4 w-4" aria-hidden="true" />
             )}
-            {shareLabel(outcome)}
+            {shareLabel}
           </button>
         </div>
       </SheetContent>

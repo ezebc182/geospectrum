@@ -15,6 +15,7 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { Globe2, RefreshCw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { reportFetcher } from '@/lib/api';
 import { getActiveArea } from '@/lib/areas';
@@ -28,15 +29,24 @@ import type { SeismicEvent } from '@/lib/types';
 
 // three.js accede a `window` al importarse: con SSR el build revienta. El
 // esqueleto de carga evita que el layout salte cuando aparece el canvas.
+/**
+ * Esqueleto de carga del globo. Es un componente con hook (no un string en el
+ * módulo): el texto sale del diccionario y se re-traduce con el idioma activo.
+ */
+function GlobeSkeleton() {
+  const t = useTranslations('globe');
+  return (
+    <div className="flex h-[600px] items-center justify-center rounded-xl bg-muted/30">
+      <span className="text-sm text-muted-foreground">{t('loadingGlobe')}</span>
+    </div>
+  );
+}
+
 const SeismicGlobe = dynamic(
   () => import('@/components/SeismicGlobe').then((m) => m.SeismicGlobe),
   {
     ssr: false,
-    loading: () => (
-      <div className="flex h-[600px] items-center justify-center rounded-xl bg-muted/30">
-        <span className="text-sm text-muted-foreground">Cargando globo…</span>
-      </div>
-    ),
+    loading: () => <GlobeSkeleton />,
   },
 );
 
@@ -47,19 +57,14 @@ const SeismicGlobe = dynamic(
  */
 export default function GlobePage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-[600px] items-center justify-center rounded-xl bg-muted/30">
-          <span className="text-sm text-muted-foreground">Cargando globo…</span>
-        </div>
-      }
-    >
+    <Suspense fallback={<GlobeSkeleton />}>
       <GlobeView />
     </Suspense>
   );
 }
 
 function GlobeView() {
+  const t = useTranslations('globe');
   const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
     refreshInterval: 60_000,
   });
@@ -110,7 +115,7 @@ function GlobeView() {
   if (error) {
     return (
       <p className="p-6 text-sm text-destructive">
-        No se pudo cargar el reporte sísmico.
+        {t('loadError')}
       </p>
     );
   }
@@ -130,9 +135,9 @@ function GlobeView() {
         <div className="flex items-center gap-3">
           <Globe2 className="h-7 w-7 text-seismic-600" aria-hidden="true" />
           <div>
-            <h1 className="text-2xl font-bold">Globo Sísmico</h1>
+            <h1 className="text-2xl font-bold">{t('title')}</h1>
             <p className="text-sm text-muted-foreground">
-              {eventos.length} eventos · límites de placas tectónicas
+              {t('subtitle', { count: eventos.length })}
             </p>
           </div>
         </div>
@@ -142,14 +147,14 @@ function GlobeView() {
           className="flex items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 dark:border-gray-700"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          Actualizar
+          {t('refresh')}
         </button>
       </div>
 
       <AreaRefreshIndicator isRefreshing={isRefreshingArea}>
         {isLoading ? (
           <div className="flex h-[600px] items-center justify-center rounded-xl bg-muted/30">
-            <span className="text-sm text-muted-foreground">Cargando eventos…</span>
+            <span className="text-sm text-muted-foreground">{t('loadingEvents')}</span>
           </div>
         ) : (
           <SeismicGlobe

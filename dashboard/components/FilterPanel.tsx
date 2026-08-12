@@ -36,6 +36,9 @@ interface FilterPanelProps {
 
 export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = false, className = '' }: FilterPanelProps) {
   const t = useTranslations('filters');
+  // Las descripciones de DATA_SOURCES viven en el ns `map` (Decision 5:
+  // lib/map-layers.ts es lib pura y exporta ids; el componente traduce).
+  const tMap = useTranslations('map');
   const [isExpanded, setIsExpanded] = useState(true);
 
   const updateFilter = <K extends keyof SeismicFilters>(key: K, value: SeismicFilters[K]) => {
@@ -103,7 +106,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                   />
                   <div className="flex-1">
                     <div className="font-medium text-foreground">{source.name}</div>
-                    <div className="text-xs text-muted-foreground">{source.description}</div>
+                    <div className="text-xs text-muted-foreground">{tMap(`sources.${source.id}`)}</div>
                   </div>
                 </label>
               ))}

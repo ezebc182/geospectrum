@@ -116,13 +116,28 @@ export function globePointId(evento: SeismicEvent): string {
 }
 
 /**
+ * Strings traducidos que necesita el armado de labels.
+ *
+ * Llegan por parámetro desde el componente con hook: este módulo es lógica
+ * pura y no importa next-intl (Decision 5 de i18n-dashboard) — la dependencia
+ * del idioma queda visible en la firma en vez de esconderse en estado global.
+ */
+export interface GlobePointLabels {
+  /** Texto para un evento sin `lugar` (ej. "sin ubicación"). */
+  unknownLocation: string;
+}
+
+/**
  * Convierte los eventos del reporte a puntos del globo.
  *
  * Descarta los que no tienen coordenadas numéricas: la API devuelve el campo
  * pero una fuente puede mandarlo nulo, y un NaN en globe.gl no se ve como un
  * punto faltante sino como un artefacto en el centro de la Tierra.
  */
-export function eventsToPoints(eventos: SeismicEvent[]): GlobePoint[] {
+export function eventsToPoints(
+  eventos: SeismicEvent[],
+  labels: GlobePointLabels,
+): GlobePoint[] {
   const points: GlobePoint[] = [];
 
   for (const evento of eventos) {
@@ -136,7 +151,7 @@ export function eventsToPoints(eventos: SeismicEvent[]): GlobePoint[] {
       lng,
       magnitude,
       color: magnitudeColor(magnitude),
-      label: `M${magnitude.toFixed(1)} — ${evento.lugar ?? 'sin ubicación'}`,
+      label: `M${magnitude.toFixed(1)} — ${evento.lugar ?? labels.unknownLocation}`,
       id: globePointId(evento),
     });
   }

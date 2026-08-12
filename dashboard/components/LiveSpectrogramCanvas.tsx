@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useFormatter } from 'next-intl';
 
 interface LiveSpectrogramCanvasProps {
   channel: string; // ej. "IU.MAJO.00.BHZ"
@@ -76,6 +77,10 @@ function percentile(sorted: number[], p: number): number {
  * sismógrafo de papel — sin recargar ninguna imagen completa.
  */
 export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 400 }: LiveSpectrogramCanvasProps) {
+  // Hora de última actualización en el formato del locale activo (Decision 6):
+  // el toLocaleTimeString() sin locale dependía del runtime, no del idioma
+  // elegido por el usuario.
+  const format = useFormatter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
@@ -182,7 +187,7 @@ export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 40
 
       {lastUpdate && (
         <div className="absolute bottom-1 left-2 z-10 bg-black/60 px-2 py-1 rounded text-[9px] text-gray-300">
-          {new Date(lastUpdate).toLocaleTimeString()}
+          {format.dateTime(new Date(lastUpdate), 'time')}
         </div>
       )}
     </div>

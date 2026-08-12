@@ -13,6 +13,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
 
 import {
@@ -158,6 +159,7 @@ export function SeismicGlobe({
   selectedEventId = null,
   focusArea = null,
 }: SeismicGlobeProps) {
+  const t = useTranslations('globe');
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [plates, setPlates] = useState<GlobePath[]>([]);
   const [width, setWidth] = useState(0);
@@ -226,7 +228,13 @@ export function SeismicGlobe({
     controls.enableZoom = enableZoom;
   }, [width, selectedEventId, isAreaAnimating, autoRotate, enableZoom]);
 
-  const points = useMemo(() => eventsToPoints(eventos), [eventos]);
+  // Los labels del canvas se arman en lib pura con los strings YA traducidos
+  // por parámetro (Decision 5): `t` en las deps regenera los puntos —y sus
+  // tooltips— al cambiar de idioma.
+  const points = useMemo(
+    () => eventsToPoints(eventos, { unknownLocation: t('unknownLocation') }),
+    [eventos, t],
+  );
 
   // Acerca la cámara apenas el canvas existe. Corre también si cambia el
   // ancho (resize): pointOfView() con sólo altitude preserva lat/lng, así
@@ -347,7 +355,7 @@ export function SeismicGlobe({
           <button
             type="button"
             onClick={handleZoomIn}
-            aria-label="Acercar"
+            aria-label={t('zoomIn')}
             className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-gray-300 bg-background/80 text-lg leading-none backdrop-blur transition-colors hover:bg-muted/60 dark:border-gray-700"
           >
             +
@@ -355,7 +363,7 @@ export function SeismicGlobe({
           <button
             type="button"
             onClick={handleZoomOut}
-            aria-label="Alejar"
+            aria-label={t('zoomOut')}
             className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-gray-300 bg-background/80 text-lg leading-none backdrop-blur transition-colors hover:bg-muted/60 dark:border-gray-700"
           >
             −
@@ -363,7 +371,7 @@ export function SeismicGlobe({
           <button
             type="button"
             onClick={handleResetView}
-            aria-label="Restablecer vista"
+            aria-label={t('resetView')}
             className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-gray-300 bg-background/80 text-xs backdrop-blur transition-colors hover:bg-muted/60 dark:border-gray-700"
           >
             ⟲
