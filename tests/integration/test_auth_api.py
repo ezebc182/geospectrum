@@ -1082,6 +1082,9 @@ def test_get_account_profile_with_full_session_returns_profile(client):
         "address": "Av. Siempre Viva 742",
         "phone": "+54 9 11 5555-5555",
         "totp_enabled": True,
+        # i18n-dashboard: el perfil expone la preferencia de idioma; None =
+        # "nunca eligió" (Scenario: Cuenta preexistente sin preferencia).
+        "locale": None,
     }
 
 

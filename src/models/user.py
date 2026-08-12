@@ -4,10 +4,18 @@ Modelos de datos para autenticación multi-usuario con roles.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
+
+# Idioma de UI soportado ('es' | 'en'), compartido por users.locale (migración
+# 011), invitations.locale (010) y beta_signups.locale (011). Vive ACÁ y no en
+# invitation.py porque invitation.py ya importa UserRole de este módulo:
+# importar en la dirección inversa armaría un ciclo de imports (el design de
+# i18n-dashboard asumía "sin ciclos" y ese supuesto era falso). invitation.py
+# lo re-exporta como InvitationLocale para sus consumidores existentes.
+Locale = Literal["es", "en"]
 
 
 class UserRole(str, Enum):
@@ -163,12 +171,18 @@ class UserProfile(BaseModel):
     frontend terminaba llamando a GET /account/export (pensado para exportar
     TODOS los datos de la cuenta) solo para leer ese flag. `CurrentUser`/
     `UserPublic` (sesión/auth) siguen sin tocarse — Decisión Cerrada #4 vigente.
+
+    `locale` (i18n-dashboard, migración 011): preferencia de idioma persistida.
+    None = "nunca eligió" — la UI resuelve por el resto de la cascada (cookie,
+    Accept-Language, default 'es'). NUNCA viaja en el JWT ni en /auth/me
+    (mismo aislamiento que el resto del perfil extendido).
     """
 
     full_name: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
     totp_enabled: bool = False
+    locale: Optional[Locale] = None
 
 
 class UserProfileUpdate(BaseModel):
@@ -180,11 +194,18 @@ class UserProfileUpdate(BaseModel):
     campos en el propio tipo ya garantiza, a nivel de diseño de tipos, que
     este endpoint no puede tocar datos de seguridad de la cuenta (ver
     Requirement: Edición del perfil extendido propio).
+
+    `locale` es ESTRICTO a propósito (a diferencia de BetaSignupRequest, que
+    colapsa valores inválidos a 'es'): un PATCH con `locale: "fr"` responde
+    422 sin modificar nada — requirement explícito de specs/account-settings
+    (Scenario: Valor no soportado es rechazado). El Literal pelado ya produce
+    ese 422 vía Pydantic.
     """
 
     full_name: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    locale: Optional[Locale] = None
 
 
 class TotpSetupResponse(BaseModel):

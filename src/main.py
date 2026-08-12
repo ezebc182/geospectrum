@@ -725,15 +725,21 @@ async def create_beta_signup(payload: BetaSignupRequest, request: Request) -> di
     # RETURNING distingue alta nueva de repetida SIN cambiar la respuesta
     # (el 201 idéntico preserva la no-enumeración): los emails salen sólo
     # en el alta nueva — reenviar confirmación en cada repost sería spam.
+    # `locale` (migración 011) se persiste solo en el alta NUEVA: el ON
+    # CONFLICT DO NOTHING garantiza que un repost no pisa el idioma original
+    # (el repost no muta ni reenvía, comportamiento existente).
     inserted = await pool.fetchrow(
-        "INSERT INTO beta_signups (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING id",
+        "INSERT INTO beta_signups (email, locale) VALUES ($1, $2) "
+        "ON CONFLICT (email) DO NOTHING RETURNING id",
         email,
+        payload.locale,
     )
 
     if inserted is not None:
-        # Confirmación al interesado + aviso al admin. EmailService nunca
-        # lanza: un Resend caído no rompe el alta ya persistida.
-        await request.app.state.email_service.send_beta_signup_emails(email)
+        # Confirmación al interesado + aviso al admin, en el idioma elegido
+        # en la landing. EmailService nunca lanza: un Resend caído no rompe
+        # el alta ya persistida.
+        await request.app.state.email_service.send_beta_signup_emails(email, payload.locale)
 
     requests_total.labels(endpoint="/beta-signups", status="201").inc()
     return {"ok": True}
@@ -752,7 +758,7 @@ async def list_beta_signups(
     pool = request.app.state.db_pool
     rows = await pool.fetch(
         """
-        SELECT id, email, created_at, approved_at
+        SELECT id, email, created_at, approved_at, locale
         FROM beta_signups
         ORDER BY (approved_at IS NULL) DESC, created_at DESC
         """
@@ -783,8 +789,10 @@ async def approve_beta_signup(
     async with pool.acquire() as conn:
         async with conn.transaction():
             # FOR UPDATE: dos admins aprobando a la vez serializan acá.
+            # `locale` viaja en el mismo SELECT: la invitación y el email de
+            # aprobación heredan el idioma elegido en la landing (i18n).
             signup = await conn.fetchrow(
-                "SELECT id, email, approved_at FROM beta_signups WHERE id = $1 FOR UPDATE",
+                "SELECT id, email, approved_at, locale FROM beta_signups WHERE id = $1 FOR UPDATE",
                 signup_id,
             )
             if signup is None:
@@ -812,12 +820,18 @@ async def approve_beta_signup(
                 # sha256 + expiración). El token en claro se DESCARTA a
                 # propósito: este flujo no lo manda a ningún lado — el
                 # consumo es por email (Google, Decision 5).
+                # locale=signup["locale"]: la invitación hereda el idioma del
+                # signup — toda la cadena aguas abajo (/invite, siembra de
+                # cookie, primer login) ya es bilingüe por invitations.locale.
+                # Idempotencia intacta: si ya hay pendiente vigente, este
+                # branch no corre y el locale de esa invitación no se muta.
                 await insert_invitation_row(
                     conn,
                     email=signup["email"],
                     role=UserRole.VIEWER,
                     invited_by=admin.id,
                     expire_days=settings.invitation_expire_days,
+                    locale=signup["locale"],
                 )
 
             await conn.execute(
@@ -826,7 +840,9 @@ async def approve_beta_signup(
             )
 
     if not already_approved:
-        await request.app.state.email_service.send_beta_approved_email(signup["email"])
+        await request.app.state.email_service.send_beta_approved_email(
+            signup["email"], signup["locale"]
+        )
 
     return {"ok": True, "already_approved": already_approved}
 

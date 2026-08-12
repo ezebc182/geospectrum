@@ -25,6 +25,8 @@ from typing import Optional
 
 import httpx
 
+from src.models.invitation import InvitationLocale
+
 logger = logging.getLogger(__name__)
 
 RESEND_API_URL = "https://api.resend.com/emails"
@@ -182,13 +184,34 @@ class EmailService:
             logger.exception("No se pudo enviar el email '%s' a %s", subject, to)
             return False
 
-    async def send_beta_signup_emails(self, email: str) -> None:
+    async def send_beta_signup_emails(self, email: str, locale: InvitationLocale = "es") -> None:
         """Alta NUEVA en la lista de espera: confirmación al interesado +
-        aviso al admin, en paralelo (decisión del usuario: ambos)."""
-        confirmation = self._send(
-            to=email,
-            subject="Estás en la lista de espera de GeoSpectrum",
-            html=_layout(
+        aviso al admin, en paralelo (decisión del usuario: ambos).
+
+        `locale` (i18n-dashboard): el email AL INTERESADO sale completo
+        (subject + cuerpo) en el idioma elegido en la landing — se retiró la
+        línea muted en inglés del template ES, que era el parche monolingüe.
+        El aviso al admin queda en español a propósito: es tooling interno,
+        no superficie del usuario (MAY de la spec).
+        """
+        if locale == "en":
+            subject = "You're on the GeoSpectrum waitlist"
+            body = _layout(
+                "Waitlist",
+                "You're on the list",
+                _paragraph(
+                    "Thanks for your interest in GeoSpectrum. We reserved your "
+                    "spot on the beta waitlist with this email:"
+                )
+                + _chip(email)
+                + _paragraph(
+                    "When your spot opens you'll get a welcome email with your "
+                    "access — no further action needed."
+                ),
+            )
+        else:
+            subject = "Estás en la lista de espera de GeoSpectrum"
+            body = _layout(
                 "Lista de espera",
                 "Ya estás en la lista",
                 _paragraph(
@@ -199,12 +222,10 @@ class EmailService:
                 + _paragraph(
                     "Cuando se abra tu cupo te va a llegar un email de "
                     "bienvenida con el acceso — no hace falta que hagas nada más."
-                )
-                + _paragraph(
-                    "You're on the waitlist — we'll email you when your spot opens.", muted=True
                 ),
-            ),
-        )
+            )
+
+        confirmation = self._send(to=email, subject=subject, html=body)
 
         tasks = [confirmation]
         if self._admin_email:
@@ -223,14 +244,35 @@ class EmailService:
             )
         await asyncio.gather(*tasks)
 
-    async def send_beta_approved_email(self, email: str) -> None:
+    async def send_beta_approved_email(self, email: str, locale: InvitationLocale = "es") -> None:
         """Aprobación: bienvenida con link directo a /login. Sin token en el
         link a propósito — la invitación se consume por match del email
-        verificado de Google (email-invitations, Decision 5)."""
-        await self._send(
-            to=email,
-            subject="Tu acceso a GeoSpectrum está listo",
-            html=_layout(
+        verificado de Google (email-invitations, Decision 5).
+
+        `locale` (i18n-dashboard): subject + cuerpo completos en el idioma
+        del beta signup, mismo link a /login en ambos.
+        """
+        if locale == "en":
+            subject = "Your GeoSpectrum access is ready"
+            body = _layout(
+                "Your spot opened up",
+                "Welcome to the GeoSpectrum beta",
+                _paragraph(
+                    "Your access is ready. Sign in with your Google account "
+                    "using <strong>this same email</strong> — the invitation "
+                    "is tied to this address:"
+                )
+                + _chip(email)
+                + _button(f"{self._dashboard_url}/login", "Enter GeoSpectrum")
+                + _paragraph(
+                    "Your access expires in a few days if unused. If it slipped "
+                    "by, reply to this email and we'll resend it.",
+                    muted=True,
+                ),
+            )
+        else:
+            subject = "Tu acceso a GeoSpectrum está listo"
+            body = _layout(
                 "Tu cupo se abrió",
                 "Bienvenido a la beta de GeoSpectrum",
                 _paragraph(
@@ -245,5 +287,6 @@ class EmailService:
                     "largo, respondé este email y te lo reenviamos.",
                     muted=True,
                 ),
-            ),
-        )
+            )
+
+        await self._send(to=email, subject=subject, html=body)

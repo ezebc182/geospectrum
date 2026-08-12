@@ -751,10 +751,15 @@ class AuthService:
         para poblar el booleano de `UserProfile.totp_enabled` — jamás se lee
         ni se expone `totp_secret` acá. Esto reemplaza el uso lateral que
         hacía el frontend de GET /account/export solo para leer ese flag.
+
+        `locale` (i18n-dashboard, migración 011): None = "sin preferencia
+        guardada" — estado inicial de toda cuenta preexistente. Se expone
+        SOLO acá, nunca en /auth/me ni en el JWT.
         """
         async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT full_name, address, phone, totp_enabled FROM users WHERE id = $1",
+                "SELECT full_name, address, phone, totp_enabled, locale "
+                "FROM users WHERE id = $1",
                 user_id,
             )
         if row is None:
@@ -764,6 +769,7 @@ class AuthService:
             address=row["address"],
             phone=row["phone"],
             totp_enabled=row["totp_enabled"],
+            locale=row["locale"],
         )
 
     async def update_profile(self, user_id: UUID, update: UserProfileUpdate) -> UserProfile:
@@ -794,10 +800,12 @@ class AuthService:
         set_clauses.append("updated_at = now()")
         values.append(user_id)
 
+        # RETURNING incluye `locale` (i18n-dashboard): el response del PATCH
+        # debe reflejar la preferencia recién escrita, no un None fantasma.
         query = (
             f"UPDATE users SET {', '.join(set_clauses)} "
             f"WHERE id = ${len(values)} "
-            "RETURNING full_name, address, phone, totp_enabled"
+            "RETURNING full_name, address, phone, totp_enabled, locale"
         )
         async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(query, *values)
@@ -809,6 +817,7 @@ class AuthService:
             address=row["address"],
             phone=row["phone"],
             totp_enabled=row["totp_enabled"],
+            locale=row["locale"],
         )
 
     # -------------------------------------------------------------------

@@ -736,6 +736,7 @@ async def test_get_profile_with_all_fields_completed_returns_them():
                 "address": "Av. Siempre Viva 742",
                 "phone": "+54 9 11 5555-5555",
                 "totp_enabled": False,
+                "locale": None,
             }
         ]
     )
@@ -757,7 +758,13 @@ async def test_get_profile_never_completed_returns_all_none_without_error():
     user_id = uuid4()
     conn = _fake_conn(
         fetchrow_results=[
-            {"full_name": None, "address": None, "phone": None, "totp_enabled": False}
+            {
+                "full_name": None,
+                "address": None,
+                "phone": None,
+                "totp_enabled": False,
+                "locale": None,
+            }
         ]
     )
     svc._pool = _fake_pool_with_conn(conn)
@@ -778,7 +785,15 @@ async def test_get_profile_with_totp_enabled_true_returns_it():
     svc = _service()
     user_id = uuid4()
     conn = _fake_conn(
-        fetchrow_results=[{"full_name": None, "address": None, "phone": None, "totp_enabled": True}]
+        fetchrow_results=[
+            {
+                "full_name": None,
+                "address": None,
+                "phone": None,
+                "totp_enabled": True,
+                "locale": None,
+            }
+        ]
     )
     svc._pool = _fake_pool_with_conn(conn)
 
@@ -800,6 +815,7 @@ async def test_update_profile_completes_all_fields_first_time():
                 "address": "Av. Siempre Viva 742",
                 "phone": "+54 9 11 5555-5555",
                 "totp_enabled": False,
+                "locale": None,
             }
         ]
     )
@@ -829,6 +845,7 @@ async def test_update_profile_partial_edit_leaves_rest_untouched():
                 "address": "Av. Siempre Viva 742",
                 "phone": "+54 9 11 4444-4444",
                 "totp_enabled": False,
+                "locale": None,
             }
         ]
     )
@@ -857,7 +874,13 @@ async def test_update_profile_empty_update_is_noop_without_error():
     user_id = uuid4()
     conn = _fake_conn(
         fetchrow_results=[
-            {"full_name": None, "address": None, "phone": None, "totp_enabled": False}
+            {
+                "full_name": None,
+                "address": None,
+                "phone": None,
+                "totp_enabled": False,
+                "locale": None,
+            }
         ]
     )
     svc._pool = _fake_pool_with_conn(conn)
@@ -883,7 +906,7 @@ def test_user_profile_update_has_no_role_email_or_password_fields():
     assert "role" not in fields
     assert "email" not in fields
     assert "password_hash" not in fields
-    assert fields == {"full_name", "address", "phone"}
+    assert fields == {"full_name", "address", "phone", "locale"}
 
 
 # --- enable_totp() -----------------------------------------------------------

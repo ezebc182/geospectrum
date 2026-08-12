@@ -10,7 +10,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from src.models.invitation import InvitationLocale
 
 
 class BetaSignupItem(BaseModel):
@@ -23,6 +25,9 @@ class BetaSignupItem(BaseModel):
     email: str
     created_at: datetime
     approved_at: Optional[datetime] = None
+    # Idioma elegido en la landing (migración 011). Default 'es': espejo del
+    # default de la columna, cubre construcciones de tests previas a i18n.
+    locale: InvitationLocale = "es"
 
 
 class BetaSignupRequest(BaseModel):
@@ -36,3 +41,16 @@ class BetaSignupRequest(BaseModel):
 
     email: EmailStr
     website: str = Field(default="", max_length=200)
+    # Idioma del toggle de la landing. TOLERANTE a propósito (a diferencia de
+    # UserProfileUpdate.locale, que responde 422): specs/auth exige que un
+    # locale ausente O INVÁLIDO caiga a 'es' con 201 — nunca un 400/422 por
+    # este campo, para que un caller viejo sin el campo (o un valor basura)
+    # siga funcionando. El validator mode="before" colapsa cualquier cosa que
+    # no sea 'es'/'en' ANTES de que el Literal la rechace.
+    locale: InvitationLocale = "es"
+
+    @field_validator("locale", mode="before")
+    @classmethod
+    def _coerce_unsupported_locale_to_spanish(cls, value: object) -> object:
+        """Cualquier valor no soportado (None, "xx", números, "") cae a 'es'."""
+        return value if value in ("es", "en") else "es"

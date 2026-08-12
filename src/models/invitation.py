@@ -9,17 +9,21 @@ por diseño de tipos que documenta UserProfileUpdate en src/models/user.py.
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
 
-from src.models.user import UserRole
+from src.models.user import Locale, UserRole
 
 # Idioma del email de invitación (migración 010). Literal y no Enum: son dos
 # valores cerrados sin comportamiento asociado — Pydantic rechaza con 422
 # cualquier otro, igual que haría un enum, con menos ceremonia.
-InvitationLocale = Literal["es", "en"]
+# Desde i18n-dashboard (migración 011) el par cerrado vive en user.py (Locale)
+# porque este módulo ya importa UserRole de ahí — definirlo acá e importarlo
+# desde user.py armaría un ciclo. Este alias preserva el nombre para todos
+# los consumidores existentes (invitation_service, main, tests).
+InvitationLocale = Locale
 
 
 class InvitationStatus(str, Enum):
