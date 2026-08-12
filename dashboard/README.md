@@ -35,10 +35,27 @@ Editar `.env.local`:
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # Debe coincidir EXACTAMENTE con AUTH_SECRET_KEY del backend (src/config/settings.py).
-# Usada por dashboard/middleware.ts (Edge) para validar la firma HS256 del JWT de
-# sesión sin round-trip a /auth/me. NO llevar el prefijo NEXT_PUBLIC_ — no debe
-# llegar nunca al bundle del cliente.
+# Usada por dashboard/lib/verify-session.ts (middleware Edge + API routes) para
+# validar la firma HS256 del JWT de sesión sin round-trip a /auth/me. NO llevar el
+# prefijo NEXT_PUBLIC_ — no debe llegar nunca al bundle del cliente.
 AUTH_SECRET_KEY=
+
+# --- Invitaciones por email (email-invitations) ---
+# Las tres son server-side; ninguna lleva NEXT_PUBLIC_. Las lee únicamente
+# dashboard/app/api/invitations/send/route.ts (runtime nodejs).
+
+# API key de Resend. Si se expusiera con NEXT_PUBLIC_ quedaría en el bundle del
+# cliente y cualquiera podría enviar emails con la cuenta de GeoSpectrum.
+RESEND_API_KEY=
+
+# URL base pública del dashboard para armar el link `${INVITE_BASE_URL}/invite/{token}`.
+# En producción: https://geospectrum.org. Si falta, la route cae al origin del
+# request — alcanza en local, NO en producción detrás de proxy.
+INVITE_BASE_URL=http://localhost:3008
+
+# Remitente (opcional). Default: 'GeoSpectrum <invitaciones@geospectrum.org>',
+# dominio ya verificado en Resend con SPF/DKIM.
+RESEND_FROM=
 ```
 
 ### Ejecutar desarrollo
