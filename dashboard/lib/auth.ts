@@ -11,6 +11,7 @@
 import type {
   AccountExport,
   Invitation,
+  InvitationLocale,
   InvitationValidation,
   InvitationWithToken,
   LoginResult,
@@ -288,12 +289,16 @@ export async function deleteAccount(): Promise<void> {
 export async function createInvitation(
   email: string,
   role: UserRole,
+  // Idioma del email de invitación (pulido post-rollout). Opcional con
+  // default 'es' — mismo default que backend y migración 010 — para no
+  // romper a los callers existentes.
+  locale: InvitationLocale = 'es',
 ): Promise<InvitationWithToken> {
   const response = await fetch(`${API_BASE_URL}/auth/invitations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ email, role, locale }),
   });
 
   if (!response.ok) {
@@ -420,6 +425,8 @@ export interface SendInvitationEmailInput {
   role: UserRole;
   token: string;
   expiresAt: string;
+  /** Idioma del email — la route lo valida y cae a 'es' si falta. */
+  locale?: InvitationLocale;
 }
 
 /**

@@ -34,22 +34,43 @@ export const brand = {
   surface: '#ffffff',
 } as const;
 
+/** Idiomas soportados por los emails transaccionales — espejo del
+ *  `InvitationLocale` del backend (migración 010). */
+export type EmailLocale = 'es' | 'en';
+
+/** Copy del pie por idioma (el pie también es copy que lee el destinatario:
+ *  monolingüe, mismo criterio que los templates desde el pulido post-rollout). */
+const FOOTER_COPY: Record<EmailLocale, { tagline: string; footer: string }> = {
+  es: {
+    tagline: 'Monitoreo sísmico en tiempo real',
+    footer: 'Este es un email automático de GeoSpectrum. Si no esperabas recibirlo, podés ignorarlo.',
+  },
+  en: {
+    tagline: 'Real-time seismic monitoring',
+    footer: "This is an automated email from GeoSpectrum. If you weren't expecting it, you can ignore it.",
+  },
+};
+
 interface EmailLayoutProps {
   /** Texto del preview en la bandeja de entrada (antes de abrir el email). */
   preview: string;
+  /** Idioma del pie y el tagline. Default 'es', igual que los templates. */
+  locale?: EmailLocale;
   children: ReactNode;
 }
 
-export function EmailLayout({ preview, children }: EmailLayoutProps) {
+export function EmailLayout({ preview, locale = 'es', children }: EmailLayoutProps) {
+  const copy = FOOTER_COPY[locale];
+
   return (
-    <Html lang="es">
+    <Html lang={locale}>
       <Head />
       <Preview>{preview}</Preview>
       <Body style={bodyStyle}>
         <Container style={containerStyle}>
           <Section style={headerStyle}>
             <Text style={logoStyle}>GeoSpectrum</Text>
-            <Text style={taglineStyle}>Monitoreo sísmico en tiempo real</Text>
+            <Text style={taglineStyle}>{copy.tagline}</Text>
           </Section>
 
           <Section style={cardStyle}>{children}</Section>
@@ -57,16 +78,7 @@ export function EmailLayout({ preview, children }: EmailLayoutProps) {
           <Hr style={hrStyle} />
 
           <Section>
-            {/* El pie también es copy que lee el destinatario: bilingüe, por
-                el mismo criterio que los templates (ver InvitationEmail). */}
-            <Text style={footerStyle}>
-              Este es un email automático de GeoSpectrum. Si no esperabas recibirlo, podés
-              ignorarlo.
-            </Text>
-            <Text style={footerStyle}>
-              This is an automated email from GeoSpectrum. If you weren&apos;t expecting it, you
-              can ignore it.
-            </Text>
+            <Text style={footerStyle}>{copy.footer}</Text>
           </Section>
         </Container>
       </Body>

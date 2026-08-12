@@ -24,7 +24,12 @@ from uuid import UUID
 
 import asyncpg
 
-from src.models.invitation import InvitationPublic, InvitationStatus, InvitationWithToken
+from src.models.invitation import (
+    InvitationLocale,
+    InvitationPublic,
+    InvitationStatus,
+    InvitationWithToken,
+)
 from src.models.user import CurrentUser, UserRole, role_level
 
 # Invitación consumible: no aceptada, no revocada, no vencida. Se interpola
@@ -50,7 +55,7 @@ _STATUS_SQL = """
 # Columnas expuestas hacia InvitationPublic. token_hash NUNCA está acá — el
 # modelo no lo declara y la query no lo lee (garantía doble).
 _SELECT_COLUMNS = f"""
-    id, email, role, {_STATUS_SQL} AS status,
+    id, email, role, locale, {_STATUS_SQL} AS status,
     invited_by, created_at, expires_at, accepted_at, email_sent_at
 """
 
@@ -132,6 +137,7 @@ def _row_to_public(row: asyncpg.Record) -> InvitationPublic:
         id=row["id"],
         email=row["email"],
         role=UserRole(row["role"]),
+        locale=row["locale"],
         status=InvitationStatus(row["status"]),
         invited_by=row["invited_by"],
         created_at=row["created_at"],
@@ -148,6 +154,7 @@ async def insert_invitation_row(
     role: UserRole,
     invited_by: Optional[UUID],
     expire_days: int,
+    locale: InvitationLocale = "es",
 ) -> tuple[asyncpg.Record, str]:
     """INSERT de una invitación dentro de la transacción del CALLER.
 
@@ -175,12 +182,13 @@ async def insert_invitation_row(
     token, token_hash = _new_token()
     row = await conn.fetchrow(
         f"""
-        INSERT INTO invitations (email, role, token_hash, invited_by, expires_at)
-        VALUES ($1, $2, $3, $4, now() + make_interval(days => $5))
+        INSERT INTO invitations (email, role, locale, token_hash, invited_by, expires_at)
+        VALUES ($1, $2, $3, $4, $5, now() + make_interval(days => $6))
         RETURNING {_SELECT_COLUMNS}
         """,
         email,
         role.value,
+        locale,
         token_hash,
         invited_by,
         expire_days,
@@ -208,7 +216,11 @@ class InvitationService:
     # -------------------------------------------------------------------
 
     async def create_invitation(
-        self, email: str, role: UserRole, invited_by: CurrentUser
+        self,
+        email: str,
+        role: UserRole,
+        invited_by: CurrentUser,
+        locale: InvitationLocale = "es",
     ) -> InvitationWithToken:
         """Crea una invitación y retorna el token en claro — la ÚNICA vez.
 
@@ -268,6 +280,7 @@ class InvitationService:
                     role=role,
                     invited_by=invited_by.id,
                     expire_days=self._expire_days,
+                    locale=locale,
                 )
 
         return InvitationWithToken(**_row_to_public(row).model_dump(), token=token)

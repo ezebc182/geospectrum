@@ -281,9 +281,38 @@ def test_admin_and_superadmin_can_create_invitation(client, seeded, role):
     body = response.json()
     assert body["email"] == "nueva@example.com"
     assert body["role"] == "viewer"
+    # Sin `locale` en el payload cae al default 'es' (migración 010).
+    assert body["locale"] == "es"
     assert body["status"] == "pending"
     assert body["token"]
     assert body["email_sent_at"] is None
+
+
+@pytest.mark.parametrize("locale", ["es", "en"])
+def test_create_invitation_persists_the_chosen_locale(client, seeded, locale):
+    """El idioma elegido al invitar viaja en el payload y vuelve en la
+    respuesta — es lo que la UI encadena a la route de envío del email."""
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = client.post(
+        "/auth/invitations",
+        json={"email": f"locale-{locale}@example.com", "role": "viewer", "locale": locale},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["locale"] == locale
+
+
+def test_create_invitation_with_unknown_locale_returns_422(client, seeded):
+    """Pydantic corta antes del servicio: `locale` es Literal['es', 'en']."""
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = client.post(
+        "/auth/invitations",
+        json={"email": "x@example.com", "role": "viewer", "locale": "pt"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_admin_cannot_invite_superadmin_403(client, seeded):
@@ -507,9 +536,29 @@ def test_validate_is_reachable_without_any_cookie(client, seeded):
     body = response.json()
     assert body["email"] == "publica@example.com"
     assert body["role"] == "moderador"
+    # La página /invite muestra su copy en el idioma en que salió el email.
+    assert body["locale"] == "es"
     assert "expires_at" in body
     # NUNCA devuelve el token ni el hash de vuelta.
     assert "token" not in body
+
+
+def test_validate_returns_the_locale_of_the_invitation(client, seeded):
+    """Una invitación creada en inglés valida con locale 'en' — la página
+    /invite/[token] usa este campo para elegir el idioma de su copy."""
+    _login_as(seeded[UserRole.ADMIN], client)
+    response = client.post(
+        "/auth/invitations",
+        json={"email": "en-validate@example.com", "role": "viewer", "locale": "en"},
+    )
+    assert response.status_code == 201
+    created = response.json()
+
+    _logout(client)
+    validated = client.get("/auth/invitations/validate", params={"token": created["token"]})
+
+    assert validated.status_code == 200
+    assert validated.json()["locale"] == "en"
 
 
 def test_validate_unknown_token_returns_404(client, seeded):

@@ -9,12 +9,17 @@ por diseño de tipos que documenta UserProfileUpdate en src/models/user.py.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
 
 from src.models.user import UserRole
+
+# Idioma del email de invitación (migración 010). Literal y no Enum: son dos
+# valores cerrados sin comportamiento asociado — Pydantic rechaza con 422
+# cualquier otro, igual que haría un enum, con menos ceremonia.
+InvitationLocale = Literal["es", "en"]
 
 
 class InvitationStatus(str, Enum):
@@ -41,6 +46,9 @@ class InvitationCreate(BaseModel):
 
     email: EmailStr
     role: UserRole
+    # Idioma en que saldrá el email (pulido post-rollout): lo elige el admin
+    # al invitar. Default 'es' — mismo default que la columna (migración 010).
+    locale: InvitationLocale = "es"
 
 
 class InvitationPublic(BaseModel):
@@ -53,6 +61,9 @@ class InvitationPublic(BaseModel):
     id: UUID
     email: EmailStr
     role: UserRole
+    # El resend lo CONSERVA (regenera token, no idioma): el destinatario es el
+    # mismo y su idioma no cambió.
+    locale: InvitationLocale
     status: InvitationStatus
     # None si el admin que invitó borró su cuenta (FK ON DELETE SET NULL,
     # migración 007): se pierde trazabilidad, no funcionalidad.

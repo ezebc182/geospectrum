@@ -154,12 +154,18 @@ export interface MeResponse extends UserPublic {
  */
 export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
 
+/** Idioma del email de invitación — espejo de `InvitationLocale` del backend
+ * (migración 010). Lo elige el admin al invitar; el reenvío lo conserva. */
+export type InvitationLocale = 'es' | 'en';
+
 /** Shape de `GET /auth/invitations` — espejo de InvitationPublic del backend.
  * NUNCA incluye token ni hash (garantía por construcción de tipos, server-side). */
 export interface Invitation {
   id: string;
   email: string;
   role: UserRole;
+  /** Idioma en que sale (y salió) el email de esta invitación. */
+  locale: InvitationLocale;
   status: InvitationStatus;
   invited_by: string | null;
   created_at: string;
@@ -181,6 +187,8 @@ export interface InvitationWithToken extends Invitation {
 export interface InvitationValidation {
   email: string;
   role: UserRole;
+  /** La página /invite/[token] muestra su copy en este idioma. */
+  locale: InvitationLocale;
   expires_at: string;
 }
 

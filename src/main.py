@@ -1189,7 +1189,7 @@ async def create_invitation(
     """
     try:
         invitation = await invitation_service.create_invitation(
-            email=payload.email, role=payload.role, invited_by=admin
+            email=payload.email, role=payload.role, invited_by=admin, locale=payload.locale
         )
     except CannotInviteHigherRoleError:
         # Guard de escalación: un admin no se fabrica un superadmin por
@@ -1264,6 +1264,9 @@ async def validate_invitation(
     return {
         "email": invitation.email,
         "role": invitation.role.value,
+        # La página /invite/[token] muestra su copy en el idioma en que se
+        # envió el email (pulido post-rollout, migración 010).
+        "locale": invitation.locale,
         "expires_at": invitation.expires_at.isoformat(),
     }
 

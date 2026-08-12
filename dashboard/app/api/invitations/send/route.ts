@@ -39,10 +39,16 @@ const FROM_ADDRESS = process.env.RESEND_FROM || 'GeoSpectrum <invitaciones@geosp
 interface SendRequestBody {
   invitationId?: unknown;
   email?: unknown;
-  role?: unknown;
   token?: unknown;
   expiresAt?: unknown;
+  locale?: unknown;
 }
+
+/** Subject por idioma — mismo criterio monolingüe que el template. */
+const SUBJECTS: Record<'es' | 'en', string> = {
+  es: 'Te invitaron a GeoSpectrum',
+  en: "You've been invited to GeoSpectrum",
+};
 
 export async function POST(request: Request) {
   // ---------------------------------------------------------------------
@@ -71,16 +77,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ sent: false, error: 'body inválido' }, { status: 400 });
   }
 
-  const { invitationId, email, role, token, expiresAt } = body;
+  const { invitationId, email, token, expiresAt } = body;
   if (
     typeof invitationId !== 'string' ||
     typeof email !== 'string' ||
-    typeof role !== 'string' ||
     typeof token !== 'string' ||
     typeof expiresAt !== 'string'
   ) {
     return NextResponse.json({ sent: false, error: 'body incompleto' }, { status: 400 });
   }
+
+  // Idioma del email (pulido post-rollout): validado contra los dos valores
+  // soportados, con default 'es' — mismo default que backend y migración 010.
+  // Ausente o inválido NO es un 400: un caller viejo sin locale sigue
+  // funcionando en español.
+  const locale: 'es' | 'en' = body.locale === 'en' ? 'en' : 'es';
 
   // El link se arma acá y no en el cliente: INVITE_BASE_URL es la URL
   // pública canónica (https://geospectrum.org en Vercel). En desarrollo cae
@@ -98,10 +109,10 @@ export async function POST(request: Request) {
     const { error } = await resend.emails.send({
       from: FROM_ADDRESS,
       to: email,
-      // Subject bilingüe, igual que el cuerpo del template: el destinatario
-      // puede ser hispanohablante o angloparlante y no lo sabemos al invitar.
-      subject: "Te invitaron a GeoSpectrum / You've been invited to GeoSpectrum",
-      react: InvitationEmail({ email, role, inviteUrl, expiresAt }),
+      // Subject monolingüe según el idioma elegido al invitar, igual que el
+      // cuerpo del template (pulido post-rollout).
+      subject: SUBJECTS[locale],
+      react: InvitationEmail({ email, inviteUrl, expiresAt, locale }),
     });
     resendError = error;
   } catch (caught) {

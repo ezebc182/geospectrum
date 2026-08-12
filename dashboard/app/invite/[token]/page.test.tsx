@@ -35,6 +35,8 @@ const mockedValidate = vi.mocked(validateInvitationToken);
 const VALID_INVITATION: InvitationValidation = {
   email: 'invitada@example.com',
   role: 'moderador',
+  // Idioma de la invitación (migración 010): validate siempre lo devuelve.
+  locale: 'es',
   expires_at: '2026-08-17T12:00:00Z',
 };
 

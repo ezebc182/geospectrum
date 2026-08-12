@@ -127,6 +127,32 @@ async def test_create_invitation_returns_pending_status_and_future_expiry(servic
     assert timedelta(days=EXPIRE_DAYS - 1) < delta <= timedelta(days=EXPIRE_DAYS)
 
 
+async def test_create_invitation_defaults_locale_to_es(service, db_pool, admin):
+    """Sin `locale` explícito la invitación nace en español — mismo default
+    que la columna (migración 010) y que el payload del endpoint."""
+    invitation = await service.create_invitation(
+        email="castellana@example.com", role=UserRole.VIEWER, invited_by=admin
+    )
+
+    assert invitation.locale == "es"
+    async with db_pool.acquire() as conn:
+        stored = await conn.fetchval("SELECT locale FROM invitations WHERE id = $1", invitation.id)
+    assert stored == "es"
+
+
+async def test_create_invitation_persists_locale_en(service, db_pool, admin):
+    """El idioma elegido al invitar se PERSISTE (columna `locale`, migración
+    010): es lo que después lee la route de envío y la página /invite."""
+    invitation = await service.create_invitation(
+        email="english@example.com", role=UserRole.VIEWER, invited_by=admin, locale="en"
+    )
+
+    assert invitation.locale == "en"
+    async with db_pool.acquire() as conn:
+        stored = await conn.fetchval("SELECT locale FROM invitations WHERE id = $1", invitation.id)
+    assert stored == "en"
+
+
 async def test_admin_cannot_invite_superadmin(service, db_pool, admin):
     """[Requirement: Creación de invitación / Scenario: Un admin no puede
     invitar con rol superadmin] — guard de escalación: sin esto un admin se
@@ -352,6 +378,18 @@ async def test_resend_resets_email_sent_at_to_null(service, admin):
     assert resent.email_sent_at is None
 
 
+async def test_resend_preserves_the_locale(service, admin):
+    """El reenvío regenera token y expiración pero CONSERVA el idioma: el
+    destinatario es el mismo y su idioma no cambió."""
+    invitation = await service.create_invitation(
+        email="resend-en@example.com", role=UserRole.VIEWER, invited_by=admin, locale="en"
+    )
+
+    resent = await service.resend_invitation(invitation.id)
+
+    assert resent.locale == "en"
+
+
 async def test_resend_revives_an_expired_invitation(service, db_pool, admin):
     """[Requirement: Reenvío / Scenario: Reenviar una invitación expirada la
     revive con token nuevo] — vuelve a `pending` con expiración futura."""
@@ -413,6 +451,7 @@ async def test_validate_pending_token_returns_email_and_role(service, admin):
 
     assert public.email == "valida@example.com"
     assert public.role is UserRole.MODERADOR
+    assert public.locale == "es"
     assert public.status is InvitationStatus.PENDING
 
 
