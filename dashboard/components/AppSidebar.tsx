@@ -26,11 +26,20 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
-const routes = [
+interface NavRoute {
+  href: string;
+  label: string;
+  icon: typeof Gauge;
+  /** Ancla del tour de onboarding (Decision 7 de email-invitations):
+   * atributo semántico propio sobre el elemento real, nunca clases CSS. */
+  tourId?: string;
+}
+
+const routes: NavRoute[] = [
   { href: '/', label: 'Dashboard', icon: Gauge },
   { href: '/explore', label: 'Explorador', icon: Compass },
   { href: '/spectrograms-live', label: 'Espectrogramas', icon: RadioTower },
-  { href: '/globe', label: 'Globo 3D', icon: Globe2 },
+  { href: '/globe', label: 'Globo 3D', icon: Globe2, tourId: 'nav-globe' },
   { href: '/analytics', label: 'Análisis', icon: LineChart },
 ];
 
@@ -67,7 +76,7 @@ export function AppSidebar() {
               {routes.map((route) => (
                 <SidebarMenuItem key={route.href}>
                   <SidebarMenuButton asChild isActive={pathname === route.href} tooltip={route.label}>
-                    <Link href={route.href}>
+                    <Link href={route.href} data-tour-id={route.tourId}>
                       <route.icon />
                       <span>{route.label}</span>
                     </Link>

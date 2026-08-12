@@ -119,6 +119,8 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
     >
       <DropdownMenuTrigger
         disabled={saving}
+        // Ancla del tour de onboarding (Decision 7 de email-invitations).
+        data-tour-id="area-selector"
         aria-label={`Área de interés: ${activeLabel}`}
         className="flex max-w-[16rem] items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 dark:border-gray-700"
       >

@@ -138,6 +138,24 @@ export async function getMe(): Promise<MeResponse | null> {
 }
 
 /**
+ * Marca el onboarding como completado (204, idempotente en el backend: la
+ * primera marca no se pisa). Lo llama el gate tanto al completar el tour como
+ * al saltarlo. Lanza en fallo — pero el caller lo trata como best-effort: el
+ * wizard se cierra IGUAL en la sesión actual (nunca bloqueante, a lo sumo
+ * reaparece en el próximo login).
+ */
+export async function completeOnboarding(): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/me/onboarding-complete`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+  }
+}
+
+/**
  * Perfil extendido (`full_name`/`address`/`phone`) — DISTINTO de `UserPublic`
  * (nunca viaja en `/auth/me` ni en el JWT, ver design.md Decisión Cerrada #4).
  */

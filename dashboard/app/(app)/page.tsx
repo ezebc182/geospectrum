@@ -226,7 +226,10 @@ export default function DashboardPage() {
           botón. Acá el panel empuja el layout — angosto, con su propio
           scroll — en vez de flotar encima. */}
       <div className="flex min-h-0 flex-1 items-start gap-4">
-        <div className="min-w-0 flex-1">
+        {/* data-tour-id: ancla del tour de onboarding (Decision 7 de
+            email-invitations) — atributo semántico propio, NUNCA anclar por
+            clases ni estructura del DOM, que son volátiles. */}
+        <div className="min-w-0 flex-1" data-tour-id="map">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-xl font-semibold text-foreground">
               <MapPin className="h-5 w-5" />

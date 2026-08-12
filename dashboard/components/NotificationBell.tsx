@@ -63,6 +63,8 @@ export function NotificationBell() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        // Ancla del tour de onboarding (Decision 7 de email-invitations).
+        data-tour-id="alerts-bell"
         aria-label={`Alertas activas: ${alertas.length}`}
         className="relative flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
