@@ -1,0 +1,49 @@
+{
+  "common": {
+    "language": "Language",
+    "localeNames": {
+      "es": "Español",
+      "en": "English"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "explore": "Explorer",
+    "spectrograms": "Spectrograms",
+    "globe": "3D Globe",
+    "live": "Live",
+    "analytics": "Analytics",
+    "access": "Access",
+    "groupMonitoring": "Monitoring",
+    "groupAdmin": "Administration",
+    "toggleTheme": "Toggle theme",
+    "userMenu": {
+      "accountSettings": "Account settings",
+      "lightMode": "Light mode",
+      "darkMode": "Dark mode",
+      "logout": "Sign out"
+    },
+    "roles": {
+      "superadmin": "Superadmin",
+      "admin": "Admin",
+      "moderador": "Moderator",
+      "viewer": "Viewer"
+    }
+  },
+  "auth": {
+    "badge": "Invitation-only access",
+    "title": "Enter the control room",
+    "subtitle": "Sign in with the Google account that received your invitation.",
+    "googleButton": "Continue with Google",
+    "noInvitation": "No invitation? Join the waitlist at",
+    "oauthErrors": {
+      "cancelled": "You cancelled the Google sign-in.",
+      "tokenExchangeFailed": "Google sign-in could not be completed.",
+      "invalidIdToken": "Google sign-in could not be completed.",
+      "emailNotVerified": "Your Google account email is not verified. Verify it with Google and try again.",
+      "noInvitation": "Access is invitation-only and your account does not have one yet. Join the waitlist or contact an administrator.",
+      "googleRejected": "Google rejected the sign-in.",
+      "generic": "Google sign-in could not be completed."
+    }
+  }
+}

@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { NextIntlClientProvider } from 'next-intl';
+import { getLocale } from 'next-intl/server';
 import { Familjen_Grotesk, IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
@@ -23,19 +25,28 @@ export const metadata: Metadata = {
   description: 'Real-time seismic monitoring with USGS and INPRES integration',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Locale de formato (es-AR/en-US) resuelto por la cascada de
+  // i18n/request.ts — reemplaza el lang="es" hardcodeado.
+  const locale = await getLocale();
+
   return (
     <html
-      lang="es"
+      lang={locale}
       suppressHydrationWarning
       className={cn(fontHeading.variable, fontSans.variable, fontMono.variable)}
     >
       <body className="font-sans antialiased">
-        <Providers>{children}</Providers>
+        {/* El provider de mensajes va POR FUERA de Providers (Decision 1):
+            los diccionarios no dependen de theme/auth/tooltip. Sin props:
+            hereda locale, messages y formats del request config server. */}
+        <NextIntlClientProvider>
+          <Providers>{children}</Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

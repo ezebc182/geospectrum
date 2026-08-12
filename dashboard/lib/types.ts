@@ -2,6 +2,8 @@
  * Tipos TypeScript para la API de GeoSpectrum
  */
 
+import type { AppLocale } from './locale';
+
 export interface SeismicEvent {
   id: string;
   fuentes: string[];
@@ -223,6 +225,10 @@ export interface UserProfile {
   full_name: string | null;
   address: string | null;
   phone: string | null;
+  /** Preferencia de idioma guardada en cuenta (i18n-dashboard, Fase 1 del
+   * backend). `null` = "nunca eligió" — la cascada cookie/Accept-Language
+   * decide (LocaleSync solo siembra la cookie cuando NO es null). */
+  locale: AppLocale | null;
   /** Único booleano de estado 2FA expuesto acá — nunca el secreto TOTP.
    * Agregado como fix puntual (post-Phase 4): reemplaza el uso lateral que
    * hacía SettingsPage de GET /account/export solo para leer este flag. */
@@ -236,6 +242,7 @@ export interface UserProfileUpdate {
   full_name?: string | null;
   address?: string | null;
   phone?: string | null;
+  locale?: AppLocale;
 }
 
 /** Respuesta de `POST /auth/2fa/setup`. `otpauth_uri` se usa para renderizar

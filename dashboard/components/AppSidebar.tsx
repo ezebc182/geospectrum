@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   Activity,
   Compass,
@@ -34,25 +35,29 @@ interface NavRoute {
   tourId?: string;
 }
 
-const routes: NavRoute[] = [
-  { href: '/', label: 'Dashboard', icon: Gauge },
-  { href: '/explore', label: 'Explorador', icon: Compass },
-  { href: '/spectrograms-live', label: 'Espectrogramas', icon: RadioTower },
-  { href: '/globe', label: 'Globo 3D', icon: Globe2, tourId: 'nav-globe' },
-  { href: '/analytics', label: 'Análisis', icon: LineChart },
-];
-
-// Rutas de administración: sólo visibles para admin+. El gate real de
-// permisos vive en el backend (require_min_role); esto es no mostrar
-// puertas que la API va a cerrar igual. "Accesos" unifica lista de espera
-// e invitaciones en una sola página con pestañas (pulido post-QA).
-const ADMIN_ROUTES = [{ href: '/admin/access', label: 'Accesos', icon: UserCheck }];
 const ADMIN_ROLES = ['admin', 'superadmin'];
 
 export function AppSidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const t = useTranslations('nav');
   const isAdmin = user !== null && ADMIN_ROLES.includes(user.role);
+
+  // Labels resueltas por hook dentro del componente (design, Decision 5:
+  // t() vive en componentes, nunca en constantes de módulo).
+  const routes: NavRoute[] = [
+    { href: '/', label: t('dashboard'), icon: Gauge },
+    { href: '/explore', label: t('explore'), icon: Compass },
+    { href: '/spectrograms-live', label: t('spectrograms'), icon: RadioTower },
+    { href: '/globe', label: t('globe'), icon: Globe2, tourId: 'nav-globe' },
+    { href: '/analytics', label: t('analytics'), icon: LineChart },
+  ];
+
+  // Rutas de administración: sólo visibles para admin+. El gate real de
+  // permisos vive en el backend (require_min_role); esto es no mostrar
+  // puertas que la API va a cerrar igual. "Accesos" unifica lista de espera
+  // e invitaciones en una sola página con pestañas (pulido post-QA).
+  const adminRoutes: NavRoute[] = [{ href: '/admin/access', label: t('access'), icon: UserCheck }];
 
   return (
     <Sidebar collapsible="icon">
@@ -67,7 +72,7 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Monitoreo</SidebarGroupLabel>
+          <SidebarGroupLabel>{t('groupMonitoring')}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {routes.map((route) => (
@@ -86,10 +91,10 @@ export function AppSidebar() {
 
         {isAdmin && (
           <SidebarGroup>
-            <SidebarGroupLabel>Administración</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('groupAdmin')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {ADMIN_ROUTES.map((route) => (
+                {adminRoutes.map((route) => (
                   <SidebarMenuItem key={route.href}>
                     <SidebarMenuButton
                       asChild

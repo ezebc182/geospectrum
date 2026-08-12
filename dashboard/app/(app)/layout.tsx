@@ -1,5 +1,6 @@
 import { AppSidebar } from '@/components/AppSidebar';
 import { AreaHeader } from '@/components/AreaHeader';
+import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingGate } from '@/components/onboarding/OnboardingGate';
 import { UserMenu } from '@/components/UserMenu';
@@ -22,6 +23,9 @@ export default function AppShellLayout({
             <AreaHeader />
           </div>
           <div className="flex items-center gap-2">
+            {/* Acceso rápido al idioma, visible en toda la app autenticada
+                (spec "Selector de idioma en el header y en Settings"). */}
+            <LocaleSwitcher />
             <NotificationBell />
             <UserMenu />
           </div>

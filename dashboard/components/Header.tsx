@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
+import { useTranslations } from 'next-intl';
 import { Moon, Sun, Activity } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -10,6 +11,7 @@ import { useEffect, useState } from 'react';
 export function Header() {
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
+  const t = useTranslations('nav');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -17,11 +19,11 @@ export function Header() {
   }, []);
 
   const routes = [
-    { href: '/', label: 'Dashboard' },
-    { href: '/explore', label: 'Explorador' },
-    { href: '/spectrograms', label: 'Espectrogramas' },
-    { href: '/live', label: 'En Vivo' },
-    { href: '/analytics', label: 'Análisis' },
+    { href: '/', label: t('dashboard') },
+    { href: '/explore', label: t('explore') },
+    { href: '/spectrograms', label: t('spectrograms') },
+    { href: '/live', label: t('live') },
+    { href: '/analytics', label: t('analytics') },
   ];
 
   return (
@@ -55,7 +57,7 @@ export function Header() {
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            aria-label="Toggle theme"
+            aria-label={t('toggleTheme')}
           >
             {!mounted ? (
               <div className="h-5 w-5" />

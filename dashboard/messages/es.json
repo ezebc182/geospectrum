@@ -1,0 +1,49 @@
+{
+  "common": {
+    "language": "Idioma",
+    "localeNames": {
+      "es": "Español",
+      "en": "English"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "explore": "Explorador",
+    "spectrograms": "Espectrogramas",
+    "globe": "Globo 3D",
+    "live": "En Vivo",
+    "analytics": "Análisis",
+    "access": "Accesos",
+    "groupMonitoring": "Monitoreo",
+    "groupAdmin": "Administración",
+    "toggleTheme": "Cambiar tema",
+    "userMenu": {
+      "accountSettings": "Configuración de cuenta",
+      "lightMode": "Modo claro",
+      "darkMode": "Modo oscuro",
+      "logout": "Cerrar sesión"
+    },
+    "roles": {
+      "superadmin": "Superadmin",
+      "admin": "Admin",
+      "moderador": "Moderador",
+      "viewer": "Viewer"
+    }
+  },
+  "auth": {
+    "badge": "Acceso por invitación",
+    "title": "Entrar a la sala de control",
+    "subtitle": "Ingresá con la cuenta de Google a la que llegó tu invitación.",
+    "googleButton": "Continuar con Google",
+    "noInvitation": "¿Sin invitación? Sumate a la lista de espera en",
+    "oauthErrors": {
+      "cancelled": "Cancelaste el inicio de sesión con Google.",
+      "tokenExchangeFailed": "No se pudo completar el inicio de sesión con Google.",
+      "invalidIdToken": "No se pudo completar el inicio de sesión con Google.",
+      "emailNotVerified": "Tu cuenta de Google no tiene el email verificado. Verificalo con Google e intentá de nuevo.",
+      "noInvitation": "El acceso es por invitación y tu cuenta todavía no tiene una. Sumate a la lista de espera o contactá a un administrador.",
+      "googleRejected": "Google rechazó el inicio de sesión.",
+      "generic": "No se pudo completar el inicio de sesión con Google."
+    }
+  }
+}

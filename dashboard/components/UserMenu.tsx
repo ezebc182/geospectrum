@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
+import { useTranslations } from 'next-intl';
 import { LogOut, Moon, Settings, Sun } from 'lucide-react';
 import {
   DropdownMenu,
@@ -15,16 +16,6 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
 import type { UserPublic, UserRole } from '@/lib/types';
-
-// Etiquetas legibles por rol — cubre el Success Criteria del proposal "La
-// UI refleja el rol del usuario autenticado" (design.md Decision 6, 4
-// roles jerárquicos).
-const ROLE_LABEL: Record<UserRole, string> = {
-  superadmin: 'Superadmin',
-  admin: 'Admin',
-  moderador: 'Moderador',
-  viewer: 'Viewer',
-};
 
 /**
  * Iniciales de fallback para usuarios sin avatar_url (registro por
@@ -76,7 +67,18 @@ export function UserMenu() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const t = useTranslations('nav');
   const [mounted, setMounted] = useState(false);
+
+  // Etiquetas legibles por rol — cubre el Success Criteria del proposal "La
+  // UI refleja el rol del usuario autenticado" (design.md Decision 6, 4
+  // roles jerárquicos). Resueltas por hook, dentro del componente.
+  const roleLabel: Record<UserRole, string> = {
+    superadmin: t('roles.superadmin'),
+    admin: t('roles.admin'),
+    moderador: t('roles.moderador'),
+    viewer: t('roles.viewer'),
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -103,7 +105,7 @@ export function UserMenu() {
             <span className="truncate text-xs font-medium text-foreground">
               {user.name ?? user.email}
             </span>
-            <span className="text-xs text-muted-foreground">{ROLE_LABEL[user.role]}</span>
+            <span className="text-xs text-muted-foreground">{roleLabel[user.role]}</span>
           </div>
         </button>
       </DropdownMenuTrigger>
@@ -121,7 +123,7 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => router.push('/settings')}>
           <Settings />
-          <span>Configuración de cuenta</span>
+          <span>{t('userMenu.accountSettings')}</span>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           {!mounted ? (
@@ -131,12 +133,12 @@ export function UserMenu() {
           ) : (
             <Moon />
           )}
-          <span>{mounted && theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</span>
+          <span>{mounted && theme === 'dark' ? t('userMenu.lightMode') : t('userMenu.darkMode')}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout} variant="destructive">
           <LogOut />
-          <span>Cerrar sesión</span>
+          <span>{t('userMenu.logout')}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

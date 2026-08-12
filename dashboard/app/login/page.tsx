@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Activity, LogIn } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -31,28 +32,32 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
  * `google_oauth_invalid_id_token`, `google_oauth_email_not_verified`,
  * `google_no_invitation` (cierre invitation-only), y cualquier
  * `google_oauth_<valor-de-error-de-google>` (ej. `access_denied`) que no
- * matchee las claves conocidas cae en el mensaje genérico de abajo.
+ * matchee las claves conocidas cae en el mensaje genérico. Los mensajes
+ * salen del diccionario (ns `auth.oauthErrors`) en el locale activo —
+ * incluido el rechazo por falta de invitación (Requirement MODIFIED
+ * "Login sin alta abierta y con error claro de invitación").
  */
-const GOOGLE_OAUTH_ERROR_MESSAGES: Record<string, string> = {
-  google_oauth_cancelled: 'Cancelaste el inicio de sesión con Google.',
-  google_oauth_token_exchange_failed: 'No se pudo completar el inicio de sesión con Google.',
-  google_oauth_invalid_id_token: 'No se pudo completar el inicio de sesión con Google.',
-  google_oauth_email_not_verified:
-    'Tu cuenta de Google no tiene el email verificado. Verificalo con Google e intentá de nuevo.',
-  google_no_invitation:
-    'El acceso es por invitación y tu cuenta todavía no tiene una. Sumate a la lista de espera o contactá a un administrador.',
-};
+type AuthTranslator = ReturnType<typeof useTranslations<'auth'>>;
 
-function resolveGoogleOAuthError(code: string): string {
-  if (code in GOOGLE_OAUTH_ERROR_MESSAGES) {
-    return GOOGLE_OAUTH_ERROR_MESSAGES[code];
+function resolveGoogleOAuthError(code: string, t: AuthTranslator): string {
+  switch (code) {
+    case 'google_oauth_cancelled':
+      return t('oauthErrors.cancelled');
+    case 'google_oauth_token_exchange_failed':
+      return t('oauthErrors.tokenExchangeFailed');
+    case 'google_oauth_invalid_id_token':
+      return t('oauthErrors.invalidIdToken');
+    case 'google_oauth_email_not_verified':
+      return t('oauthErrors.emailNotVerified');
+    case 'google_no_invitation':
+      return t('oauthErrors.noInvitation');
+    default:
+      // Cualquier otro `google_oauth_<algo>` no mapeado explícitamente
+      // (ej. `google_oauth_access_denied`) es un rechazo por parte de Google.
+      return code.startsWith('google_oauth_')
+        ? t('oauthErrors.googleRejected')
+        : t('oauthErrors.generic');
   }
-  // Cualquier otro `google_oauth_<algo>` no mapeado explícitamente
-  // (ej. `google_oauth_access_denied`) es un rechazo por parte de Google.
-  if (code.startsWith('google_oauth_')) {
-    return 'Google rechazó el inicio de sesión.';
-  }
-  return 'No se pudo completar el inicio de sesión con Google.';
 }
 
 /** Pulso de epicentro decorativo. Tamaños/posiciones fijos: es escenografía. */
@@ -75,14 +80,20 @@ export default function LoginPage() {
 
 function LoginPageContent() {
   const searchParams = useSearchParams();
-  const [error, setError] = React.useState<string | null>(null);
+  const t = useTranslations('auth');
+  // Se guarda el CÓDIGO y se resuelve el mensaje en el render: así un
+  // cambio de idioma en caliente re-traduce el error visible sin re-leer
+  // los search params.
+  const [errorCode, setErrorCode] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const oauthError = searchParams.get('error');
     if (oauthError) {
-      setError(resolveGoogleOAuthError(oauthError));
+      setErrorCode(oauthError);
     }
   }, [searchParams]);
+
+  const error = errorCode !== null ? resolveGoogleOAuthError(errorCode, t) : null;
 
   function handleGoogleLogin() {
     // Redirect completo de navegador (NO fetch/XHR): el flujo de Google es
@@ -117,13 +128,13 @@ function LoginPageContent() {
       <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-16">
         <div className="w-full max-w-sm rounded-2xl border border-border bg-card/70 p-8 backdrop-blur">
           <p className="font-mono text-xs uppercase tracking-widest text-primary">
-            Acceso por invitación
+            {t('badge')}
           </p>
           <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight">
-            Entrar a la sala de control
+            {t('title')}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Ingresá con la cuenta de Google a la que llegó tu invitación.
+            {t('subtitle')}
           </p>
 
           {error && (
@@ -137,11 +148,11 @@ function LoginPageContent() {
 
           <Button type="button" className="mt-6 min-h-12 w-full text-base" onClick={handleGoogleLogin}>
             <LogIn className="mr-2 h-4 w-4" aria-hidden="true" />
-            Continuar con Google
+            {t('googleButton')}
           </Button>
 
           <p className="mt-6 border-t border-border pt-4 text-center text-xs text-muted-foreground">
-            ¿Sin invitación? Sumate a la lista de espera en{' '}
+            {t('noInvitation')}{' '}
             <Link href="/" className="text-primary underline-offset-2 hover:underline">
               geospectrum.org
             </Link>
