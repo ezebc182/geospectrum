@@ -1,5 +1,6 @@
 /**
- * Tests de la página pública de aceptación `/invite/[token]` (tarea 8.4).
+ * Tests de la página pública de aceptación `/invite/[token]` (tarea 8.4 +
+ * pulido post-QA: i18n ES/EN y UX de password).
  *
  * Se mockea el módulo `@/lib/auth` (la capa fetch), NO fetch global: es el
  * contrato que la página realmente consume, y `ApiStatusError` se conserva
@@ -8,6 +9,10 @@
  *
  * La página usa `React.use(params)` (Next 15: params es Promise), así que se
  * renderiza dentro de un `<Suspense>` y se asserta con `findBy*` (async).
+ *
+ * OJO: el toggle de idioma (ES/EN) está SIEMPRE presente — incluso en los
+ * estados de error — así que "no hay formulario" se asserta contra los
+ * botones del flujo de alta, no contra "no hay ningún botón".
  */
 
 import * as React from 'react';
@@ -53,6 +58,17 @@ async function renderPage(token = 'tok_ABC123') {
   });
 }
 
+/** Llena password + confirmación (el submit está deshabilitado hasta que
+ * coincidan) — helper para los tests del flujo de alta. */
+async function fillPasswords(password: string, confirm = password) {
+  fireEvent.change(await screen.findByLabelText(/elegí una contraseña/i), {
+    target: { value: password },
+  });
+  fireEvent.change(screen.getByLabelText(/confirmar contraseña/i), {
+    target: { value: confirm },
+  });
+}
+
 beforeEach(() => {
   mockedValidate.mockReset();
 });
@@ -72,7 +88,8 @@ describe('InvitePage — token válido (200)', () => {
     expect((await screen.findAllByText('invitada@example.com')).length).toBeGreaterThan(0);
     expect(screen.getByText('Moderador')).toBeDefined();
     // Read-only de verdad: sin selector de rol ni ningún control para
-    // cambiarlo (el rol viene de la invitación, server-side).
+    // cambiarlo (el rol viene de la invitación, server-side). El único
+    // select-like permitido es el toggle de idioma, que son botones.
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(document.querySelector('select')).toBeNull();
   });
@@ -83,6 +100,7 @@ describe('InvitePage — token válido (200)', () => {
     expect(await screen.findByRole('button', { name: /crear cuenta y entrar/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /continuar con google/i })).toBeDefined();
     expect(screen.getByLabelText(/elegí una contraseña/i)).toBeDefined();
+    expect(screen.getByLabelText(/confirmar contraseña/i)).toBeDefined();
   });
 
   it('valida con el token de la URL (y la validación no consume: solo GET validate)', async () => {
@@ -90,6 +108,82 @@ describe('InvitePage — token válido (200)', () => {
 
     await screen.findAllByText('invitada@example.com');
     expect(mockedValidate).toHaveBeenCalledWith('tok_de_la_url');
+  });
+
+  it('tiene el selector de idioma ES/EN visible', async () => {
+    await renderPage();
+
+    await screen.findAllByText('invitada@example.com');
+    const switcher = screen.getByRole('group', { name: /idioma/i });
+    expect(switcher).toBeDefined();
+    expect(screen.getByRole('button', { name: 'ES' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'EN' })).toBeDefined();
+    // La invitación es locale 'es' → ES arranca activo.
+    expect(screen.getByRole('button', { name: 'ES' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('cambiar a EN traduce el copy en caliente', async () => {
+    await renderPage();
+
+    await screen.findAllByText('invitada@example.com');
+    fireEvent.click(screen.getByRole('button', { name: 'EN' }));
+
+    expect(screen.getByText("You've been invited to GeoSpectrum")).toBeDefined();
+    expect(screen.getByRole('button', { name: /create account and sign in/i })).toBeDefined();
+    expect(screen.getByLabelText(/choose a password/i)).toBeDefined();
+  });
+
+  it('deshabilita el submit y muestra error inline si la confirmación no coincide', async () => {
+    await renderPage();
+
+    await fillPasswords('password-segura-123', 'otra-cosa-distinta');
+
+    const submit = screen.getByRole('button', { name: /crear cuenta y entrar/i });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/las contraseñas no coinciden/i)).toBeDefined();
+
+    // Al igualar la confirmación, el error desaparece y el submit se habilita.
+    fireEvent.change(screen.getByLabelText(/confirmar contraseña/i), {
+      target: { value: 'password-segura-123' },
+    });
+    expect(screen.queryByText(/las contraseñas no coinciden/i)).toBeNull();
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('el ojito alterna la visibilidad de las contraseñas', async () => {
+    await renderPage();
+
+    const passwordInput = await screen.findByLabelText(/elegí una contraseña/i);
+    expect(passwordInput.getAttribute('type')).toBe('password');
+
+    fireEvent.click(screen.getAllByRole('button', { name: /mostrar contraseña/i })[0]);
+    expect(passwordInput.getAttribute('type')).toBe('text');
+    expect(screen.getByLabelText(/confirmar contraseña/i).getAttribute('type')).toBe('text');
+  });
+
+  it('muestra el medidor de fuerza al tipear', async () => {
+    await renderPage();
+
+    const passwordInput = await screen.findByLabelText(/elegí una contraseña/i);
+    fireEvent.change(passwordInput, { target: { value: 'abc' } });
+    expect(screen.getByText(/fuerza/i).textContent).toMatch(/muy débil/i);
+
+    fireEvent.change(passwordInput, { target: { value: 'Password-Larga-123!' } });
+    expect(screen.getByText(/fuerza/i).textContent).toMatch(/fuerte/i);
+  });
+});
+
+describe('InvitePage — invitación con locale en', () => {
+  it('arranca con el copy en inglés', async () => {
+    mockedValidate.mockResolvedValue({ ...VALID_INVITATION, locale: 'en' });
+
+    await renderPage();
+
+    expect(await screen.findByText("You've been invited to GeoSpectrum")).toBeDefined();
+    expect(screen.getByRole('button', { name: /continue with google/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'EN' }).getAttribute('aria-pressed')).toBe('true');
+    // El rol también sale traducido.
+    expect(screen.getByText('Moderator')).toBeDefined();
   });
 });
 
@@ -100,10 +194,20 @@ describe('InvitePage — token desconocido (404)', () => {
     await renderPage();
 
     expect(await screen.findByText('Invitación no válida')).toBeDefined();
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: /crear cuenta/i })).toBeNull();
     expect(screen.queryByLabelText(/contraseña/i)).toBeNull();
     expect(document.querySelector('form')).toBeNull();
     expect(screen.queryByText(/google/i)).toBeNull();
+  });
+
+  it('el toggle de idioma sigue disponible y traduce el error', async () => {
+    mockedValidate.mockRejectedValue(new ApiStatusError(404, 'unknown invitation'));
+
+    await renderPage();
+
+    await screen.findByText('Invitación no válida');
+    fireEvent.click(screen.getByRole('button', { name: 'EN' }));
+    expect(screen.getByText('Invalid invitation')).toBeDefined();
   });
 });
 
@@ -114,7 +218,7 @@ describe('InvitePage — token conocido pero no pendiente (410)', () => {
     await renderPage();
 
     expect(await screen.findByText('Invitación vencida o revocada')).toBeDefined();
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: /crear cuenta/i })).toBeNull();
     expect(screen.queryByLabelText(/contraseña/i)).toBeNull();
     expect(document.querySelector('form')).toBeNull();
     expect(screen.queryByText(/google/i)).toBeNull();
@@ -141,9 +245,8 @@ describe('InvitePage — carrera: el token muere entre validate y register', () 
     );
 
     await renderPage();
-    const passwordInput = await screen.findByLabelText(/elegí una contraseña/i);
+    await fillPasswords('password-segura-123');
 
-    fireEvent.change(passwordInput, { target: { value: 'password-segura-123' } });
     fireEvent.click(screen.getByRole('button', { name: /crear cuenta y entrar/i }));
 
     await waitFor(() => {

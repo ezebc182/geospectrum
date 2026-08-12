@@ -82,10 +82,9 @@ export function NotificationBell() {
       <DropdownMenuContent
         align="end"
         collisionPadding={12}
-        // z-[1000] del mapa Leaflet (controles de capas y leyenda) tapaba
-        // este dropdown pese a estar en un Portal: el z-50 base del
-        // componente compartido no alcanza a competir con eso.
-        className="z-[1100] max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[22rem] overflow-y-auto"
+        // El z-[1100] que antes vivía acá como parche puntual hoy es el
+        // default de DropdownMenuContent (fix sistémico vs mapa Leaflet).
+        className="max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[22rem] overflow-y-auto"
       >
         <DropdownMenuLabel className="flex items-center justify-between text-xs uppercase tracking-wider text-muted-foreground">
           <span>Alertas activas</span>
