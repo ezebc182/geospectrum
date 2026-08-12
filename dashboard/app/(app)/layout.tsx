@@ -1,6 +1,7 @@
 import { AppSidebar } from '@/components/AppSidebar';
 import { AreaHeader } from '@/components/AreaHeader';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
+import { LocaleSync } from '@/components/LocaleSync';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingGate } from '@/components/onboarding/OnboardingGate';
 import { UserMenu } from '@/components/UserMenu';
@@ -14,6 +15,9 @@ export default function AppShellLayout({
 }) {
   return (
     <SidebarProvider>
+      {/* Reconciliación users.locale → cookie en dispositivos sin cookie
+          (Decision 3): corre una vez al hidratar la sesión, no renderiza. */}
+      <LocaleSync />
       <AppSidebar />
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">

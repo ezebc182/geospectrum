@@ -253,5 +253,153 @@
       "dragToReorder": "Arrastrar para reordenar",
       "removeCity": "Eliminar ciudad"
     }
+  },
+  "settings": {
+    "pageTitle": "Configuración de cuenta",
+    "profileLoadError": "No se pudo cargar el perfil.",
+    "profile": {
+      "title": "Perfil",
+      "description": "Datos personales opcionales. Ninguno es obligatorio para usar la plataforma.",
+      "googleNameNote": "Nombre de tu cuenta de Google (solo lectura, gestionado por Google):",
+      "loading": "Cargando perfil…",
+      "fullName": "Nombre completo",
+      "fullNamePlaceholder": "Tu nombre completo",
+      "address": "Domicilio",
+      "addressPlaceholder": "Av. Siempre Viva 742",
+      "phone": "Teléfono",
+      "phonePlaceholder": "+54 9 11 5555-5555",
+      "language": "Idioma",
+      "languageHint": "Se aplica ya mismo en este navegador y se guarda en tu cuenta para tus otros dispositivos.",
+      "saveError": "No se pudo guardar el perfil. Intentá de nuevo.",
+      "saved": "Perfil actualizado.",
+      "saving": "Guardando…",
+      "save": "Guardar cambios"
+    },
+    "twoFactor": {
+      "title": "Autenticación en dos pasos (2FA)",
+      "description": "Agregá una capa extra de seguridad con una app de autenticación (Google Authenticator, Authy, etc.).",
+      "enabled": "2FA está activado en tu cuenta.",
+      "disabling": "Desactivando…",
+      "disable": "Desactivar 2FA",
+      "notEnabled": "2FA no está activado en tu cuenta. Solo disponible para cuentas con contraseña propia (no cuentas 100% Google).",
+      "starting": "Iniciando…",
+      "enable": "Activar 2FA",
+      "scanQr": "Escaneá este código QR con tu app de autenticación:",
+      "cantScan": "¿No podés escanear el QR?",
+      "verificationCode": "Código de verificación",
+      "codePlaceholder": "123456",
+      "verifying": "Verificando…",
+      "verifyAndEnable": "Verificar y activar",
+      "cancel": "Cancelar",
+      "enabledSuccess": "2FA activado exitosamente.",
+      "backupCodesWarning": "Guardá estos backup codes ahora: no se van a volver a mostrar. Cada uno solo se puede usar una vez, como alternativa al código de tu app si la perdés.",
+      "savedThem": "Ya los guardé",
+      "setupError": "No se pudo iniciar el setup de 2FA.",
+      "invalidCode": "Código inválido. Verificá la hora de tu dispositivo e intentá de nuevo.",
+      "disableError": "No se pudo deshabilitar 2FA. Intentá de nuevo."
+    },
+    "export": {
+      "title": "Exportar mis datos",
+      "description": "Descargá una copia de tus datos de cuenta en formato JSON.",
+      "error": "No se pudieron exportar los datos. Intentá de nuevo.",
+      "exporting": "Exportando…",
+      "download": "Descargar mis datos",
+      "fileName": "geospectrum-datos-{date}.json"
+    },
+    "danger": {
+      "title": "Zona de riesgo",
+      "description": "Eliminar tu cuenta borra tus datos de forma permanente. Esta acción no se puede deshacer.",
+      "deleteButton": "Eliminar mi cuenta",
+      "dialogTitle": "¿Eliminar tu cuenta definitivamente?",
+      "dialogDescription": "Esta acción borra tu cuenta y todos tus datos de forma permanente. No hay vuelta atrás. Escribí <strong>{word}</strong> para confirmar.",
+      "confirmWord": "ELIMINAR",
+      "cancel": "Cancelar",
+      "deleting": "Eliminando…",
+      "confirmDelete": "Eliminar mi cuenta",
+      "deleteError": "No se pudo eliminar la cuenta. Intentá de nuevo."
+    }
+  },
+  "admin": {
+    "access": {
+      "title": "Accesos",
+      "description": "El acceso a la plataforma es solo por invitación: gestioná la lista de espera de la beta y las invitaciones desde un solo lugar.",
+      "forbidden": "Esta sección es para administradores. Tu rol actual no tiene permisos para gestionar los accesos a la plataforma.",
+      "tablistAria": "Secciones de accesos",
+      "tabs": {
+        "waitlist": "Lista de espera",
+        "invitations": "Invitaciones"
+      }
+    },
+    "roles": {
+      "superadmin": "Superadmin",
+      "admin": "Administrador",
+      "moderador": "Moderador",
+      "viewer": "Observador"
+    },
+    "waitlist": {
+      "title": "Lista de espera",
+      "pendingCount": "{count, plural, one {# pendiente} other {# pendientes}}",
+      "description": "Interesados anotados desde la landing — pendientes primero, más recientes arriba. Aprobar crea la invitación y dispara el email de bienvenida.",
+      "approveError": "No se pudo aprobar a {email}. Probá de nuevo en unos segundos.",
+      "loadError": "No se pudo cargar la lista. Verificá tu sesión e intentá de nuevo.",
+      "empty": "Todavía no hay interesados. Cuando alguien se anote en la landing, aparece acá (y te llega un aviso por email).",
+      "approved": "Aprobado",
+      "pending": "Pendiente",
+      "approving": "Aprobando…",
+      "approve": "Aprobar"
+    },
+    "invitations": {
+      "newTitle": "Nueva invitación",
+      "newDescription": "El rol se hereda de la invitación — solo podés otorgar roles hasta tu propio nivel.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "persona@ejemplo.com",
+      "roleLabel": "Rol",
+      "emailLocaleLabel": "Idioma del email",
+      "inviting": "Invitando…",
+      "invite": "Invitar",
+      "steps": {
+        "created": "Invitación creada",
+        "createdDetail": "{email} como {role}.",
+        "notCreated": "Invitación no creada",
+        "emailSent": "Email enviado",
+        "emailSentDetail": "El link viaja a {email}.",
+        "emailNotSent": "Email NO enviado",
+        "emailNotSentDetail": "La invitación quedó creada y pendiente — usá \"Reenviar\" en la tabla para reintentar.",
+        "regenerated": "Invitación regenerada",
+        "regeneratedDetail": "Link nuevo para {email} — el anterior quedó invalidado.",
+        "resendFailed": "Reenvío fallido",
+        "resendFailedDetail": "No se pudo regenerar la invitación de {email}.",
+        "revokeFailed": "Revocación fallida",
+        "revokeFailedDetail": "No se pudo revocar la invitación de {email}."
+      },
+      "errors": {
+        "roleTooHigh": "No podés invitar a un rol superior al tuyo.",
+        "duplicatePending": "Ya existe una invitación pendiente para ese email — usá \"Reenviar\" desde la tabla.",
+        "alreadyAccount": "Ese email ya tiene una cuenta en la plataforma.",
+        "createGeneric": "No se pudo crear la invitación. Intentá de nuevo en unos segundos."
+      },
+      "listTitle": "Invitaciones enviadas",
+      "listDescription": "El estado se deriva en el backend; \"email sin confirmar\" significa que el envío nunca se confirmó — reenviá para generar un link nuevo.",
+      "refreshAria": "Actualizar listado",
+      "sessionLost": "Tu sesión cambió o expiró — volvé a iniciar sesión.",
+      "loadError": "No se pudo cargar el listado. Verificá tu sesión e intentá de nuevo.",
+      "empty": "Todavía no hay invitaciones. Creá la primera con el formulario de arriba.",
+      "status": {
+        "pending": "Pendiente",
+        "accepted": "Aceptada",
+        "revoked": "Revocada",
+        "expired": "Expirada"
+      },
+      "createdTooltip": "Creada {date}",
+      "expires": "vence {date}",
+      "emailUnconfirmed": "email sin confirmar",
+      "processing": "Procesando…",
+      "resend": "Reenviar",
+      "revoke": "Revocar",
+      "revokeDialogTitle": "¿Revocar la invitación?",
+      "revokeDialogDescription": "El link enviado a <mono>{email}</mono> deja de funcionar de inmediato. Esta acción no se puede deshacer — si te arrepentís vas a tener que crear una invitación nueva.",
+      "revokeCancel": "Cancelar",
+      "revokeConfirm": "Revocar"
+    }
   }
 }

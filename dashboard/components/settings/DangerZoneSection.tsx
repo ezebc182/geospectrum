@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -20,23 +21,34 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-const CONFIRM_WORD = 'ELIMINAR';
+/**
+ * Error del borrado: se guarda el HECHO de la falla (y el mensaje del
+ * backend si vino), no el texto resuelto — el fallback se traduce al render
+ * para que un cambio de idioma en caliente lo re-traduzca.
+ */
+type DeleteError = { message?: string };
 
 /**
  * Sección "Zona de riesgo" de /settings. El borrado es hard-delete e
  * irreversible (ver proposal.md Risk "Hard-delete irreversible") — la
- * mitigación de UX es requerir que el usuario escriba "ELIMINAR" antes de
- * habilitar el botón de confirmación final.
+ * mitigación de UX es requerir que el usuario escriba la palabra de
+ * confirmación (ELIMINAR / DELETE, según el idioma activo, del diccionario:
+ * la constante de módulo se mudó a t() por Decision 5) antes de habilitar
+ * el botón final. La comparación es case-insensitive contra la palabra del
+ * idioma ACTIVO — si el usuario cambia de idioma con el dialog abierto, la
+ * palabra pedida en pantalla y la exigida son siempre la misma.
  */
 export function DangerZoneSection() {
+  const t = useTranslations('settings.danger');
   const router = useRouter();
   const { deleteAccount } = useAuth();
   const [confirmText, setConfirmText] = React.useState('');
   const [deleting, setDeleting] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<DeleteError | null>(null);
   const [open, setOpen] = React.useState(false);
 
-  const canConfirm = confirmText.trim().toUpperCase() === CONFIRM_WORD;
+  const confirmWord = t('confirmWord');
+  const canConfirm = confirmText.trim().toUpperCase() === confirmWord.toUpperCase();
 
   async function handleDelete() {
     setError(null);
@@ -45,11 +57,7 @@ export function DangerZoneSection() {
       await deleteAccount();
       router.push('/login');
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo eliminar la cuenta. Intentá de nuevo.'
-      );
+      setError({ message: err instanceof Error ? err.message : undefined });
       setDeleting(false);
     }
   }
@@ -65,27 +73,25 @@ export function DangerZoneSection() {
   return (
     <Card className="ring-destructive/30">
       <CardHeader>
-        <CardTitle className="text-destructive">Zona de riesgo</CardTitle>
-        <CardDescription>
-          Eliminar tu cuenta borra tus datos de forma permanente. Esta acción no se
-          puede deshacer.
-        </CardDescription>
+        <CardTitle className="text-destructive">{t('title')}</CardTitle>
+        <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
       <CardContent>
         <AlertDialog open={open} onOpenChange={handleOpenChange}>
           <AlertDialogTrigger asChild>
             <Button type="button" variant="destructive">
               <Trash2 />
-              Eliminar mi cuenta
+              {t('deleteButton')}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar tu cuenta definitivamente?</AlertDialogTitle>
+              <AlertDialogTitle>{t('dialogTitle')}</AlertDialogTitle>
               <AlertDialogDescription>
-                Esta acción borra tu cuenta y todos tus datos de forma permanente. No
-                hay vuelta atrás. Escribí <strong>{CONFIRM_WORD}</strong> para
-                confirmar.
+                {t.rich('dialogDescription', {
+                  word: confirmWord,
+                  strong: (chunks) => <strong>{chunks}</strong>,
+                })}
               </AlertDialogDescription>
             </AlertDialogHeader>
 
@@ -93,19 +99,19 @@ export function DangerZoneSection() {
               <Input
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
-                placeholder={CONFIRM_WORD}
+                placeholder={confirmWord}
                 disabled={deleting}
                 autoFocus
               />
               {error && (
                 <p role="alert" className="text-sm text-destructive">
-                  {error}
+                  {error.message ?? t('deleteError')}
                 </p>
               )}
             </div>
 
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogCancel disabled={deleting}>{t('cancel')}</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 disabled={!canConfirm || deleting}
@@ -114,7 +120,7 @@ export function DangerZoneSection() {
                   void handleDelete();
                 }}
               >
-                {deleting ? 'Eliminando…' : 'Eliminar mi cuenta'}
+                {deleting ? t('deleting') : t('confirmDelete')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

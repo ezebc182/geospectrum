@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Settings } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { getProfile } from '@/lib/auth';
 import type { UserProfile } from '@/lib/types';
@@ -26,9 +27,12 @@ import { DangerZoneSection } from '@/components/settings/DangerZoneSection';
  * acá).
  */
 export default function SettingsPage() {
+  const t = useTranslations('settings');
   const [profile, setProfile] = React.useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = React.useState(true);
-  const [profileError, setProfileError] = React.useState<string | null>(null);
+  // Se guarda el HECHO de la falla, no el mensaje: el texto se resuelve al
+  // render para que un cambio de idioma en caliente lo re-traduzca.
+  const [profileFailed, setProfileFailed] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -38,7 +42,7 @@ export default function SettingsPage() {
         if (!cancelled) setProfile(data);
       })
       .catch(() => {
-        if (!cancelled) setProfileError('No se pudo cargar el perfil.');
+        if (!cancelled) setProfileFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoadingProfile(false);
@@ -53,13 +57,13 @@ export default function SettingsPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <div className="flex items-center gap-3">
         <Settings className="h-8 w-8 text-seismic-600" />
-        <h1 className="text-2xl font-bold text-foreground">Configuración de cuenta</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('pageTitle')}</h1>
       </div>
 
       <ProfileSection
         profile={profile}
         loading={loadingProfile}
-        error={profileError}
+        error={profileFailed ? t('profileLoadError') : null}
         onProfileUpdate={setProfile}
       />
 

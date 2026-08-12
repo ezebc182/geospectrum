@@ -17,6 +17,7 @@
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { MailPlus, UserCheck } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
 import { BetaSignupsPanel } from '@/components/admin/BetaSignupsPanel';
@@ -28,12 +29,15 @@ const ADMIN_ROLES = ['admin', 'superadmin'];
 
 type AccessTab = 'waitlist' | 'invitations';
 
-const TABS: { id: AccessTab; label: string; icon: typeof UserCheck }[] = [
-  { id: 'waitlist', label: 'Lista de espera', icon: UserCheck },
-  { id: 'invitations', label: 'Invitaciones', icon: MailPlus },
+/** Labels fuera de la constante de módulo (Decision 5): el componente
+ * resuelve t(`tabs.${id}`) con el idioma activo. */
+const TABS: { id: AccessTab; icon: typeof UserCheck }[] = [
+  { id: 'waitlist', icon: UserCheck },
+  { id: 'invitations', icon: MailPlus },
 ];
 
 function AccessTabs() {
+  const t = useTranslations('admin.access');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -49,8 +53,8 @@ function AccessTabs() {
 
   return (
     <>
-      <div role="tablist" aria-label="Secciones de accesos" className="flex gap-1 border-b border-border">
-        {TABS.map(({ id, label, icon: Icon }) => (
+      <div role="tablist" aria-label={t('tablistAria')} className="flex gap-1 border-b border-border">
+        {TABS.map(({ id, icon: Icon }) => (
           <button
             key={id}
             role="tab"
@@ -64,7 +68,7 @@ function AccessTabs() {
             )}
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
-            {label}
+            {t(`tabs.${id}`)}
           </button>
         ))}
       </div>
@@ -77,6 +81,7 @@ function AccessTabs() {
 }
 
 export default function AccessAdminPage() {
+  const t = useTranslations('admin.access');
   const { user } = useAuth();
 
   if (user && !ADMIN_ROLES.includes(user.role)) {
@@ -84,11 +89,8 @@ export default function AccessAdminPage() {
       <div className="p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Accesos</CardTitle>
-            <CardDescription>
-              Esta sección es para administradores. Tu rol actual no tiene permisos para gestionar
-              los accesos a la plataforma.
-            </CardDescription>
+            <CardTitle>{t('title')}</CardTitle>
+            <CardDescription>{t('forbidden')}</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -98,11 +100,8 @@ export default function AccessAdminPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="font-heading text-2xl font-bold tracking-tight">Accesos</h1>
-        <p className="text-sm text-muted-foreground">
-          El acceso a la plataforma es solo por invitación: gestioná la lista de espera de la beta
-          y las invitaciones desde un solo lugar.
-        </p>
+        <h1 className="font-heading text-2xl font-bold tracking-tight">{t('title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('description')}</p>
       </div>
 
       {/* useSearchParams exige un boundary de Suspense en el App Router. */}

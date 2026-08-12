@@ -41,6 +41,20 @@ export function toAppLocale(bcp47: string): AppLocale {
 }
 
 /**
+ * Lee la cookie de locale desde el cliente (client-only). Devuelve null si
+ * no existe o su valor no es un locale soportado — para LocaleSync, "cookie
+ * inválida" equivale a "sin cookie" (misma tolerancia que la cascada
+ * server-side de i18n/request.ts).
+ */
+export function getLocaleCookie(): AppLocale | null {
+  const match = document.cookie
+    .split('; ')
+    .find((entry) => entry.startsWith(`${LOCALE_COOKIE}=`));
+  const value = match?.slice(LOCALE_COOKIE.length + 1);
+  return isAppLocale(value) ? value : null;
+}
+
+/**
  * Escribe la cookie de locale desde el cliente. NO httpOnly a propósito:
  * la setea el navegador y es una preferencia de UI, no un secreto (a
  * diferencia de la cookie `session`, httpOnly en el backend).

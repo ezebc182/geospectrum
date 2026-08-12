@@ -14,6 +14,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { CheckCircle2, Clock, Mail, UserCheck } from 'lucide-react';
+import { useFormatter, useTranslations } from 'next-intl';
 
 import { approveBetaSignup, getBetaSignups } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -22,16 +23,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import type { BetaSignup } from '@/lib/types';
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+/** Opciones de fecha del listado (día + mes corto + hora): antes un
+ * toLocaleDateString('es-AR') fijo, ahora el locale activo vía useFormatter
+ * (Decision 6). */
+const DATE_OPTIONS = {
+  day: '2-digit',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+} as const;
 
 export function BetaSignupsPanel() {
+  const t = useTranslations('admin.waitlist');
+  const format = useFormatter();
   const { data, error, isLoading, mutate } = useSWR<BetaSignup[]>(
     'beta-signups',
     getBetaSignups,
@@ -39,10 +43,12 @@ export function BetaSignupsPanel() {
 
   // Id en vuelo: deshabilita SOLO el botón clickeado, no toda la tabla.
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Se guarda el email de la falla, no el mensaje resuelto: el texto se
+  // traduce al render, así el cambio de idioma re-traduce el error visible.
+  const [approveFailedEmail, setApproveFailedEmail] = useState<string | null>(null);
 
   async function handleApprove(signup: BetaSignup) {
-    setActionError(null);
+    setApproveFailedEmail(null);
     setApprovingId(signup.id);
     try {
       await approveBetaSignup(signup.id);
@@ -50,9 +56,7 @@ export function BetaSignupsPanel() {
       // que pueda mentir si el POST falló a mitad de camino.
       await mutate();
     } catch {
-      setActionError(
-        `No se pudo aprobar a ${signup.email}. Probá de nuevo en unos segundos.`,
-      );
+      setApproveFailedEmail(signup.email);
     } finally {
       setApprovingId(null);
     }
@@ -65,22 +69,19 @@ export function BetaSignupsPanel() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <UserCheck className="h-4 w-4 text-primary" aria-hidden="true" />
-          Lista de espera
+          {t('title')}
           {data && (
             <Badge variant="secondary" className="ml-2 font-mono">
-              {pendientes} pendiente{pendientes === 1 ? '' : 's'}
+              {t('pendingCount', { count: pendientes })}
             </Badge>
           )}
         </CardTitle>
-        <CardDescription>
-          Interesados anotados desde la landing — pendientes primero, más recientes arriba.
-          Aprobar crea la invitación y dispara el email de bienvenida.
-        </CardDescription>
+        <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
       <CardContent>
-        {actionError && (
+        {approveFailedEmail && (
           <p role="alert" className="mb-4 text-sm text-destructive">
-            {actionError}
+            {t('approveError', { email: approveFailedEmail })}
           </p>
         )}
 
@@ -92,19 +93,12 @@ export function BetaSignupsPanel() {
           </div>
         )}
 
-        {error && (
-          <p className="text-sm text-destructive">
-            No se pudo cargar la lista. Verificá tu sesión e intentá de nuevo.
-          </p>
-        )}
+        {error && <p className="text-sm text-destructive">{t('loadError')}</p>}
 
         {data && data.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-10 text-center">
             <Mail className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay interesados. Cuando alguien se anote en la
-              landing, aparece acá (y te llega un aviso por email).
-            </p>
+            <p className="text-sm text-muted-foreground">{t('empty')}</p>
           </div>
         )}
 
@@ -121,7 +115,7 @@ export function BetaSignupsPanel() {
                     {signup.email}
                   </span>
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {formatDate(signup.created_at)}
+                    {format.dateTime(new Date(signup.created_at), DATE_OPTIONS)}
                   </span>
                   {aprobado ? (
                     <Badge
@@ -129,13 +123,13 @@ export function BetaSignupsPanel() {
                       className="gap-1 border-primary/40 text-primary"
                     >
                       <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                      Aprobado
+                      {t('approved')}
                     </Badge>
                   ) : (
                     <>
                       <Badge variant="outline" className="gap-1 text-muted-foreground">
                         <Clock className="h-3 w-3" aria-hidden="true" />
-                        Pendiente
+                        {t('pending')}
                       </Badge>
                       <Button
                         size="sm"
@@ -143,7 +137,7 @@ export function BetaSignupsPanel() {
                         disabled={approvingId === signup.id}
                         onClick={() => handleApprove(signup)}
                       >
-                        {approvingId === signup.id ? 'Aprobando…' : 'Aprobar'}
+                        {approvingId === signup.id ? t('approving') : t('approve')}
                       </Button>
                     </>
                   )}

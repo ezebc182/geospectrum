@@ -253,5 +253,153 @@
       "dragToReorder": "Drag to reorder",
       "removeCity": "Remove city"
     }
+  },
+  "settings": {
+    "pageTitle": "Account settings",
+    "profileLoadError": "Could not load the profile.",
+    "profile": {
+      "title": "Profile",
+      "description": "Optional personal details. None of them are required to use the platform.",
+      "googleNameNote": "Your Google account name (read-only, managed by Google):",
+      "loading": "Loading profile…",
+      "fullName": "Full name",
+      "fullNamePlaceholder": "Your full name",
+      "address": "Address",
+      "addressPlaceholder": "742 Evergreen Terrace",
+      "phone": "Phone",
+      "phonePlaceholder": "+1 555 555 5555",
+      "language": "Language",
+      "languageHint": "Applies right away in this browser and is saved to your account for your other devices.",
+      "saveError": "Could not save the profile. Try again.",
+      "saved": "Profile updated.",
+      "saving": "Saving…",
+      "save": "Save changes"
+    },
+    "twoFactor": {
+      "title": "Two-factor authentication (2FA)",
+      "description": "Add an extra layer of security with an authenticator app (Google Authenticator, Authy, etc.).",
+      "enabled": "2FA is enabled on your account.",
+      "disabling": "Disabling…",
+      "disable": "Disable 2FA",
+      "notEnabled": "2FA is not enabled on your account. Only available for accounts with their own password (not 100% Google accounts).",
+      "starting": "Starting…",
+      "enable": "Enable 2FA",
+      "scanQr": "Scan this QR code with your authenticator app:",
+      "cantScan": "Can't scan the QR code?",
+      "verificationCode": "Verification code",
+      "codePlaceholder": "123456",
+      "verifying": "Verifying…",
+      "verifyAndEnable": "Verify and enable",
+      "cancel": "Cancel",
+      "enabledSuccess": "2FA enabled successfully.",
+      "backupCodesWarning": "Save these backup codes now: they will not be shown again. Each one can be used only once, as an alternative to your app code if you lose it.",
+      "savedThem": "I saved them",
+      "setupError": "Could not start the 2FA setup.",
+      "invalidCode": "Invalid code. Check your device's clock and try again.",
+      "disableError": "Could not disable 2FA. Try again."
+    },
+    "export": {
+      "title": "Export my data",
+      "description": "Download a copy of your account data in JSON format.",
+      "error": "Could not export the data. Try again.",
+      "exporting": "Exporting…",
+      "download": "Download my data",
+      "fileName": "geospectrum-data-{date}.json"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "description": "Deleting your account erases your data permanently. This action cannot be undone.",
+      "deleteButton": "Delete my account",
+      "dialogTitle": "Delete your account permanently?",
+      "dialogDescription": "This action erases your account and all your data permanently. There is no way back. Type <strong>{word}</strong> to confirm.",
+      "confirmWord": "DELETE",
+      "cancel": "Cancel",
+      "deleting": "Deleting…",
+      "confirmDelete": "Delete my account",
+      "deleteError": "Could not delete the account. Try again."
+    }
+  },
+  "admin": {
+    "access": {
+      "title": "Access",
+      "description": "Access to the platform is invitation-only: manage the beta waitlist and invitations from a single place.",
+      "forbidden": "This section is for administrators. Your current role does not have permission to manage platform access.",
+      "tablistAria": "Access sections",
+      "tabs": {
+        "waitlist": "Waitlist",
+        "invitations": "Invitations"
+      }
+    },
+    "roles": {
+      "superadmin": "Superadmin",
+      "admin": "Administrator",
+      "moderador": "Moderator",
+      "viewer": "Viewer"
+    },
+    "waitlist": {
+      "title": "Waitlist",
+      "pendingCount": "{count} pending",
+      "description": "People signed up from the landing page — pending first, most recent on top. Approving creates the invitation and sends the welcome email.",
+      "approveError": "Could not approve {email}. Try again in a few seconds.",
+      "loadError": "Could not load the list. Check your session and try again.",
+      "empty": "No one has signed up yet. When someone joins from the landing page, they show up here (and you get an email notice).",
+      "approved": "Approved",
+      "pending": "Pending",
+      "approving": "Approving…",
+      "approve": "Approve"
+    },
+    "invitations": {
+      "newTitle": "New invitation",
+      "newDescription": "The role is inherited from the invitation — you can only grant roles up to your own level.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "person@example.com",
+      "roleLabel": "Role",
+      "emailLocaleLabel": "Email language",
+      "inviting": "Inviting…",
+      "invite": "Invite",
+      "steps": {
+        "created": "Invitation created",
+        "createdDetail": "{email} as {role}.",
+        "notCreated": "Invitation not created",
+        "emailSent": "Email sent",
+        "emailSentDetail": "The link is on its way to {email}.",
+        "emailNotSent": "Email NOT sent",
+        "emailNotSentDetail": "The invitation was created and is pending — use \"Resend\" in the table to retry.",
+        "regenerated": "Invitation regenerated",
+        "regeneratedDetail": "New link for {email} — the previous one is now invalid.",
+        "resendFailed": "Resend failed",
+        "resendFailedDetail": "Could not regenerate the invitation for {email}.",
+        "revokeFailed": "Revocation failed",
+        "revokeFailedDetail": "Could not revoke the invitation for {email}."
+      },
+      "errors": {
+        "roleTooHigh": "You cannot invite to a role higher than your own.",
+        "duplicatePending": "There is already a pending invitation for that email — use \"Resend\" from the table.",
+        "alreadyAccount": "That email already has an account on the platform.",
+        "createGeneric": "Could not create the invitation. Try again in a few seconds."
+      },
+      "listTitle": "Sent invitations",
+      "listDescription": "The status is derived in the backend; \"email unconfirmed\" means the delivery was never confirmed — resend to generate a new link.",
+      "refreshAria": "Refresh list",
+      "sessionLost": "Your session changed or expired — sign in again.",
+      "loadError": "Could not load the list. Check your session and try again.",
+      "empty": "No invitations yet. Create the first one with the form above.",
+      "status": {
+        "pending": "Pending",
+        "accepted": "Accepted",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "createdTooltip": "Created {date}",
+      "expires": "expires {date}",
+      "emailUnconfirmed": "email unconfirmed",
+      "processing": "Processing…",
+      "resend": "Resend",
+      "revoke": "Revoke",
+      "revokeDialogTitle": "Revoke the invitation?",
+      "revokeDialogDescription": "The link sent to <mono>{email}</mono> stops working immediately. This action cannot be undone — if you change your mind you will have to create a new invitation.",
+      "revokeCancel": "Cancel",
+      "revokeConfirm": "Revoke"
+    }
   }
 }
