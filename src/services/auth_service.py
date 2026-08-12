@@ -9,12 +9,13 @@ JWT firmado HS256 vía python-jose.
 
 Ver openspec/changes/multi-user-auth/design.md para las decisiones de diseño.
 """
+
 from __future__ import annotations
 
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 import asyncpg
@@ -32,7 +33,18 @@ from src.models.user import (
     UserPublic,
     UserRole,
 )
-from src.services.invitation_service import PENDING_PREDICATE_SQL
+
+# InvitationRequiredError se define en invitation_service (Fase 2 de
+# email-invitations: la excepción es del dominio de invitaciones y ese módulo
+# no puede importar de éste — sin ciclo). Se RE-EXPORTA acá porque quien la
+# levanta es create_user()/resolve_or_create_google_user() y sus callers
+# (main.py, tests) ya la importan de auth_service.
+from src.services.invitation_service import (  # noqa: F401  (re-export)
+    PENDING_PREDICATE_SQL,
+    InvalidInvitationError,
+    InvitationEmailMismatchError,
+    InvitationRequiredError,
+)
 
 JWT_ALGORITHM = "HS256"
 
@@ -51,13 +63,6 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class EmailAlreadyRegisteredError(Exception):
     """Se intentó crear un usuario con un email que ya existe en `users`."""
-
-
-class InvitationRequiredError(Exception):
-    """Registro invitation-only (email-invitations, Decision 5): se intentó
-    crear un usuario sin una invitación pendiente y vigente. Aplica a los
-    DOS caminos de creación — password (consume por token) y Google (consume
-    por email verificado) — salvo el bootstrap del primer usuario."""
 
 
 class InvalidTokenError(Exception):
@@ -154,7 +159,9 @@ class Login2FAAttemptLimiter:
     intentos aunque compartan `sub`.
     """
 
-    def __init__(self, redis_client) -> None:
+    def __init__(self, redis_client: Any) -> None:
+        # Any a propósito: redis.asyncio no expone un tipo estable para el
+        # cliente y el proyecto lo inyecta ya construido desde el lifespan.
         self._redis = redis_client
 
     @staticmethod
@@ -181,7 +188,7 @@ class Login2FAAttemptLimiter:
         primero — mismo criterio conservador que un lockout de contraseña
         tradicional."""
         key = self._key(user_id)
-        attempts = await self._redis.incr(key)
+        attempts: int = await self._redis.incr(key)
         await self._redis.expire(key, TOTP_LOGIN_ATTEMPT_TTL_SECONDS)
         return attempts
 
@@ -236,12 +243,25 @@ class AuthService:
             await self._pool.close()
             self._pool = None
 
+    def _require_pool(self) -> asyncpg.Pool:
+        """El pool ya conectado, o un error explícito.
+
+        `_pool` es Optional porque close() lo anula; sin este guard, usar el
+        servicio desconectado explota con un AttributeError sobre None a
+        varios frames de distancia del error real.
+        """
+        if self._pool is None:
+            raise RuntimeError("AuthService sin pool: falta await connect()")
+        return self._pool
+
     # -------------------------------------------------------------------
     # Hashing
     # -------------------------------------------------------------------
 
     def hash_password(self, password: str) -> str:
-        return _pwd_context.hash(password)
+        # passlib no trae stubs: hash() es Any para mypy, pero devuelve str.
+        hashed: str = _pwd_context.hash(password)
+        return hashed
 
     def verify_password(self, password: str, password_hash: Optional[str]) -> bool:
         # Guard (ver openspec/changes/google-oauth/design.md, Interfaces /
@@ -251,7 +271,8 @@ class AuthService:
         # controlada (TypeError) — se retorna False explícitamente antes.
         if password_hash is None:
             return False
-        return _pwd_context.verify(password, password_hash)
+        matches: bool = _pwd_context.verify(password, password_hash)
+        return matches
 
     # -------------------------------------------------------------------
     # Persistencia (SQL parametrizado, nunca f-strings — ver Risk de
@@ -344,7 +365,7 @@ class AuthService:
         """
         password_hash = self.hash_password(password)
         try:
-            async with self._pool.acquire() as conn:
+            async with self._require_pool().acquire() as conn:
                 async with conn.transaction():
                     actual_role = await self._determine_bootstrap_role(conn)
 
@@ -352,14 +373,26 @@ class AuthService:
                     # con la tabla NO vacía (no aplica bootstrap), registrarse
                     # exige consumir una invitación por TOKEN. El rol pasa a
                     # ser el de la invitación, no el viewer de bootstrap.
+                    # Las tres causas de rechazo son excepciones DISTINTAS
+                    # (tarea 3.2 / Decision 3): sin token -> 403, token que no
+                    # matchea ninguna pendiente vigente -> 410, email del
+                    # payload != email invitado -> 422.
                     invitation = None
                     if actual_role is not UserRole.SUPERADMIN:
-                        if invitation_token:
-                            invitation = await self._consume_pending_invitation(
-                                conn, token=invitation_token
-                            )
-                        if invitation is None:
+                        if not invitation_token:
                             raise InvitationRequiredError(email)
+                        invitation = await self._consume_pending_invitation(
+                            conn, token=invitation_token
+                        )
+                        if invitation is None:
+                            raise InvalidInvitationError(email)
+                        # El mismatch se detecta DESPUÉS del UPDATE de consumo,
+                        # pero la invitación NO queda quemada: la excepción
+                        # aborta esta transacción y el UPDATE revierte con el
+                        # rollback (escenario "Fallo posterior en la
+                        # transacción no quema la invitación").
+                        if invitation["email"].lower() != email.lower():
+                            raise InvitationEmailMismatchError(email)
                         actual_role = UserRole(invitation["role"])
 
                     row = await conn.fetchrow(
@@ -385,7 +418,7 @@ class AuthService:
         return UserPublic(id=row["id"], email=row["email"], role=UserRole(row["role"]))
 
     async def get_user_by_email(self, email: str) -> Optional[UserInDB]:
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, email, password_hash, role, google_id, name, "
                 "avatar_url, totp_enabled "
@@ -416,7 +449,7 @@ class AuthService:
         avatar_url, no solo el id). Mismo shape/columnas que
         get_user_by_email(), buscando por `id` en vez de `email`.
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, email, password_hash, role, google_id, name, "
                 "avatar_url, totp_enabled "
@@ -479,7 +512,7 @@ class AuthService:
         esta migración existiera, el próximo login por Google los sincroniza
         sin requerir intervención manual en la base.
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
                     """
@@ -505,7 +538,11 @@ class AuthService:
                     "SELECT id, email, role, password_hash, google_id FROM users WHERE email = $1",
                     email,
                 )
-                if existing is not None and existing["password_hash"] is not None and existing["google_id"] is None:
+                if (
+                    existing is not None
+                    and existing["password_hash"] is not None
+                    and existing["google_id"] is None
+                ):
                     row = await conn.fetchrow(
                         """
                         UPDATE users SET google_id = $1, name = $2, avatar_url = $3
@@ -570,12 +607,39 @@ class AuthService:
                 )
 
     # -------------------------------------------------------------------
+    # email-invitations — onboarding (design.md Decision 6)
+    # -------------------------------------------------------------------
+
+    async def get_onboarding_status(self, user_id: UUID) -> Optional[datetime]:
+        """Timestamp de onboarding completado, leído de la BASE en cada
+        request (no del JWT — un dato mutable no va en un token inmutable,
+        Decision 6). None = onboarding pendiente: el frontend monta el
+        wizard. Lookup por PK, costo despreciable."""
+        async with self._require_pool().acquire() as conn:
+            # asyncpg no trae stubs: fetchval() es Any y mypy no puede
+            # estrechar el retorno solo. La columna es timestamptz NULL.
+            completed_at: Optional[datetime] = await conn.fetchval(
+                "SELECT onboarding_completed_at FROM users WHERE id = $1", user_id
+            )
+            return completed_at
+
+    async def complete_onboarding(self, user_id: UUID) -> None:
+        """Marca el onboarding como completado. Idempotente por el predicado
+        del UPDATE: la segunda llamada no matchea ninguna fila y el timestamp
+        de la PRIMERA no se pisa (escenario "Completar onboarding persiste y
+        es idempotente")."""
+        async with self._require_pool().acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET onboarding_completed_at = now() "
+                "WHERE id = $1 AND onboarding_completed_at IS NULL",
+                user_id,
+            )
+
+    # -------------------------------------------------------------------
     # JWT
     # -------------------------------------------------------------------
 
-    def create_access_token(
-        self, user: UserInDB | UserPublic, pending_2fa: bool = False
-    ) -> str:
+    def create_access_token(self, user: UserInDB | UserPublic, pending_2fa: bool = False) -> str:
         """Emite el JWT de sesión.
 
         `pending_2fa=False` (default): comportamiento IDÉNTICO al pre-existente
@@ -601,7 +665,9 @@ class AuthService:
                 "iat": now,
                 "exp": expire,
             }
-            return jwt.encode(claims, self._secret_key, algorithm=JWT_ALGORITHM)
+            # jose no trae stubs: encode() es Any para mypy, devuelve str.
+            pre_auth_token: str = jwt.encode(claims, self._secret_key, algorithm=JWT_ALGORITHM)
+            return pre_auth_token
 
         expire = now + timedelta(minutes=self._token_expire_minutes)
         claims = {
@@ -618,7 +684,8 @@ class AuthService:
             "iat": now,
             "exp": expire,
         }
-        return jwt.encode(claims, self._secret_key, algorithm=JWT_ALGORITHM)
+        session_token: str = jwt.encode(claims, self._secret_key, algorithm=JWT_ALGORITHM)
+        return session_token
 
     def decode_token_payload(self, token: str) -> dict:
         """Decodifica un JWT (sesión completa O pre-auth) y devuelve el
@@ -633,7 +700,8 @@ class AuthService:
         vive en `get_current_user()` (src/api/deps.py, Phase 3), no acá.
         """
         try:
-            return jwt.decode(token, self._secret_key, algorithms=[JWT_ALGORITHM])
+            payload: dict = jwt.decode(token, self._secret_key, algorithms=[JWT_ALGORITHM])
+            return payload
         except ExpiredSignatureError as exc:
             raise TokenExpiredError() from exc
         except JWTError as exc:
@@ -684,7 +752,7 @@ class AuthService:
         ni se expone `totp_secret` acá. Esto reemplaza el uso lateral que
         hacía el frontend de GET /account/export solo para leer ese flag.
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT full_name, address, phone, totp_enabled FROM users WHERE id = $1",
                 user_id,
@@ -698,9 +766,7 @@ class AuthService:
             totp_enabled=row["totp_enabled"],
         )
 
-    async def update_profile(
-        self, user_id: UUID, update: UserProfileUpdate
-    ) -> UserProfile:
+    async def update_profile(self, user_id: UUID, update: UserProfileUpdate) -> UserProfile:
         """[Requirement: Edición del perfil extendido propio]
 
         UPDATE parcial: solo los campos presentes en `update`
@@ -733,7 +799,7 @@ class AuthService:
             f"WHERE id = ${len(values)} "
             "RETURNING full_name, address, phone, totp_enabled"
         )
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(query, *values)
 
         if row is None:
@@ -768,7 +834,7 @@ class AuthService:
         claro se retornan UNA vez — el caller (endpoint, Phase 3) los expone
         en el response body y nunca más (Decisión Cerrada #2 del proposal).
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
                     "SELECT password_hash, totp_enabled, email FROM users "
@@ -784,16 +850,13 @@ class AuthService:
                 await conn.execute(
                     "UPDATE users SET totp_secret = $1 WHERE id = $2", secret, user_id
                 )
-                await conn.execute(
-                    "DELETE FROM user_backup_codes WHERE user_id = $1", user_id
-                )
+                await conn.execute("DELETE FROM user_backup_codes WHERE user_id = $1", user_id)
 
                 backup_codes = [self._generate_backup_code() for _ in range(BACKUP_CODES_COUNT)]
                 for code in backup_codes:
                     code_hash = _pwd_context.hash(code)
                     await conn.execute(
-                        "INSERT INTO user_backup_codes (user_id, code_hash) "
-                        "VALUES ($1, $2)",
+                        "INSERT INTO user_backup_codes (user_id, code_hash) " "VALUES ($1, $2)",
                         user_id,
                         code_hash,
                     )
@@ -818,20 +881,16 @@ class AuthService:
         `enable_totp()`. Válido -> marca `totp_enabled = true`. Inválido ->
         `InvalidTotpCodeError`, sin modificar `totp_enabled`.
         """
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT totp_secret FROM users WHERE id = $1", user_id
-            )
+        async with self._require_pool().acquire() as conn:
+            row = await conn.fetchrow("SELECT totp_secret FROM users WHERE id = $1", user_id)
         if row is None or row["totp_secret"] is None:
             raise InvalidTotpCodeError()
 
         if not pyotp.TOTP(row["totp_secret"]).verify(code):
             raise InvalidTotpCodeError()
 
-        async with self._pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET totp_enabled = true WHERE id = $1", user_id
-            )
+        async with self._require_pool().acquire() as conn:
+            await conn.execute("UPDATE users SET totp_enabled = true WHERE id = $1", user_id)
 
     async def disable_totp(self, user_id: UUID) -> None:
         """[Requirement: Deshabilitación de 2FA]
@@ -844,16 +903,13 @@ class AuthService:
         observable) — el `UPDATE`/`DELETE` corren igual mismo si no había
         nada que cambiar, sin necesidad de un chequeo previo.
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    "UPDATE users SET totp_secret = NULL, totp_enabled = false "
-                    "WHERE id = $1",
+                    "UPDATE users SET totp_secret = NULL, totp_enabled = false " "WHERE id = $1",
                     user_id,
                 )
-                await conn.execute(
-                    "DELETE FROM user_backup_codes WHERE user_id = $1", user_id
-                )
+                await conn.execute("DELETE FROM user_backup_codes WHERE user_id = $1", user_id)
 
     async def consume_backup_code(self, user_id: UUID, code: str) -> bool:
         """[Requirement: Uso de backup codes como alternativa al código TOTP]
@@ -869,7 +925,7 @@ class AuthService:
         distinguir "código inválido" de "ya usado" (mismo criterio de no
         filtrar información que ya aplica a errores de login por password).
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             async with conn.transaction():
                 rows = await conn.fetch(
                     "SELECT id, code_hash FROM user_backup_codes "
@@ -879,8 +935,7 @@ class AuthService:
                 for row in rows:
                     if _pwd_context.verify(code, row["code_hash"]):
                         await conn.execute(
-                            "UPDATE user_backup_codes SET used_at = now() "
-                            "WHERE id = $1",
+                            "UPDATE user_backup_codes SET used_at = now() " "WHERE id = $1",
                             row["id"],
                         )
                         return True
@@ -896,10 +951,8 @@ class AuthService:
         `True`/`False` combinado, sin distinguir en ningún mensaje de error
         cuál de los dos métodos falló.
         """
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT totp_secret FROM users WHERE id = $1", user_id
-            )
+        async with self._require_pool().acquire() as conn:
+            row = await conn.fetchrow("SELECT totp_secret FROM users WHERE id = $1", user_id)
         if row is not None and row["totp_secret"] is not None:
             if pyotp.TOTP(row["totp_secret"]).verify(code, valid_window=1):
                 return True
@@ -919,7 +972,7 @@ class AuthService:
         excluye por construcción (no se leen de la base para este método en
         absoluto, no es solo "se leen pero no se exponen").
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT id, email, role, google_id, name, avatar_url,
@@ -1011,11 +1064,9 @@ class AuthService:
              `DELETE FROM users WHERE id = $1` — `ON DELETE CASCADE` en
              `user_backup_codes` limpia esas filas automáticamente.
         """
-        async with self._pool.acquire() as conn:
+        async with self._require_pool().acquire() as conn:
             async with conn.transaction():
-                row = await conn.fetchrow(
-                    "SELECT role FROM users WHERE id = $1", user_id
-                )
+                row = await conn.fetchrow("SELECT role FROM users WHERE id = $1", user_id)
                 if row is None:
                     return  # ya no existe -- no-op, idempotente
 

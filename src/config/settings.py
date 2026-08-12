@@ -2,6 +2,7 @@
 Configuración centralizada del servicio.
 Todas las variables de entorno se cargan aquí de forma tipada.
 """
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
@@ -10,10 +11,7 @@ class Settings(BaseSettings):
     """Configuración del servicio de monitoreo sísmico."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
 
     # Región por defecto de MonitorReport.region_monitorizada cuando no hay un
@@ -156,8 +154,7 @@ class Settings(BaseSettings):
 
     # CORS
     cors_allowed_origins: str = (
-        "http://localhost:3008,http://localhost:3000,"
-        "http://127.0.0.1:3008,http://127.0.0.1:3000"
+        "http://localhost:3008,http://localhost:3000," "http://127.0.0.1:3008,http://127.0.0.1:3000"
     )
 
     @property
@@ -193,7 +190,9 @@ class Settings(BaseSettings):
         total), esta es una condición de habilitación parcial, consultada por
         lifespan() y por los propios endpoints /auth/google/* en runtime.
         """
-        return bool(self.google_client_id and self.google_client_secret and self.google_redirect_uri)
+        return bool(
+            self.google_client_id and self.google_client_secret and self.google_redirect_uri
+        )
 
 
 # Singleton

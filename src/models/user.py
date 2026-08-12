@@ -1,6 +1,7 @@
 """
 Modelos de datos para autenticación multi-usuario con roles.
 """
+
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -121,6 +122,19 @@ class CurrentUser(BaseModel):
     # get_current_user() no dependa de un round-trip extra a Postgres.
     name: Optional[str] = None
     avatar_url: Optional[str] = None
+
+
+class MeResponse(CurrentUser):
+    """Response model de GET /auth/me (email-invitations, Decision 6).
+
+    Hereda el shape ACTUAL de /auth/me (CurrentUser, resuelto del JWT) y le
+    suma `onboarding_completed_at`, que se lee de la BASE en cada request —
+    NUNCA del JWT: es un dato mutable (el usuario completa el wizard y debe
+    apagarse al instante) y un claim quedaría stale hasta el re-login. None
+    significa "onboarding pendiente": el frontend monta el wizard.
+    """
+
+    onboarding_completed_at: Optional[datetime] = None
 
 
 # --- account-settings (migración 005) --------------------------------------

@@ -1,4 +1,5 @@
 """Tests unitarios para AuthService: hashing y JWT (sin Postgres real)."""
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
@@ -19,12 +20,16 @@ from src.models.user import (
 )
 from src.services.auth_service import (
     AuthService,
+    EmailAlreadyRegisteredError,
+    InvalidInvitationError,
     InvalidTokenError,
     InvalidTotpCodeError,
+    InvitationEmailMismatchError,
     InvitationRequiredError,
     LastSuperadminError,
     Login2FAAttemptLimiter,
     MAX_TOTP_LOGIN_ATTEMPTS,
+    PENDING_PREDICATE_SQL,
     TokenExpiredError,
     TooManyTotpAttemptsError,
     TotpAlreadyEnabledError,
@@ -270,7 +275,9 @@ async def test_create_user_requires_invitation_when_users_table_is_not_empty():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("requested_role", [UserRole.ADMIN, UserRole.MODERADOR, UserRole.SUPERADMIN])
+@pytest.mark.parametrize(
+    "requested_role", [UserRole.ADMIN, UserRole.MODERADOR, UserRole.SUPERADMIN]
+)
 async def test_create_user_rejects_any_requested_role_without_invitation(requested_role):
     """Ningún rol pedido (admin, moderador, superadmin) abre la puerta: con
     la tabla no vacía y sin invitación, TODOS los registros se rechazan —
@@ -771,9 +778,7 @@ async def test_get_profile_with_totp_enabled_true_returns_it():
     svc = _service()
     user_id = uuid4()
     conn = _fake_conn(
-        fetchrow_results=[
-            {"full_name": None, "address": None, "phone": None, "totp_enabled": True}
-        ]
+        fetchrow_results=[{"full_name": None, "address": None, "phone": None, "totp_enabled": True}]
     )
     svc._pool = _fake_pool_with_conn(conn)
 
@@ -969,9 +974,7 @@ async def test_enable_totp_second_call_before_verify_invalidates_previous_backup
 
     assert len(backup_codes) == 10
     # DELETE FROM user_backup_codes fue invocado (invalida el setup previo).
-    delete_calls = [
-        call for call in conn.execute.call_args_list if "DELETE" in call[0][0]
-    ]
+    delete_calls = [call for call in conn.execute.call_args_list if "DELETE" in call[0][0]]
     assert len(delete_calls) == 1
 
 
@@ -1399,9 +1402,7 @@ async def test_delete_account_concurrent_last_two_superadmins_exactly_one_succee
     # con un tercero preexistente, ambos deletes serían legítimamente
     # exitosos y el test no probaría nada. Se restauran sus roles al final.
     async with svc._pool.acquire() as conn:
-        other_superadmins = await conn.fetch(
-            "SELECT id, role FROM users WHERE role = 'superadmin'"
-        )
+        other_superadmins = await conn.fetch("SELECT id, role FROM users WHERE role = 'superadmin'")
         other_superadmin_ids = [row["id"] for row in other_superadmins]
         if other_superadmin_ids:
             await conn.execute(
@@ -1634,3 +1635,632 @@ async def test_totp_login_limiter_tracks_users_independently():
 
     # user_b nunca falló -- no debe estar bloqueado por los fallos de user_a.
     await limiter.check_not_locked(user_b)
+
+
+# =============================================================================
+# email-invitations, Fase 4.2 y 4.3 — CONSUMO, CONCURRENCIA y NO-LOCKOUT
+# CONTRA POSTGRES REAL (fixture `db_pool` de tests/conftest.py).
+#
+# Todo lo de ARRIBA en este archivo usa fakes de asyncpg. Esta sección NO, y
+# es deliberado: el consumo single-use de una invitación es un invariante de
+# CONCURRENCIA — "dos registros simultáneos con el mismo token y sólo uno
+# gana" no se puede afirmar contra un AsyncMock, que no serializa nada y
+# devolvería la misma fila a las dos corrutinas. Es la lección documentada del
+# proyecto (dos bugs de SQL pasaron con mocks en verde) aplicada al caso donde
+# más importa: el gate que decide quién entra al sistema.
+# =============================================================================
+
+import asyncio  # noqa: E402
+import hashlib as _hashlib  # noqa: E402
+
+from src.services.invitation_service import (  # noqa: E402
+    InvitationService,
+    insert_invitation_row,
+)
+
+
+@pytest.fixture
+def db_service(db_pool):
+    """AuthService con el pool REAL inyectado (patrón `pool=` de AOI-1: el
+    servicio no es dueño del pool, lo cierra el fixture)."""
+    return AuthService(
+        dsn="postgresql://unused",
+        secret_key=SECRET,
+        token_expire_minutes=1440,
+        pool=db_pool,
+    )
+
+
+async def _seed_user(db_pool, email: str, role: UserRole = UserRole.ADMIN):
+    """Fila real en `users` — necesaria para que la tabla no esté vacía (si no,
+    todo registro caería en la rama bootstrap y el gate de invitación ni
+    correría) y para poder usarla como `invited_by` (FK real)."""
+    async with db_pool.acquire() as conn:
+        return await conn.fetchrow(
+            "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) "
+            "RETURNING id, email, role",
+            email,
+            "$2b$12$hash-irrelevante",
+            role.value,
+        )
+
+
+async def _seed_invitation(db_pool, email: str, role: UserRole, invited_by=None):
+    """Invitación real usando el MISMO helper que usa producción
+    (insert_invitation_row) — así el test no puede divergir de cómo nace una
+    invitación de verdad. Devuelve (id, token en claro)."""
+    async with db_pool.acquire() as conn:
+        async with conn.transaction():
+            row, token = await insert_invitation_row(
+                conn, email=email, role=role, invited_by=invited_by, expire_days=7
+            )
+    return row["id"], token
+
+
+# --- 4.2 Consumo por token (camino password) --------------------------------
+
+
+async def test_db_register_with_valid_token_inherits_invited_role(db_service, db_pool):
+    """[Requirement: Consumo single-use / Scenario: Registro exitoso con
+    invitación hereda el rol invitado] — el rol sale de la INVITACIÓN, no del
+    payload ni del viewer de bootstrap."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "invitada@example.com", UserRole.MODERADOR, admin["id"]
+    )
+
+    user = await db_service.create_user(
+        email="invitada@example.com",
+        password="Sismo2026!",
+        role=UserRole.VIEWER,
+        invitation_token=token,
+    )
+
+    assert user.role is UserRole.MODERADOR
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT accepted_at, accepted_by FROM invitations WHERE id = $1", invitation_id
+        )
+    assert row["accepted_at"] is not None
+    assert row["accepted_by"] == user.id
+
+
+async def test_db_register_payload_role_cannot_override_invitation_role(db_service, db_pool):
+    """[Scenario: El payload no puede pisar el rol] — se pide superadmin y se
+    obtiene el viewer de la invitación."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    _, token = await _seed_invitation(db_pool, "humilde@example.com", UserRole.VIEWER, admin["id"])
+
+    user = await db_service.create_user(
+        email="humilde@example.com",
+        password="Sismo2026!",
+        role=UserRole.SUPERADMIN,
+        invitation_token=token,
+    )
+
+    assert user.role is UserRole.VIEWER
+
+
+async def test_db_register_without_token_raises_invitation_required(db_service, db_pool):
+    """Tabla no vacía y sin token: rechazo, y NINGÚN usuario creado."""
+    await _seed_user(db_pool, "existente@example.com", UserRole.ADMIN)
+
+    with pytest.raises(InvitationRequiredError):
+        await db_service.create_user(
+            email="colada@example.com", password="Sismo2026!", role=UserRole.VIEWER
+        )
+
+    async with db_pool.acquire() as conn:
+        exists = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE email = 'colada@example.com'"
+        )
+    assert exists == 0
+
+
+async def test_db_register_with_unknown_token_raises_invalid_invitation(db_service, db_pool):
+    await _seed_user(db_pool, "existente@example.com", UserRole.ADMIN)
+
+    with pytest.raises(InvalidInvitationError):
+        await db_service.create_user(
+            email="colada@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token="token-inexistente",
+        )
+
+
+async def test_db_register_with_expired_token_raises_invalid_invitation(db_service, db_pool):
+    """Una invitación vencida no sirve — el predicado `expires_at > now()` se
+    evalúa con el reloj de Postgres, no con el de Python."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "tarde@example.com", UserRole.VIEWER, admin["id"]
+    )
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE invitations SET expires_at = now() - interval '1 day' WHERE id = $1",
+            invitation_id,
+        )
+
+    with pytest.raises(InvalidInvitationError):
+        await db_service.create_user(
+            email="tarde@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token=token,
+        )
+
+
+async def test_db_register_with_email_mismatch_does_not_burn_the_invitation(db_service, db_pool):
+    """[Scenario: Registro rechazado si el email no coincide] — el mismatch se
+    detecta DESPUÉS del UPDATE de consumo, pero el rollback de la transacción
+    lo revierte: la invitación sigue pendiente y el invitado real puede usarla.
+
+    Este es el caso estrella de "por qué base real": con un mock, el UPDATE de
+    consumo nunca se deshace porque nunca ocurrió — el test pasaría igual con
+    una implementación que SÍ quema la invitación."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "duenia@example.com", UserRole.ADMIN, admin["id"]
+    )
+
+    with pytest.raises(InvitationEmailMismatchError):
+        await db_service.create_user(
+            email="usurpador@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token=token,
+        )
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT accepted_at, accepted_by FROM invitations WHERE id = $1", invitation_id
+        )
+    assert row["accepted_at"] is None, "la invitación quedó quemada por un intento ajeno"
+    assert row["accepted_by"] is None
+
+    # Y el invitado real todavía puede usarla.
+    user = await db_service.create_user(
+        email="duenia@example.com",
+        password="Sismo2026!",
+        role=UserRole.VIEWER,
+        invitation_token=token,
+    )
+    assert user.role is UserRole.ADMIN
+
+
+async def test_db_register_email_match_is_case_insensitive(db_service, db_pool):
+    """La invitación es a UNA persona identificada por su email; la caja de las
+    letras no debe cambiar eso."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    _, token = await _seed_invitation(
+        db_pool, "MayUsculas@Example.com", UserRole.MODERADOR, admin["id"]
+    )
+
+    user = await db_service.create_user(
+        email="mayusculas@example.com",
+        password="Sismo2026!",
+        role=UserRole.VIEWER,
+        invitation_token=token,
+    )
+
+    assert user.role is UserRole.MODERADOR
+
+
+async def test_db_bootstrap_without_token_is_preserved(db_service, db_pool):
+    """[Scenario: No-lockout (3) bootstrap] — con `users` VACÍA el registro sin
+    token sigue funcionando y crea un superadmin. Es la válvula de escape de
+    dev/staging/DR: sin ella, una base recién creada quedaría sin forma de
+    entrar (nadie puede invitar porque no hay nadie)."""
+    async with db_pool.acquire() as conn:
+        assert await conn.fetchval("SELECT COUNT(*) FROM users") == 0
+
+    user = await db_service.create_user(
+        email="primero@example.com", password="Sismo2026!", role=UserRole.VIEWER
+    )
+
+    assert user.role is UserRole.SUPERADMIN
+
+
+async def test_db_failure_after_consumption_rolls_back_the_invitation(db_service, db_pool):
+    """[Scenario: Fallo posterior en la transacción no quema la invitación] —
+    se fuerza el fallo con un email ya registrado (UniqueViolation en el INSERT
+    de `users`, DESPUÉS del UPDATE de consumo). La atomicidad debe dejar la
+    invitación intacta."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    # El email de la invitación YA tiene cuenta: el UPDATE de consumo matchea
+    # (es por token) pero el INSERT de users viola el UNIQUE de email.
+    await _seed_user(db_pool, "colision@example.com", UserRole.VIEWER)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "colision@example.com", UserRole.ADMIN, admin["id"]
+    )
+
+    with pytest.raises(EmailAlreadyRegisteredError):
+        await db_service.create_user(
+            email="colision@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token=token,
+        )
+
+    async with db_pool.acquire() as conn:
+        accepted_at = await conn.fetchval(
+            "SELECT accepted_at FROM invitations WHERE id = $1", invitation_id
+        )
+    assert accepted_at is None, "el rollback no revirtió el consumo de la invitación"
+
+
+# --- 4.2 CONCURRENCIA -------------------------------------------------------
+
+
+async def test_db_two_concurrent_registers_with_same_token_exactly_one_wins(db_service, db_pool):
+    """[Scenario: Dos registros concurrentes — solo uno gana] — EL test que
+    justifica toda esta sección.
+
+    Dos `create_user()` en paralelo con el MISMO token: el `UPDATE ... WHERE
+    accepted_at IS NULL ... RETURNING` serializa sobre la fila (la segunda
+    transacción espera el lock y, al reevaluar el predicado tras el commit de
+    la primera, no matchea nada y recibe None). Resultado exigido: un solo
+    usuario creado, una sola aceptación.
+
+    Con mocks esto es inverificable: dos AsyncMock devuelven la misma fila a
+    ambas corrutinas y el test pasaría con una implementación que crea DOS
+    usuarios con el mismo token."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "disputada@example.com", UserRole.ADMIN, admin["id"]
+    )
+
+    results = await asyncio.gather(
+        db_service.create_user(
+            email="disputada@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token=token,
+        ),
+        db_service.create_user(
+            email="disputada@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token=token,
+        ),
+        return_exceptions=True,
+    )
+
+    winners = [r for r in results if not isinstance(r, Exception)]
+    losers = [r for r in results if isinstance(r, Exception)]
+    assert len(winners) == 1, f"esperaba exactamente un ganador, hubo {len(winners)}"
+    # El perdedor falla por invitación no consumible o por email duplicado —
+    # ambas son rechazos legítimos; lo inaceptable sería que ganaran los dos.
+    assert isinstance(losers[0], (InvalidInvitationError, EmailAlreadyRegisteredError))
+
+    async with db_pool.acquire() as conn:
+        user_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE email = 'disputada@example.com'"
+        )
+        accepted_by = await conn.fetchval(
+            "SELECT accepted_by FROM invitations WHERE id = $1", invitation_id
+        )
+    assert user_count == 1, "se crearon dos usuarios con la misma invitación"
+    assert accepted_by == winners[0].id
+
+
+async def test_db_password_and_google_in_parallel_create_exactly_one_account(db_service, db_pool):
+    """[Scenario: Aceptación por password y por Google en paralelo] — la misma
+    invitación atacada por los DOS caminos de consumo a la vez (por token y por
+    email).
+
+    El invariante que importa —y que se verifica acá— es: UNA sola cuenta y UNA
+    sola aceptación de la invitación. NO se exige que uno de los dos calls
+    falle: verificado contra la base real, el orden habitual es que el camino
+    password consuma la invitación y commitee, y el de Google caiga entonces en
+    la rama de AUTO-LINK (la cuenta ya existe con password y sin google_id), que
+    por contrato NO toca `invitations` y devuelve la MISMA fila con el google_id
+    seteado. Dos "éxitos" que resuelven a la misma identidad es el
+    comportamiento correcto, no un doble consumo.
+
+    Asserts sobre la BASE, no sobre los valores de retorno: es la única forma de
+    distinguir "auto-link sobre la misma fila" de "dos cuentas creadas" — y un
+    mock no puede contestar ninguna de las dos."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "ambos@example.com", UserRole.MODERADOR, admin["id"]
+    )
+
+    results = await asyncio.gather(
+        db_service.create_user(
+            email="ambos@example.com",
+            password="Sismo2026!",
+            role=UserRole.VIEWER,
+            invitation_token=token,
+        ),
+        db_service.resolve_or_create_google_user(
+            google_id="google-sub-carrera", email="ambos@example.com"
+        ),
+        return_exceptions=True,
+    )
+
+    winners = [r for r in results if not isinstance(r, Exception)]
+    assert winners, f"ningún camino prosperó: {results}"
+    # Todos los que prosperaron resuelven a la MISMA identidad.
+    assert len({w.id for w in winners}) == 1
+    assert all(w.role is UserRole.MODERADOR for w in winners)
+
+    async with db_pool.acquire() as conn:
+        user_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE lower(email) = 'ambos@example.com'"
+        )
+        accepted_by = await conn.fetchval(
+            "SELECT accepted_by FROM invitations WHERE id = $1 AND accepted_at IS NOT NULL",
+            invitation_id,
+        )
+        total_accepted = await conn.fetchval(
+            "SELECT COUNT(*) FROM invitations WHERE accepted_at IS NOT NULL"
+        )
+    assert user_count == 1, "los dos caminos crearon cuentas separadas"
+    assert total_accepted == 1, "la invitación se consumió más de una vez"
+    assert accepted_by == winners[0].id
+
+
+# --- 4.3 Regresión de NO-LOCKOUT (Google) -----------------------------------
+
+
+async def test_db_google_already_linked_user_never_touches_invitations(db_service, db_pool):
+    """[Scenario: No-lockout (2)] — un usuario YA vinculado por google_id entra
+    igual que siempre, y la invitación pendiente que exista para su email queda
+    INTACTA (la rama 1 se evalúa primero y no toca `invitations`).
+
+    "No ejecuta ninguna query sobre invitations" se verifica por su efecto
+    observable —la invitación sigue pendiente y sin accepted_by— que es lo que
+    de verdad importa: si la rama tocara la tabla, la quemaría."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    async with db_pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "INSERT INTO users (email, password_hash, role, google_id) "
+            "VALUES ($1, NULL, $2, $3) RETURNING id",
+            "vinculado@example.com",
+            UserRole.ADMIN.value,
+            "google-sub-ya-vinculado",
+        )
+    # Invitación pendiente para el MISMO email — trampa deliberada.
+    invitation_id, _ = await _seed_invitation(
+        db_pool, "vinculado@example.com", UserRole.VIEWER, admin["id"]
+    )
+
+    user = await db_service.resolve_or_create_google_user(
+        google_id="google-sub-ya-vinculado", email="vinculado@example.com"
+    )
+
+    assert user.id == existing["id"]
+    assert user.role is UserRole.ADMIN, "el login existente perdió su rol"
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT accepted_at, accepted_by FROM invitations WHERE id = $1", invitation_id
+        )
+    assert row["accepted_at"] is None, "la rama 'ya vinculado' consumió una invitación"
+    assert row["accepted_by"] is None
+
+
+async def test_db_google_auto_link_never_touches_invitations(db_service, db_pool):
+    """[Scenario: No-lockout (2), mitad auto-link] — un usuario de password que
+    entra por primera vez con Google se auto-vincula SIN consumir invitación y
+    conservando su rol. Existencia de cuenta PRIMERO, invitación después."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    existing = await _seed_user(db_pool, "conpassword@example.com", UserRole.MODERADOR)
+    invitation_id, _ = await _seed_invitation(
+        db_pool, "conpassword@example.com", UserRole.VIEWER, admin["id"]
+    )
+
+    user = await db_service.resolve_or_create_google_user(
+        google_id="google-sub-autolink", email="conpassword@example.com"
+    )
+
+    assert user.id == existing["id"], "se creó una fila nueva en vez de auto-linkear"
+    assert user.role is UserRole.MODERADOR, "el auto-link degradó el rol al de la invitación"
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT accepted_at, accepted_by FROM invitations WHERE id = $1", invitation_id
+        )
+        google_id = await conn.fetchval("SELECT google_id FROM users WHERE id = $1", existing["id"])
+    assert row["accepted_at"] is None, "la rama auto-link consumió una invitación"
+    assert google_id == "google-sub-autolink"
+
+
+async def test_db_google_new_user_with_invitation_inherits_role_case_insensitive(
+    db_service, db_pool
+):
+    """[MODIFIED: Google con invitación pendiente crea la cuenta con el rol
+    invitado] — consumo por EMAIL (sin token, Decision 5) y con match
+    case-insensitive: la invitación es a `INVITADA@Example.com` y Google
+    entrega `invitada@example.com`."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, _ = await _seed_invitation(
+        db_pool, "INVITADA@Example.com", UserRole.ADMIN, admin["id"]
+    )
+
+    user = await db_service.resolve_or_create_google_user(
+        google_id="google-sub-nueva", email="invitada@example.com"
+    )
+
+    assert user.role is UserRole.ADMIN
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT accepted_at, accepted_by FROM invitations WHERE id = $1", invitation_id
+        )
+    assert row["accepted_at"] is not None
+    assert row["accepted_by"] == user.id
+
+
+async def test_db_google_new_user_without_invitation_is_rejected(db_service, db_pool):
+    """[MODIFIED: Google sin invitación es rechazado] — el agujero de
+    auto-provisioning que motivó todo el change: cualquier cuenta de Google
+    entraba como viewer. Ahora no se crea NADA."""
+    await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+
+    with pytest.raises(InvitationRequiredError):
+        await db_service.resolve_or_create_google_user(
+            google_id="google-sub-desconocida", email="cualquiera@example.com"
+        )
+
+    async with db_pool.acquire() as conn:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM users WHERE email = 'cualquiera@example.com'"
+        )
+    assert count == 0
+
+
+async def test_db_google_new_user_with_expired_invitation_is_rejected(db_service, db_pool):
+    """[MODIFIED: Google con invitación expirada es rechazado] — una invitación
+    vencida no alcanza para entrar."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, _ = await _seed_invitation(
+        db_pool, "vencida@example.com", UserRole.ADMIN, admin["id"]
+    )
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE invitations SET expires_at = now() - interval '1 day' WHERE id = $1",
+            invitation_id,
+        )
+
+    with pytest.raises(InvitationRequiredError):
+        await db_service.resolve_or_create_google_user(
+            google_id="google-sub-vencida", email="vencida@example.com"
+        )
+
+
+async def test_db_google_bootstrap_on_empty_table_still_works(db_service, db_pool):
+    """[Scenario: No-lockout (4)] — con `users` vacía, el primer login de
+    Google sigue creando el superadmin sin invitación."""
+    user = await db_service.resolve_or_create_google_user(
+        google_id="google-sub-primero", email="primero@example.com"
+    )
+
+    assert user.role is UserRole.SUPERADMIN
+
+
+# --- onboarding contra base real (Decision 6) -------------------------------
+
+
+async def test_db_new_user_has_null_onboarding_and_complete_is_idempotent(db_service, db_pool):
+    """[Scenario: Completar onboarding persiste y es idempotente] — un usuario
+    nuevo nace con onboarding pendiente (NULL) y la SEGUNDA llamada a
+    complete_onboarding() no pisa el timestamp de la primera (el predicado
+    `AND onboarding_completed_at IS NULL` del UPDATE es lo que lo garantiza;
+    un mock de execute() no distinguiría)."""
+    user = await _seed_user(db_pool, "onboarding@example.com", UserRole.VIEWER)
+
+    assert await db_service.get_onboarding_status(user["id"]) is None
+
+    await db_service.complete_onboarding(user["id"])
+    first = await db_service.get_onboarding_status(user["id"])
+    assert first is not None
+
+    await db_service.complete_onboarding(user["id"])
+    second = await db_service.get_onboarding_status(user["id"])
+    assert second == first, "la segunda llamada pisó el timestamp original"
+
+
+async def test_db_consume_pending_invitation_hashes_the_token_it_receives(db_pool):
+    """La primitiva de consumo busca por sha256 del token, nunca por el claro:
+    se inserta una invitación y se confirma que el hash de la base es el del
+    token con el que el consumo matchea."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    invitation_id, token = await _seed_invitation(
+        db_pool, "hash@example.com", UserRole.VIEWER, admin["id"]
+    )
+
+    async with db_pool.acquire() as conn:
+        stored_hash = await conn.fetchval(
+            "SELECT token_hash FROM invitations WHERE id = $1", invitation_id
+        )
+        async with conn.transaction():
+            consumed = await AuthService._consume_pending_invitation(conn, token=token)
+
+    assert stored_hash == _hashlib.sha256(token.encode()).hexdigest()
+    assert consumed is not None
+    assert consumed["id"] == invitation_id
+
+
+# --- Riesgo anotado en Fase 2: approve de beta vs create de admin -----------
+
+
+async def test_db_insert_invitation_row_serializes_concurrent_callers(db_pool):
+    """REGRESIÓN del gap cerrado tras la Fase 4.
+
+    El agujero original: `insert_invitation_row()` no tomaba el advisory lock
+    (lo tomaba solo `create_invitation()` justo antes de llamarlo), así que el
+    approve de beta-signups — que usa el helper dentro de SU transacción, la
+    del FOR UPDATE sobre beta_signups — podía correr en paralelo con un create
+    de admin: ambos veían "no hay pendiente" e insertaban, dejando DOS
+    invitaciones vigentes para el mismo email.
+
+    El lock se movió ADENTRO del helper, que es la única puerta por la que
+    nace una invitación. Este test verifica la serialización: la segunda
+    transacción no puede insertar hasta que la primera commitea, así que su
+    chequeo de pendiente (hecho DESPUÉS de tomar el lock, como en el approve
+    corregido) ya ve la fila de la primera y no duplica."""
+    admin = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    email = "beta@example.com"
+
+    async def approve_path(delay: float) -> bool:
+        """Emula el approve de main.py: lock → chequeo de pendiente → insert."""
+        await asyncio.sleep(delay)
+        async with db_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock(hashtext(lower($1)))", email)
+                pending = await conn.fetchval(
+                    f"SELECT id FROM invitations WHERE lower(email) = lower($1) "
+                    f"AND {PENDING_PREDICATE_SQL}",
+                    email,
+                )
+                if pending is not None:
+                    return False
+                await insert_invitation_row(
+                    conn,
+                    email=email,
+                    role=UserRole.VIEWER,
+                    invited_by=admin["id"],
+                    expire_days=7,
+                )
+                return True
+
+    inserted = await asyncio.gather(approve_path(0), approve_path(0))
+
+    async with db_pool.acquire() as conn:
+        pending_count = await conn.fetchval(
+            f"SELECT COUNT(*) FROM invitations WHERE lower(email) = lower($1) "
+            f"AND {PENDING_PREDICATE_SQL}",
+            email,
+        )
+    # Exactamente un camino inserta; el otro encuentra la pendiente ya vigente.
+    assert sum(inserted) == 1
+    assert pending_count == 1
+
+
+async def test_db_create_invitation_serializes_concurrent_creates(db_pool):
+    """El otro camino de creación, `create_invitation()`, bajo la misma
+    carrera: exactamente una pendiente. Junto al test anterior cubre las dos
+    puertas de entrada — el lock ahora vive en el helper compartido, y
+    tomarlo de nuevo acá es inocuo (es reentrante por transacción)."""
+    admin_row = await _seed_user(db_pool, "admin@example.com", UserRole.ADMIN)
+    admin = CurrentUser(id=admin_row["id"], email=admin_row["email"], role=UserRole.ADMIN)
+    service = InvitationService(pool=db_pool, expire_days=7)
+
+    results = await asyncio.gather(
+        service.create_invitation(
+            email="protegido@example.com", role=UserRole.VIEWER, invited_by=admin
+        ),
+        service.create_invitation(
+            email="protegido@example.com", role=UserRole.VIEWER, invited_by=admin
+        ),
+        return_exceptions=True,
+    )
+
+    ok = [r for r in results if not isinstance(r, Exception)]
+    assert len(ok) == 1
+    async with db_pool.acquire() as conn:
+        count = await conn.fetchval(
+            f"SELECT COUNT(*) FROM invitations WHERE lower(email) = 'protegido@example.com' "
+            f"AND {PENDING_PREDICATE_SQL}"
+        )
+    assert count == 1

@@ -32,6 +32,7 @@ usa el cliente — inaceptable en tests. Reemplazar el atributo `google` del
 `OAuth()` singleton module-level con un `SimpleNamespace`/`MagicMock` propio
 evita cualquier interacción de red.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -126,9 +127,7 @@ def test_google_callback_returns_503_when_oauth_not_configured(client):
     app.state.auth_service = MagicMock()
     app.state.google_oauth_enabled = False
 
-    response = client.get(
-        "/auth/google/callback", params={"code": "x", "state": "y"}
-    )
+    response = client.get("/auth/google/callback", params={"code": "x", "state": "y"})
 
     assert response.status_code == 503
     assert response.json() == {"error": "Google OAuth not configured"}
@@ -348,7 +347,9 @@ def test_google_callback_rejects_unverified_email_before_calling_auth_service(cl
     Set-Cookie — [Scenario: Login por Google rechazado cuando el email no
     está verificado por Google]."""
     fake_auth_service = _fake_auth_service_for_callback(
-        UserPublic(id="3f9a2b1c-1111-2222-3333-444455556672", email="x@example.com", role=UserRole.VIEWER)
+        UserPublic(
+            id="3f9a2b1c-1111-2222-3333-444455556672", email="x@example.com", role=UserRole.VIEWER
+        )
     )
     app.state.auth_service = fake_auth_service
     app.state.google_oauth_enabled = True
@@ -372,7 +373,10 @@ def test_google_callback_rejects_unverified_email_before_calling_auth_service(cl
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_email_not_verified"
+    assert (
+        response.headers["location"]
+        == f"{settings.dashboard_url}/login?error=google_oauth_email_not_verified"
+    )
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -458,7 +462,10 @@ def test_google_callback_without_code_redirects_to_login_cancelled(client, monke
     response = client.get("/auth/google/callback", follow_redirects=False)
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_cancelled"
+    assert (
+        response.headers["location"]
+        == f"{settings.dashboard_url}/login?error=google_oauth_cancelled"
+    )
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -476,7 +483,10 @@ def test_google_callback_with_access_denied_redirects_without_500(client, monkey
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_access_denied"
+    assert (
+        response.headers["location"]
+        == f"{settings.dashboard_url}/login?error=google_oauth_access_denied"
+    )
     assert "session" not in response.cookies
 
 
@@ -506,7 +516,10 @@ def test_google_callback_invalid_state_redirects_to_token_exchange_failed(client
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_token_exchange_failed"
+    assert (
+        response.headers["location"]
+        == f"{settings.dashboard_url}/login?error=google_oauth_token_exchange_failed"
+    )
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -544,7 +557,10 @@ def test_google_callback_token_exchange_network_failure_redirects_without_500(cl
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_token_exchange_failed"
+    assert (
+        response.headers["location"]
+        == f"{settings.dashboard_url}/login?error=google_oauth_token_exchange_failed"
+    )
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -567,7 +583,10 @@ def test_google_callback_missing_userinfo_redirects_to_invalid_id_token(client, 
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{settings.dashboard_url}/login?error=google_oauth_invalid_id_token"
+    assert (
+        response.headers["location"]
+        == f"{settings.dashboard_url}/login?error=google_oauth_invalid_id_token"
+    )
     assert "session" not in response.cookies
     fake_auth_service.resolve_or_create_google_user.assert_not_awaited()
 
@@ -643,7 +662,11 @@ def test_me_with_pending_2fa_cookie_instead_of_session_returns_401(client):
     endpoint real, no solo unitario) — mismo Requirement que 3.12."""
     fake_auth_service = MagicMock()
     fake_auth_service.decode_token_payload = MagicMock(
-        return_value={"sub": "3f9a2b1c-1111-2222-3333-444455556680", "pending_2fa": True, "typ": "pre_auth"}
+        return_value={
+            "sub": "3f9a2b1c-1111-2222-3333-444455556680",
+            "pending_2fa": True,
+            "typ": "pre_auth",
+        }
     )
     app.state.auth_service = fake_auth_service
 
@@ -784,13 +807,19 @@ async def test_login_verify_2fa_blocks_after_max_failed_attempts_even_with_corre
     app.state.totp_login_attempt_limiter = Login2FAAttemptLimiter(redis_client)
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
             ac.cookies.set("pending_2fa_session", "fake-pre-auth-jwt")
             for attempt in range(MAX_TOTP_LOGIN_ATTEMPTS):
                 response = await ac.post("/auth/2fa/login-verify", json={"code": "000000"})
-                assert response.status_code == 401, f"attempt {attempt} debía ser 401 por código incorrecto"
+                assert (
+                    response.status_code == 401
+                ), f"attempt {attempt} debía ser 401 por código incorrecto"
 
-            assert fake_auth_service.verify_totp_or_backup_code.await_count == MAX_TOTP_LOGIN_ATTEMPTS
+            assert (
+                fake_auth_service.verify_totp_or_backup_code.await_count == MAX_TOTP_LOGIN_ATTEMPTS
+            )
 
             # Se alcanzó el límite -- ahora un código CORRECTO también debe
             # ser rechazado, y verify_totp_or_backup_code NO debe ni
@@ -828,7 +857,9 @@ async def test_new_login_resets_totp_attempt_counter_for_next_login_verify(redis
     app.state.totp_login_attempt_limiter = Login2FAAttemptLimiter(redis_client)
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
             # Agota el presupuesto de intentos del pre-auth actual.
             ac.cookies.set("pending_2fa_session", "fake-pre-auth-jwt")
             for _ in range(MAX_TOTP_LOGIN_ATTEMPTS):
@@ -872,7 +903,11 @@ def test_setup_2fa_rejects_google_only_user(client):
     rechazado]."""
     fake_auth_service = MagicMock()
     fake_auth_service.decode_token_payload = MagicMock(
-        return_value={"sub": "3f9a2b1c-1111-2222-3333-444455556680", "email": "g@example.com", "role": "viewer"}
+        return_value={
+            "sub": "3f9a2b1c-1111-2222-3333-444455556680",
+            "email": "g@example.com",
+            "role": "viewer",
+        }
     )
     fake_auth_service.decode_access_token = MagicMock(
         return_value=_current_user_for("3f9a2b1c-1111-2222-3333-444455556680")
@@ -942,7 +977,11 @@ def test_setup_2fa_rejects_when_already_enabled(client):
     nuevos — cubre la rama TotpAlreadyEnabledError del endpoint."""
     fake_auth_service = MagicMock()
     fake_auth_service.decode_token_payload = MagicMock(
-        return_value={"sub": "3f9a2b1c-1111-2222-3333-444455556680", "email": "g@example.com", "role": "viewer"}
+        return_value={
+            "sub": "3f9a2b1c-1111-2222-3333-444455556680",
+            "email": "g@example.com",
+            "role": "viewer",
+        }
     )
     fake_auth_service.decode_access_token = MagicMock(
         return_value=_current_user_for("3f9a2b1c-1111-2222-3333-444455556680")
@@ -1115,6 +1154,9 @@ def test_me_response_never_includes_extended_profile_fields(client):
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
     fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
+    # email-invitations (Fase 3): get_me() ahora lee onboarding_completed_at
+    # de la base via get_onboarding_status() — el mock debe ser awaitable.
+    fake_auth_service.get_onboarding_status = AsyncMock(return_value=None)
     app.state.auth_service = fake_auth_service
 
     client.cookies.set("session", "fake-session-jwt")
@@ -1157,9 +1199,7 @@ def test_login_jwt_claims_never_include_extended_profile_fields(client):
     )
     app.state.auth_service = fake_auth_service
 
-    response = client.post(
-        "/auth/login", json={"email": fake_user.email, "password": "whatever1"}
-    )
+    response = client.post("/auth/login", json={"email": fake_user.email, "password": "whatever1"})
     assert response.status_code == 200
 
     token = response.cookies.get("session")
@@ -1240,9 +1280,16 @@ def test_export_account_only_invokes_export_for_the_authenticated_user(client):
     fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(own_user_id))
     fake_auth_service.export_user_data = AsyncMock(
         return_value=AccountExport(
-            account={"id": own_user_id, "email": "propio@example.com", "role": "viewer",
-                     "google_id": None, "name": None, "avatar_url": None,
-                     "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"},
+            account={
+                "id": own_user_id,
+                "email": "propio@example.com",
+                "role": "viewer",
+                "google_id": None,
+                "name": None,
+                "avatar_url": None,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            },
             profile=UserProfile(),
             security={"has_password": True, "totp_enabled": False, "linked_google_account": False},
             exported_at="2026-07-20T12:00:00Z",
@@ -1291,9 +1338,7 @@ def test_delete_account_last_superadmin_returns_409_with_explicit_message(client
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "root@example.com", "role": "superadmin"}
     )
-    fake_auth_service.decode_access_token = MagicMock(
-        return_value=_current_user_for(user_id)
-    )
+    fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
     fake_auth_service.delete_account = AsyncMock(side_effect=LastSuperadminError())
     app.state.auth_service = fake_auth_service
 
@@ -1385,6 +1430,9 @@ def test_me_without_2fa_ever_configured_returns_current_user_normally(client):
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
     fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
+    # email-invitations (Fase 3): get_me() ahora lee onboarding_completed_at
+    # de la base via get_onboarding_status() — el mock debe ser awaitable.
+    fake_auth_service.get_onboarding_status = AsyncMock(return_value=None)
     app.state.auth_service = fake_auth_service
 
     client.cookies.set("session", "fake-session-jwt")
@@ -1448,3 +1496,386 @@ def test_google_oauth_full_flow_unaffected_by_account_settings_when_totp_disable
     # create_access_token(resolved_user) -- sin pending_2fa=True -- confirma
     # que el flujo de Google no pasa por el paso intermedio de 2FA.
     fake_auth_service.create_access_token.assert_called_once_with(resolved_user)
+
+
+# =============================================================================
+# email-invitations, Fase 4.5 — contrato NUEVO de POST /auth/register,
+# onboarding, y el rechazo de Google sin invitación.
+#
+# Los tests del "registro abierto" ROMPEN POR DISEÑO con este change (previsto
+# en el proposal): el registro dejó de ser público y pasó a exigir invitación.
+# El único test viejo de register que sobrevive es
+# test_password_register_unaffected_by_google_oauth_disabled (arriba), que
+# mockea create_user() y por lo tanto verifica el contrato HTTP del endpoint
+# (201 + shape), no la regla de invitación — sigue siendo válido y se conserva.
+# Acá abajo se cubre la matriz completa de códigos de design.md Decision 3.
+#
+# Criterio de mocking: igual que el resto del archivo (auth_service fake). La
+# lógica de consumo/atomicidad ya está verificada CONTRA POSTGRES REAL en
+# tests/unit/test_auth_service.py (Fase 4.2/4.3); acá se verifica la
+# TRADUCCIÓN excepción -> código HTTP, que es responsabilidad del endpoint.
+# =============================================================================
+
+from datetime import datetime, timezone  # noqa: E402
+
+from src.services.auth_service import (  # noqa: E402
+    EmailAlreadyRegisteredError,
+    InvalidInvitationError,
+    InvitationEmailMismatchError,
+    InvitationRequiredError,
+)
+
+
+def _fake_auth_service_raising(exc: Exception) -> MagicMock:
+    fake = MagicMock()
+    fake.create_user = AsyncMock(side_effect=exc)
+    return fake
+
+
+def test_register_without_invitation_returns_403_invitation_required(client):
+    """[Scenario: Registro sin token es rechazado en un sistema no vacío] —
+    403 con el shape EXACTO que consume el dashboard: `invitation_required`
+    con guión bajo (contrato vivo en producción)."""
+    app.state.auth_service = _fake_auth_service_raising(
+        InvitationRequiredError("colada@example.com")
+    )
+
+    response = client.post(
+        "/auth/register",
+        json={"email": "colada@example.com", "password": "longenough1"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "invitation_required"}
+
+
+def test_register_with_invalid_token_returns_410_gone(client):
+    """Token desconocido/expirado/revocado/consumido -> 410 (matriz Decision 3)."""
+    app.state.auth_service = _fake_auth_service_raising(InvalidInvitationError("x@example.com"))
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "x@example.com",
+            "password": "longenough1",
+            "invitation_token": "token-muerto",
+        },
+    )
+
+    assert response.status_code == 410
+    assert response.json() == {"error": "invalid invitation"}
+
+
+def test_register_with_email_mismatch_returns_422_not_410(client):
+    """El mismatch de email es 422 y NO 410, pese a que
+    InvitationEmailMismatchError es SUBCLASE de InvalidInvitationError: el
+    endpoint la captura PRIMERO. Si el orden de los `except` se invirtiera,
+    este test lo detecta (sería 410)."""
+    app.state.auth_service = _fake_auth_service_raising(
+        InvitationEmailMismatchError("usurpador@example.com")
+    )
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "usurpador@example.com",
+            "password": "longenough1",
+            "invitation_token": "token-de-otra-persona",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"error": "invitation email mismatch"}
+
+
+def test_register_with_duplicate_email_returns_409(client):
+    """Sin cambios respecto del contrato anterior."""
+    app.state.auth_service = _fake_auth_service_raising(
+        EmailAlreadyRegisteredError("repetida@example.com")
+    )
+
+    response = client.post(
+        "/auth/register",
+        json={"email": "repetida@example.com", "password": "longenough1"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "email already registered"}
+
+
+def test_register_with_valid_invitation_returns_201_with_invited_role(client):
+    """201 heredando el rol de la invitación — el `invitation_token` del
+    payload LLEGA a create_user() (si el endpoint no lo reenviara, todo
+    registro con token válido caería en el 403)."""
+    fake_user = UserPublic(
+        id="3f9a2b1c-1111-2222-3333-4444555566aa",
+        email="invitada@example.com",
+        role=UserRole.MODERADOR,
+    )
+    fake_auth_service = MagicMock()
+    fake_auth_service.create_user = AsyncMock(return_value=fake_user)
+    app.state.auth_service = fake_auth_service
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "invitada@example.com",
+            "password": "longenough1",
+            "invitation_token": "token-valido",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["role"] == "moderador"
+    kwargs = fake_auth_service.create_user.await_args.kwargs
+    assert kwargs["invitation_token"] == "token-valido"
+
+
+def test_register_bootstrap_on_empty_table_without_token_returns_201_superadmin(client):
+    """[Scenario: No-lockout (3) bootstrap] a nivel API: con `users` vacía, un
+    registro SIN token responde 201 y el usuario es superadmin. Es la válvula
+    de escape de dev/staging/DR — sin ella una base nueva quedaría sin forma
+    de entrar (nadie puede invitar porque no hay nadie)."""
+    fake_user = UserPublic(
+        id="3f9a2b1c-1111-2222-3333-4444555566bb",
+        email="primero@example.com",
+        role=UserRole.SUPERADMIN,
+    )
+    fake_auth_service = MagicMock()
+    fake_auth_service.create_user = AsyncMock(return_value=fake_user)
+    app.state.auth_service = fake_auth_service
+
+    response = client.post(
+        "/auth/register",
+        json={"email": "primero@example.com", "password": "longenough1"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["role"] == "superadmin"
+    # Sin token en el payload: el bootstrap NO exige invitación.
+    assert fake_auth_service.create_user.await_args.kwargs["invitation_token"] is None
+
+
+def test_register_never_returns_an_invitation_token_in_the_response(client):
+    """El response del registro no debe filtrar el token consumido."""
+    fake_user = UserPublic(
+        id="3f9a2b1c-1111-2222-3333-4444555566cc",
+        email="sin-eco@example.com",
+        role=UserRole.VIEWER,
+    )
+    fake_auth_service = MagicMock()
+    fake_auth_service.create_user = AsyncMock(return_value=fake_user)
+    app.state.auth_service = fake_auth_service
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "sin-eco@example.com",
+            "password": "longenough1",
+            "invitation_token": "token-secreto-abc123",
+        },
+    )
+
+    assert response.status_code == 201
+    assert "token-secreto-abc123" not in response.text
+    assert "invitation_token" not in response.json()
+
+
+# --- No-regresión de los logins existentes (No-lockout 1 y 2 a nivel API) ---
+
+
+def test_password_login_of_existing_user_still_works_after_invitation_gate(client):
+    """[Scenario: No-lockout (1)] — POST /auth/login NO se tocó en absoluto:
+    un usuario existente sigue entrando con su password y recibiendo la cookie
+    `session`. El gate de invitación vive en el REGISTRO, no en el login."""
+    fake_user_in_db = MagicMock()
+    fake_user_in_db.id = "3f9a2b1c-1111-2222-3333-4444555566dd"
+    fake_user_in_db.email = "existente@example.com"
+    fake_user_in_db.role = UserRole.ADMIN
+    fake_user_in_db.password_hash = "hash-existente"
+    fake_user_in_db.google_id = None
+    fake_user_in_db.name = None
+    fake_user_in_db.avatar_url = None
+    fake_user_in_db.totp_enabled = False
+
+    fake_auth_service = MagicMock()
+    fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
+    fake_auth_service.verify_password = MagicMock(return_value=True)
+    fake_auth_service.create_access_token = MagicMock(return_value="fake-jwt")
+    app.state.auth_service = fake_auth_service
+
+    response = client.post(
+        "/auth/login", json={"email": "existente@example.com", "password": "whatever1"}
+    )
+
+    assert response.status_code == 200
+    assert response.cookies.get("session") == "fake-jwt"
+    # El login NUNCA debe consultar invitaciones.
+    fake_auth_service.create_user.assert_not_called()
+
+
+def test_google_callback_without_invitation_redirects_to_login_without_cookie(client, monkeypatch):
+    """[MODIFIED: Google sin invitación es rechazado] a nivel API — el rechazo
+    debe ser un 302 a /login?error=google_no_invitation, NUNCA un 500 ni un
+    JSON: el usuario está en medio de un redirect flow del browser.
+
+    Un `Depends()` que explotara fuera del try convertiría esto en un 500
+    (lección documentada del proyecto) — este test es el que lo detectaría."""
+    app.state.google_oauth_enabled = True
+    fake_auth_service = MagicMock()
+    fake_auth_service.resolve_or_create_google_user = AsyncMock(
+        side_effect=InvitationRequiredError("sin-invitacion@example.com")
+    )
+    app.state.auth_service = fake_auth_service
+    monkeypatch.setattr(
+        oauth,
+        "google",
+        _fake_google_client(
+            userinfo={
+                "sub": "google-sub-sin-invitacion",
+                "email": "sin-invitacion@example.com",
+                "email_verified": True,
+            }
+        ),
+        raising=False,
+    )
+
+    response = client.get(
+        "/auth/google/callback",
+        params={"code": "some-code", "state": "some-state"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert "/login?error=google_no_invitation" in response.headers["location"]
+    assert response.cookies.get("session") is None
+
+
+def test_google_callback_of_already_linked_user_still_works(client, monkeypatch):
+    """[Scenario: No-lockout (2)] a nivel API — un usuario ya vinculado entra
+    por Google exactamente igual que antes del change: 302 con cookie."""
+    app.state.google_oauth_enabled = True
+    resolved = UserPublic(
+        id="3f9a2b1c-1111-2222-3333-4444555566ee",
+        email="vinculado@example.com",
+        role=UserRole.ADMIN,
+    )
+    app.state.auth_service = _fake_auth_service_for_callback(resolved)
+    monkeypatch.setattr(
+        oauth,
+        "google",
+        _fake_google_client(
+            userinfo={
+                "sub": "google-sub-vinculado",
+                "email": "vinculado@example.com",
+                "email_verified": True,
+            }
+        ),
+        raising=False,
+    )
+
+    response = client.get(
+        "/auth/google/callback",
+        params={"code": "some-code", "state": "some-state"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.cookies.get("session") == "fake-google-jwt"
+
+
+# --- Onboarding (Decision 6) -------------------------------------------------
+
+
+def test_me_includes_onboarding_completed_at_read_from_the_database(client):
+    """[Scenario: Usuario nuevo tiene onboarding pendiente] — el campo viaja en
+    /auth/me y sale de la BASE (get_onboarding_status), no del JWT: un dato
+    mutable no va en un token inmutable (Decision 6). El fake del payload del
+    JWT no trae el campo justamente para probar que no se lee de ahí."""
+    user_id = "3f9a2b1c-1111-2222-3333-4444555566ff"
+    fake_auth_service = MagicMock()
+    fake_auth_service.decode_token_payload = MagicMock(
+        return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
+    )
+    fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
+    fake_auth_service.get_onboarding_status = AsyncMock(return_value=None)
+    app.state.auth_service = fake_auth_service
+
+    client.cookies.set("session", "fake-session-jwt")
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["onboarding_completed_at"] is None
+    fake_auth_service.get_onboarding_status.assert_awaited_once_with(UUID(user_id))
+
+
+def test_me_of_a_user_that_already_completed_onboarding_returns_the_timestamp(client):
+    """El usuario que ya completó el wizard NO debe volver a verlo: el campo
+    llega con timestamp y el frontend no monta el gate."""
+    user_id = "3f9a2b1c-1111-2222-3333-44445555670a"
+    completed_at = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    fake_auth_service = MagicMock()
+    fake_auth_service.decode_token_payload = MagicMock(
+        return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
+    )
+    fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
+    fake_auth_service.get_onboarding_status = AsyncMock(return_value=completed_at)
+    app.state.auth_service = fake_auth_service
+
+    client.cookies.set("session", "fake-session-jwt")
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["onboarding_completed_at"] is not None
+
+
+def test_onboarding_complete_returns_204_and_is_idempotent(client):
+    """[Scenario: Completar onboarding persiste y es idempotente] a nivel API:
+    dos llamadas seguidas responden 204 (la idempotencia real, "no pisa el
+    timestamp", está verificada contra la base en test_auth_service.py)."""
+    user_id = "3f9a2b1c-1111-2222-3333-44445555670b"
+    fake_auth_service = MagicMock()
+    fake_auth_service.decode_token_payload = MagicMock(
+        return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
+    )
+    fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
+    fake_auth_service.complete_onboarding = AsyncMock(return_value=None)
+    app.state.auth_service = fake_auth_service
+
+    client.cookies.set("session", "fake-session-jwt")
+    first = client.post("/auth/me/onboarding-complete")
+    second = client.post("/auth/me/onboarding-complete")
+
+    assert first.status_code == 204
+    assert second.status_code == 204
+    assert fake_auth_service.complete_onboarding.await_count == 2
+
+
+def test_onboarding_complete_without_session_returns_401(client):
+    """[Scenario: Sin sesión no se puede marcar onboarding]."""
+    app.state.auth_service = MagicMock()
+    client.cookies.clear()
+
+    response = client.post("/auth/me/onboarding-complete")
+
+    assert response.status_code == 401
+
+
+def test_onboarding_complete_is_allowed_for_any_role_including_viewer(client):
+    """Sin restricción de rol: cada usuario completa SU onboarding (el
+    endpoint usa get_current_user, no require_min_role)."""
+    user_id = "3f9a2b1c-1111-2222-3333-44445555670c"
+    fake_auth_service = MagicMock()
+    fake_auth_service.decode_token_payload = MagicMock(
+        return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
+    )
+    fake_auth_service.decode_access_token = MagicMock(return_value=_current_user_for(user_id))
+    fake_auth_service.complete_onboarding = AsyncMock(return_value=None)
+    app.state.auth_service = fake_auth_service
+
+    client.cookies.set("session", "fake-session-jwt")
+    response = client.post("/auth/me/onboarding-complete")
+
+    assert response.status_code == 204
+    # Marca SU propio onboarding, el del `sub` de su sesión.
+    fake_auth_service.complete_onboarding.assert_awaited_once_with(UUID(user_id))

@@ -11,13 +11,12 @@ Endpoints:
 - GET /events: Solo lista de eventos
 - GET /alerts: Solo alertas activas
 """
+
 import asyncio
-import hashlib
 import logging
-import secrets
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional, List
+from typing import AsyncIterator, Optional
 from uuid import UUID
 
 import asyncpg
@@ -46,9 +45,11 @@ from src.observability.logging_config import configure_logging
 from src.observability.request_context import request_id_ctx
 from src.models.beta import BetaSignupItem, BetaSignupRequest
 from src.models.event import MonitorReport, SeismicEvent, Alert
+from src.models.invitation import InvitationCreate, InvitationPublic, InvitationWithToken
 from src.models.user import (
     AccountExport,
     CurrentUser,
+    MeResponse,
     TotpSetupResponse,
     TotpVerifyRequest,
     UserCreate,
@@ -69,7 +70,9 @@ from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
     AuthService,
     EmailAlreadyRegisteredError,
+    InvalidInvitationError,
     InvalidTokenError,
+    InvitationEmailMismatchError,
     InvitationRequiredError,
     InvalidTotpCodeError,
     LastSuperadminError,
@@ -86,7 +89,16 @@ from src.api.deps import (
     require_min_role,
 )
 from src.services.email_service import EmailService
-from src.services.invitation_service import PENDING_PREDICATE_SQL
+from src.services.invitation_service import (
+    PENDING_PREDICATE_SQL,
+    CannotInviteHigherRoleError,
+    InvitationAlreadyAcceptedError,
+    InvitationAlreadyExistsError,
+    InvitationNotFoundError,
+    InvitationNotPendingError,
+    InvitationService,
+    insert_invitation_row,
+)
 from src.api.routers import areas as areas_router
 from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
@@ -222,7 +234,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 exc_info=True,
             )
     else:
-        logger.info("TimescaleDB no configurado (TIMESCALEDB_HOST vacío) — sin historial persistido")
+        logger.info(
+            "TimescaleDB no configurado (TIMESCALEDB_HOST vacío) — sin historial persistido"
+        )
 
     # --------------------------------------------------------------------
     # Auth (multi-user-auth, Fase 3) — FAIL-FAST, deliberadamente NO
@@ -289,6 +303,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # igual que AuthService, el dueño del ciclo de vida es este lifespan.
     # No tiene connect(): el pool ya está abierto cuando llega acá.
     app.state.area_service = AreaService(db_pool)
+
+    # Invitaciones (email-invitations, Fase 3). Mismo patrón de pool
+    # prestado que AreaService/AuthService: lo cierra este lifespan, no el
+    # servicio. La vigencia de cada token sale de settings (Decision 9).
+    app.state.invitation_service = InvitationService(
+        pool=db_pool, expire_days=settings.invitation_expire_days
+    )
+    logger.info("InvitationService conectado (tabla invitations)")
 
     # Emails del flujo de beta (email_service.py). Sin estado ni conexión
     # persistente: un cliente httpx por envío — no participa del shutdown.
@@ -394,6 +416,7 @@ app.include_router(areas_router.router)
 # Request ID Middleware (M1.5)
 # =============================================================================
 
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     """Propaga o genera un X-Request-ID por cada request.
@@ -416,6 +439,7 @@ async def request_id_middleware(request: Request, call_next):
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @app.get("/health", response_class=PlainTextResponse, tags=["ops"])
 async def health() -> str:
@@ -771,24 +795,29 @@ async def approve_beta_signup(
 
             already_approved = signup["approved_at"] is not None
 
+            # Mismo advisory lock que create_invitation(), y ANTES del chequeo
+            # de pendiente: sin esto, un approve y un create de admin
+            # simultáneos sobre el mismo email veían cada uno "no hay
+            # pendiente" y dejaban DOS invitaciones vigentes. El FOR UPDATE de
+            # arriba serializa por signup, no por email — no alcanza.
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext(lower($1)))", signup["email"])
+
             pending = await conn.fetchrow(
                 f"SELECT id FROM invitations WHERE lower(email) = lower($1) AND {PENDING_PREDICATE_SQL}",
                 signup["email"],
             )
             if pending is None and not already_approved:
-                # El token se genera porque el schema lo exige (NOT NULL) y
-                # habilita el futuro camino por password, pero este flujo no
-                # lo manda a ningún lado: el consumo es por email (Google).
-                token_hash = hashlib.sha256(secrets.token_urlsafe(32).encode()).hexdigest()
-                await conn.execute(
-                    """
-                    INSERT INTO invitations (email, role, token_hash, invited_by, expires_at)
-                    VALUES ($1, 'viewer', $2, $3, now() + make_interval(days => $4))
-                    """,
-                    signup["email"],
-                    token_hash,
-                    admin.id,
-                    settings.invitation_expire_days,
+                # insert_invitation_row (Fase 2 de email-invitations) es la
+                # única fuente de verdad de cómo nace una invitación (token +
+                # sha256 + expiración). El token en claro se DESCARTA a
+                # propósito: este flujo no lo manda a ningún lado — el
+                # consumo es por email (Google, Decision 5).
+                await insert_invitation_row(
+                    conn,
+                    email=signup["email"],
+                    role=UserRole.VIEWER,
+                    invited_by=admin.id,
+                    expire_days=settings.invitation_expire_days,
                 )
 
             await conn.execute(
@@ -804,7 +833,9 @@ async def approve_beta_signup(
 
 @app.get("/events/search", response_model=list[SeismicEvent], tags=["monitoring"])
 async def search_events(
-    sources: Optional[str] = Query(None, description="Fuentes separadas por coma: usgs,emsc,inpres"),
+    sources: Optional[str] = Query(
+        None, description="Fuentes separadas por coma: usgs,emsc,inpres"
+    ),
     min_mag: Optional[float] = Query(None, description="Magnitud mínima"),
     max_mag: Optional[float] = Query(None, description="Magnitud máxima"),
     min_depth: Optional[float] = Query(None, description="Profundidad mínima (km)"),
@@ -857,7 +888,9 @@ async def search_events(
 
         logger.info(
             "Search: %d events (from %d total, sources: %s)",
-            len(filtered), len(merged), source_list,
+            len(filtered),
+            len(merged),
+            source_list,
         )
 
         requests_total.labels(endpoint="/events/search", status="200").inc()
@@ -873,6 +906,7 @@ async def search_events(
 # siguen 100% públicos. Solo /auth/me está protegido, porque no tiene
 # sentido sin sesión.
 # =============================================================================
+
 
 def _get_auth_service(request: Request) -> AuthService:
     return request.app.state.auth_service
@@ -895,7 +929,9 @@ PENDING_2FA_COOKIE_NAME = "pending_2fa_session"
 PENDING_2FA_COOKIE_MAX_AGE_SECONDS = 120
 
 
-@app.post("/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED, tags=["auth"])
+@app.post(
+    "/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED, tags=["auth"]
+)
 async def register(
     payload: UserCreate,
     auth_service: AuthService = Depends(_get_auth_service),
@@ -932,9 +968,27 @@ async def register(
         # invitación pendiente y vigente no se crea NADA — este endpoint es
         # público y sin este gate cualquiera se registraba (el bootstrap del
         # primer usuario es la única excepción, decidida server-side).
+        requests_total.labels(endpoint="/auth/register", status="403").inc()
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content={"error": "invitation_required"},
+        )
+    except InvitationEmailMismatchError:
+        # ANTES que InvalidInvitationError (es su subclase): token válido
+        # pero el email del payload no es el invitado — 422, la invitación
+        # NO se quema (el rollback de la transacción revierte el consumo).
+        requests_total.labels(endpoint="/auth/register", status="422").inc()
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"error": "invitation email mismatch"},
+        )
+    except InvalidInvitationError:
+        # Token presente pero no consumible: desconocido, expirado, revocado
+        # o ya usado — 410 Gone (matriz de Decision 3).
+        requests_total.labels(endpoint="/auth/register", status="410").inc()
+        return JSONResponse(
+            status_code=status.HTTP_410_GONE,
+            content={"error": "invalid invitation"},
         )
 
     requests_total.labels(endpoint="/auth/register", status="201").inc()
@@ -999,7 +1053,9 @@ async def login(
         except Exception:
             logger.warning(
                 "No se pudo resetear el rate-limiter de 2FA login-verify "
-                "para user_id=%s (Redis no disponible?)", user.id, exc_info=True,
+                "para user_id=%s (Redis no disponible?)",
+                user.id,
+                exc_info=True,
             )
         # NOTA: la cookie se setea sobre el JSONResponse que efectivamente
         # se retorna, NO sobre el `response: Response` inyectado por FastAPI
@@ -1053,20 +1109,259 @@ async def logout(response: Response) -> None:
     incluso sin sesión activa [Requirement: Logout / Scenario: Logout sin
     sesión activa no falla].
     """
-    response.delete_cookie(
-        SESSION_COOKIE_NAME, samesite="lax", domain=settings.auth_cookie_domain
-    )
+    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", domain=settings.auth_cookie_domain)
     requests_total.labels(endpoint="/auth/logout", status="204").inc()
 
 
-@app.get("/auth/me", response_model=CurrentUser, tags=["auth"])
-async def get_me(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+@app.get("/auth/me", response_model=MeResponse, tags=["auth"])
+async def get_me(
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> MeResponse:
     """
     Perfil del usuario autenticado. Protegido con Depends(get_current_user)
     — [Requirement: Perfil del usuario autenticado].
+
+    `onboarding_completed_at` se lee de la BASE en cada request, no del JWT
+    (email-invitations, Decision 6): es un dato mutable — si viajara como
+    claim quedaría stale tras completar el wizard hasta el próximo re-login.
     """
+    onboarding_completed_at = await auth_service.get_onboarding_status(current_user.id)
     requests_total.labels(endpoint="/auth/me", status="200").inc()
-    return current_user
+    return MeResponse(
+        **current_user.model_dump(),
+        onboarding_completed_at=onboarding_completed_at,
+    )
+
+
+@app.post(
+    "/auth/me/onboarding-complete",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["auth"],
+)
+async def complete_onboarding(
+    current_user: CurrentUser = Depends(get_current_user),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> None:
+    """
+    Marca el onboarding del propio usuario como completado (wizard terminado
+    O salteado — ambos convergen acá, Decision 7). Sin restricción de rol:
+    cualquier usuario autenticado completa SU onboarding. Idempotente: la
+    segunda llamada es un no-op y el timestamp original no se pisa —
+    [Requirement: Persistencia del estado de onboarding].
+    """
+    await auth_service.complete_onboarding(current_user.id)
+    requests_total.labels(endpoint="/auth/me/onboarding-complete", status="204").inc()
+
+
+# =============================================================================
+# email-invitations — gestión admin de invitaciones + validación pública
+#
+# Los 5 endpoints de gestión usan require_min_role(UserRole.ADMIN) existente
+# (deps.py NO se toca — Decision 3: cubre admin y superadmin tal cual está).
+# /auth/invitations/validate es PÚBLICO: lo consume la página /invite/[token]
+# antes de que exista sesión alguna. Códigos de error según la matriz exacta
+# de design.md Decision 3; shape {"error": ...} + métricas, como el resto.
+# =============================================================================
+
+
+def _get_invitation_service(request: Request) -> InvitationService:
+    """DI del servicio de invitaciones — mismo patrón que _get_auth_service
+    (request.app.state, poblado en lifespan())."""
+    return request.app.state.invitation_service
+
+
+@app.post(
+    "/auth/invitations",
+    response_model=InvitationWithToken,
+    status_code=status.HTTP_201_CREATED,
+    tags=["auth"],
+)
+async def create_invitation(
+    payload: InvitationCreate,
+    admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    invitation_service: InvitationService = Depends(_get_invitation_service),
+):
+    """
+    Crea una invitación y devuelve el token en claro — la ÚNICA vez que el
+    sistema lo entrega (la base persiste solo el sha256; el reenvío genera
+    uno NUEVO, no repite éste) — [Requirement: Creación de invitación].
+    """
+    try:
+        invitation = await invitation_service.create_invitation(
+            email=payload.email, role=payload.role, invited_by=admin
+        )
+    except CannotInviteHigherRoleError:
+        # Guard de escalación: un admin no se fabrica un superadmin por
+        # interpósita invitación (Decision 3).
+        requests_total.labels(endpoint="/auth/invitations", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "cannot invite a role higher than your own"},
+        )
+    except EmailAlreadyRegisteredError:
+        requests_total.labels(endpoint="/auth/invitations", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "email already registered"},
+        )
+    except InvitationAlreadyExistsError:
+        requests_total.labels(endpoint="/auth/invitations", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error": "a pending invitation already exists for this email — resend it instead"
+            },
+        )
+
+    requests_total.labels(endpoint="/auth/invitations", status="201").inc()
+    return invitation
+
+
+@app.get("/auth/invitations", response_model=list[InvitationPublic], tags=["auth"])
+async def list_invitations(
+    _admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    invitation_service: InvitationService = Depends(_get_invitation_service),
+) -> list[InvitationPublic]:
+    """
+    Listado con estado derivado (pending/accepted/revoked/expired) evaluado
+    en la query. `list[InvitationPublic]` no puede filtrar tokens por
+    construcción del tipo — [Requirement: Listado de invitaciones con estado].
+    """
+    invitations = await invitation_service.list_invitations()
+    requests_total.labels(endpoint="/auth/invitations", status="200").inc()
+    return invitations
+
+
+@app.get("/auth/invitations/validate", tags=["auth"])
+async def validate_invitation(
+    token: str = Query(..., description="Token de invitación en claro (del link /invite/{token})"),
+    invitation_service: InvitationService = Depends(_get_invitation_service),
+):
+    """
+    Validación PÚBLICA de un token (página /invite/[token], sin sesión). NO
+    consume: validar N veces deja la invitación igual de pendiente. 404 vs
+    410 es deliberado (Decision 3): con 256 bits de entropía no hay riesgo
+    de enumeración, y la UX distingue "link inválido" de "vencido — pedí un
+    reenvío" — [Requirement: Validación pública del token de invitación].
+    """
+    try:
+        invitation = await invitation_service.validate_token(token)
+    except InvitationNotFoundError:
+        requests_total.labels(endpoint="/auth/invitations/validate", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "invalid invitation"},
+        )
+    except InvitationNotPendingError:
+        requests_total.labels(endpoint="/auth/invitations/validate", status="410").inc()
+        return JSONResponse(
+            status_code=status.HTTP_410_GONE,
+            content={"error": "invitation no longer valid"},
+        )
+
+    requests_total.labels(endpoint="/auth/invitations/validate", status="200").inc()
+    return {
+        "email": invitation.email,
+        "role": invitation.role.value,
+        "expires_at": invitation.expires_at.isoformat(),
+    }
+
+
+@app.delete(
+    "/auth/invitations/{invitation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["auth"],
+)
+async def revoke_invitation(
+    invitation_id: UUID,
+    _admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    invitation_service: InvitationService = Depends(_get_invitation_service),
+):
+    """
+    Revoca una invitación no aceptada. 409 sobre una aceptada: revocar una
+    invitación consumida no des-crea al usuario — rechazo explícito, no un
+    no-op engañoso (Decision 3) — [Requirement: Revocación de invitación].
+    """
+    try:
+        await invitation_service.revoke_invitation(invitation_id)
+    except InvitationNotFoundError:
+        requests_total.labels(endpoint="/auth/invitations/{id}", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "invitation not found"},
+        )
+    except InvitationAlreadyAcceptedError:
+        requests_total.labels(endpoint="/auth/invitations/{id}", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "invitation already accepted"},
+        )
+
+    requests_total.labels(endpoint="/auth/invitations/{id}", status="204").inc()
+
+
+@app.post(
+    "/auth/invitations/{invitation_id}/resend",
+    response_model=InvitationWithToken,
+    tags=["auth"],
+)
+async def resend_invitation(
+    invitation_id: UUID,
+    _admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    invitation_service: InvitationService = Depends(_get_invitation_service),
+):
+    """
+    Regenera token + expiración (el link anterior queda muerto en el mismo
+    acto; una expirada REVIVE) y devuelve el token nuevo en claro. 409 si ya
+    fue aceptada o revocada — [Requirement: Reenvío de invitación con
+    regeneración de token].
+    """
+    try:
+        invitation = await invitation_service.resend_invitation(invitation_id)
+    except InvitationNotFoundError:
+        requests_total.labels(endpoint="/auth/invitations/{id}/resend", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "invitation not found"},
+        )
+    except (InvitationAlreadyAcceptedError, InvitationNotPendingError):
+        # Aceptada o revocada: ambas son 409 en el resend (matriz Decision 3).
+        requests_total.labels(endpoint="/auth/invitations/{id}/resend", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "invitation already accepted or revoked"},
+        )
+
+    requests_total.labels(endpoint="/auth/invitations/{id}/resend", status="200").inc()
+    return invitation
+
+
+@app.post(
+    "/auth/invitations/{invitation_id}/mark-sent",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["auth"],
+)
+async def mark_invitation_email_sent(
+    invitation_id: UUID,
+    _admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    invitation_service: InvitationService = Depends(_get_invitation_service),
+):
+    """
+    Confirmación de envío del email (Decision 4): la invoca la route de Next
+    tras un envío exitoso de Resend, con la cookie del admin — no es un
+    reporte anónimo falsificable. Setea email_sent_at = now().
+    """
+    try:
+        await invitation_service.mark_email_sent(invitation_id)
+    except InvitationNotFoundError:
+        requests_total.labels(endpoint="/auth/invitations/{id}/mark-sent", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "invitation not found"},
+        )
+
+    requests_total.labels(endpoint="/auth/invitations/{id}/mark-sent", status="204").inc()
 
 
 # =============================================================================
@@ -1156,7 +1451,8 @@ async def login_verify_2fa(
         logger.warning(
             "No se pudo consultar el rate-limiter de 2FA login-verify para "
             "user_id=%s (Redis no disponible?) — continuando sin límite",
-            user_id, exc_info=True,
+            user_id,
+            exc_info=True,
         )
 
     code_ok = await auth_service.verify_totp_or_backup_code(user_id, payload.code)
@@ -1169,7 +1465,9 @@ async def login_verify_2fa(
         except Exception:
             logger.warning(
                 "No se pudo registrar el intento fallido de 2FA login-verify "
-                "para user_id=%s (Redis no disponible?)", user_id, exc_info=True,
+                "para user_id=%s (Redis no disponible?)",
+                user_id,
+                exc_info=True,
             )
         requests_total.labels(endpoint="/auth/2fa/login-verify", status="401").inc()
         return JSONResponse(
@@ -1194,7 +1492,8 @@ async def login_verify_2fa(
         logger.warning(
             "No se pudo resetear el rate-limiter de 2FA login-verify tras "
             "login exitoso para user_id=%s (Redis no disponible?)",
-            user_id, exc_info=True,
+            user_id,
+            exc_info=True,
         )
 
     token = auth_service.create_access_token(user)
@@ -1351,14 +1650,10 @@ async def delete_account(
         requests_total.labels(endpoint="/account", status="409").inc()
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={
-                "error": "no podés eliminar tu cuenta: sos el único superadmin del sistema"
-            },
+            content={"error": "no podés eliminar tu cuenta: sos el único superadmin del sistema"},
         )
 
-    response.delete_cookie(
-        SESSION_COOKIE_NAME, samesite="lax", domain=settings.auth_cookie_domain
-    )
+    response.delete_cookie(SESSION_COOKIE_NAME, samesite="lax", domain=settings.auth_cookie_domain)
     requests_total.labels(endpoint="/account", status="200").inc()
     return {}
 
@@ -1536,6 +1831,7 @@ async def google_callback(
 # Spectrograms — WebSocket en vivo (SeedLink -> Redis -> aquí)
 # =============================================================================
 
+
 @app.websocket("/ws/spectrogram/{channel}")
 async def ws_spectrogram(websocket: WebSocket, channel: str) -> None:
     """
@@ -1562,7 +1858,10 @@ async def get_live_channels() -> list[dict]:
     completo. El frontend usa esto para decidir en qué tarjetas mostrar el
     toggle Vivo/24h — solo aparece donde hay cobertura real.
     """
-    return [{"city_id": city_id, "channel": channel} for city_id, channel in LIVE_CHANNELS_BY_CITY.items()]
+    return [
+        {"city_id": city_id, "channel": channel}
+        for city_id, channel in LIVE_CHANNELS_BY_CITY.items()
+    ]
 
 
 @app.get("/spectrograms/{channel}/history", tags=["spectrograms"])
@@ -1587,13 +1886,14 @@ async def get_spectrogram_history(
 # Spectrograms
 # =============================================================================
 
+
 @app.get("/spectrograms/{city_id}", tags=["spectrograms"])
 async def get_spectrogram(
     city_id: str,
     latitude: float = Query(..., description="Latitud de la ciudad"),
     longitude: float = Query(..., description="Longitud de la ciudad"),
     network: Optional[str] = Query(None, description="Código de red FDSN preferido"),
-    duration_hours: int = Query(24, description="Duración en horas", ge=1, le=168)
+    duration_hours: int = Query(24, description="Duración en horas", ge=1, le=168),
 ) -> dict:
     """
     Generar espectrograma para una ubicación específica.
@@ -1629,7 +1929,8 @@ async def get_spectrogram(
             requests_total.labels(endpoint="/spectrograms", status="500").inc()
             logger.warning(
                 "Failed to generate spectrogram for %s: %s",
-                city_id, result.get("error"),
+                city_id,
+                result.get("error"),
             )
 
         return result
@@ -1660,10 +1961,7 @@ async def get_event_detail(event_id: str) -> dict:
             requests_total.labels(endpoint="/events/detail", status="404").inc()
             logger.warning("Event %s not found", event_id)
 
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"Event {event_id} not found"}
-            )
+            return JSONResponse(status_code=404, content={"error": f"Event {event_id} not found"})
 
 
 @app.get("/events/{event_id}/rupture", tags=["advanced"])
@@ -1689,8 +1987,8 @@ async def get_rupture_model(event_id: str) -> dict:
                 status_code=404,
                 content={
                     "error": f"No rupture model available for event {event_id}",
-                    "note": "Rupture models are only available for significant earthquakes with published finite fault solutions."
-                }
+                    "note": "Rupture models are only available for significant earthquakes with published finite fault solutions.",
+                },
             )
 
 
@@ -1699,6 +1997,7 @@ async def get_rupture_model(event_id: str) -> dict:
 # =============================================================================
 
 if getattr(settings, "debug", False):
+
     @app.get("/__debug/raise", tags=["debug"])
     async def debug_raise() -> None:
         """Lanza una excepción para testear la integración con Sentry/GlitchTip."""
@@ -1708,6 +2007,7 @@ if getattr(settings, "debug", False):
 # =============================================================================
 # Root endpoint
 # =============================================================================
+
 
 @app.get("/", tags=["info"])
 async def root() -> dict:
