@@ -17,11 +17,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 
 import { AreaSelector } from '@/components/AreaSelector';
 import { emitAreaChanged } from '@/lib/area-events';
 
 export function AreaHeader() {
+  const t = useTranslations('areas');
   const router = useRouter();
 
   const handleAreaChange = () => {
@@ -34,7 +36,7 @@ export function AreaHeader() {
   return (
     <div className="flex items-center gap-2">
       <span className="font-data text-xs text-muted-foreground">
-        Estación de monitoreo
+        {t('monitoringStation')}
       </span>
       <AreaSelector onAreaChange={handleAreaChange} />
     </div>

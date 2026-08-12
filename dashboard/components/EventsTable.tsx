@@ -5,6 +5,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { SeismicEvent } from '@/lib/types';
 import {
@@ -44,9 +45,11 @@ interface EventsTableProps {
  * mínimo para identificar un sismo), estas dos se agregan a gusto. */
 type OptionalColumn = 'fuente' | 'estado';
 
-const OPTIONAL_COLUMNS: { id: OptionalColumn; label: string }[] = [
-  { id: 'fuente', label: 'Fuente' },
-  { id: 'estado', label: 'Estado (revisado/sentido)' },
+/** Sólo los ids: el label sale del diccionario dentro del componente
+ * (Decision 5 — las constantes de módulo no llaman a t()). */
+const OPTIONAL_COLUMNS: { id: OptionalColumn; labelKey: 'sourceLabel' | 'statusLabel' }[] = [
+  { id: 'fuente', labelKey: 'sourceLabel' },
+  { id: 'estado', labelKey: 'statusLabel' },
 ];
 
 const VISIBLE_COLUMNS_STORAGE_KEY = 'events-table.visible-optional-columns.v1';
@@ -73,6 +76,7 @@ export function EventsTable({
   selectedEventId,
   filterable = false,
 }: EventsTableProps) {
+  const t = useTranslations('events');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
 
   // Al cambiar de área los filtros se limpian: un "Chile" tecleado antes de
@@ -127,11 +131,11 @@ export function EventsTable({
         type="button"
         onClick={() => setColumnsMenuOpen((open) => !open)}
         aria-expanded={columnsMenuOpen}
-        aria-label="Elegir columnas visibles"
+        aria-label={t('columns.choose')}
         className="flex items-center gap-1.5 rounded-md border-2 border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60"
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
-        Columnas
+        {t('columns.button')}
       </button>
 
       {columnsMenuOpen && (
@@ -142,9 +146,9 @@ export function EventsTable({
           <div className="fixed inset-0 z-10" onClick={() => setColumnsMenuOpen(false)} />
           <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border-2 border-border bg-popover p-2 shadow-lg">
             <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Columnas opcionales
+              {t('columns.optional')}
             </p>
-            {OPTIONAL_COLUMNS.map(({ id, label }) => (
+            {OPTIONAL_COLUMNS.map(({ id, labelKey }) => (
               <label
                 key={id}
                 className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/60"
@@ -155,7 +159,7 @@ export function EventsTable({
                   onChange={() => toggleColumn(id)}
                   className="h-4 w-4 cursor-pointer accent-primary"
                 />
-                {label}
+                {t(`columns.${labelKey}`)}
               </label>
             ))}
           </div>
@@ -188,9 +192,7 @@ export function EventsTable({
             "no hay coincidencias", y la barra ya lo explica arriba. */}
         {!isFiltered && (
           <div className="rounded-lg border-2 border-border bg-muted/40 p-8 text-center">
-            <p className="text-muted-foreground">
-              No hay eventos registrados en la ventana de tiempo actual
-            </p>
+            <p className="text-muted-foreground">{t('emptyWindow')}</p>
           </div>
         )}
       </div>
@@ -229,8 +231,11 @@ export function EventsTable({
               </span>
 
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-foreground" title={evento.lugar || 'Desconocido'}>
-                  {evento.lugar || 'Desconocido'}
+                <p
+                  className="truncate font-semibold text-foreground"
+                  title={evento.lugar || t('unknownPlace')}
+                >
+                  {evento.lugar || t('unknownPlace')}
                 </p>
                 <p className="font-data text-xs text-muted-foreground">
                   {formatDateTimeCompact(evento.hora_utc)}
@@ -252,12 +257,12 @@ export function EventsTable({
                     {visibleColumns.has('estado') && (
                       <span className="flex items-center gap-1.5">
                         {evento.revisado && (
-                          <span title="Revisado">
+                          <span title={t('reviewed')}>
                             <CheckCircle className="h-3.5 w-3.5 text-severity-ok" />
                           </span>
                         )}
                         {evento.sentido && (
-                          <span title="Sentido">
+                          <span title={t('felt')}>
                             <Users className="h-3.5 w-3.5 text-severity-moderate" />
                           </span>
                         )}
@@ -268,7 +273,7 @@ export function EventsTable({
               </div>
 
               {isSelected && (
-                <span title="Seleccionado en el mapa" className="shrink-0">
+                <span title={t('selectedOnMap')} className="shrink-0">
                   <MapPin className="h-4 w-4 text-severity-low" />
                 </span>
               )}
@@ -280,8 +285,11 @@ export function EventsTable({
             cuando el filtro dejó 12 sería mentir sobre lo que hay para ver. */}
         {limit && filteredEvents.length > limit && (
           <div className="border-t-2 border-border bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground">
-            Mostrando {limit} de {filteredEvents.length} eventos
-            {isFiltered && ' filtrados'}
+            {/* Dos claves en vez de concatenar " filtrados": en inglés el
+                adjetivo va antes del sustantivo, no al final de la frase. */}
+            {isFiltered
+              ? t('showingFiltered', { shown: limit, total: filteredEvents.length })
+              : t('showing', { shown: limit, total: filteredEvents.length })}
           </div>
         )}
       </div>

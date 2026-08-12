@@ -22,12 +22,10 @@ function catalog(): AreaGroup[] {
   return [
     {
       id: 'belts',
-      label: 'Cinturones sísmicos',
       areas: [makeArea('anillo_de_fuego', 'Cinturón — Anillo de Fuego')],
     },
     {
       id: 'subduction',
-      label: 'Zonas de subducción',
       areas: [
         makeArea('cascadia', 'Zona de subducción de Cascadia'),
         makeArea('chile', 'Chile y fosa Perú-Chile'),
@@ -37,7 +35,6 @@ function catalog(): AreaGroup[] {
     },
     {
       id: 'faults',
-      label: 'Fallas',
       areas: [makeArea('san_andres', 'Falla de San Andrés (California)')],
     },
   ];

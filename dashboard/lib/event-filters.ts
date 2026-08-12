@@ -23,13 +23,18 @@ import type { SeismicEvent } from '@/lib/types';
  */
 export type TimePeriod = 'all' | '6h' | '12h' | '24h' | 'today' | 'yesterday';
 
-export const TIME_PERIODS: { value: TimePeriod; label: string }[] = [
-  { value: 'all', label: 'Todo' },
-  { value: '6h', label: 'Últimas 6 h' },
-  { value: '12h', label: 'Últimas 12 h' },
-  { value: '24h', label: 'Últimas 24 h' },
-  { value: 'today', label: 'Hoy' },
-  { value: 'yesterday', label: 'Ayer' },
+/**
+ * Sin `label`: este módulo es puro y no importa next-intl (Decision 5 del
+ * design de i18n-dashboard). El componente que pinta los botones resuelve el
+ * texto con `t(`periods.${value}`)` del namespace `events`.
+ */
+export const TIME_PERIODS: { value: TimePeriod }[] = [
+  { value: 'all' },
+  { value: '6h' },
+  { value: '12h' },
+  { value: '24h' },
+  { value: 'today' },
+  { value: 'yesterday' },
 ];
 
 export interface EventFilters {

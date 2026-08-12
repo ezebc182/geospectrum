@@ -66,7 +66,7 @@ describe('groupOf', () => {
 describe('groupAreas', () => {
   it('omite los grupos vacíos', () => {
     // Sin áreas propias, "Mis áreas" no debe aparecer como etiqueta suelta.
-    const groups = groupAreas([makeArea('himalaya', 'Himalaya')]);
+    const groups = groupAreas([makeArea('himalaya', 'Himalaya')], 'es-AR');
 
     expect(groups.map((g) => g.id)).toEqual(['regions']);
   });
@@ -79,7 +79,7 @@ describe('groupAreas', () => {
       makeArea('global', 'Global'),
       makeArea('mi_zona', 'Mi zona', false),
       makeArea('anillo_de_fuego', 'Anillo de Fuego'),
-    ]);
+    ], 'es-AR');
 
     expect(groups.map((g) => g.id)).toEqual([
       'mine',
@@ -96,7 +96,7 @@ describe('groupAreas', () => {
       makeArea('peru', 'Perú y fosa Perú-Chile (norte)'),
       makeArea('mexico', 'México y fosa Mesoamericana'),
       makeArea('chile', 'Chile y fosa Perú-Chile'),
-    ]);
+    ], 'es-AR');
 
     expect(groups[0].areas.map((a) => a.name)).toEqual([
       'Chile y fosa Perú-Chile',
@@ -114,12 +114,37 @@ describe('groupAreas', () => {
       makeArea('propia', 'Propia', false),
     ];
 
-    const total = groupAreas(areas).reduce((sum, g) => sum + g.areas.length, 0);
+    const total = groupAreas(areas, 'es-AR').reduce((sum, g) => sum + g.areas.length, 0);
 
     expect(total).toBe(areas.length);
   });
 
   it('devuelve una lista vacía sin áreas', () => {
-    expect(groupAreas([])).toEqual([]);
+    expect(groupAreas([], 'es-AR')).toEqual([]);
+  });
+
+  it('no devuelve label: el texto del grupo lo resuelve el componente', () => {
+    // Decision 5 de i18n-dashboard: este módulo es puro y no importa
+    // next-intl; expone el id y el componente traduce con t(`groups.${id}`).
+    const groups = groupAreas([makeArea('chile', 'Chile')], 'es-AR');
+
+    expect(groups[0]).not.toHaveProperty('label');
+    expect(Object.keys(groups[0]).sort()).toEqual(['areas', 'id']);
+  });
+
+  it('ordena con el locale recibido, no con uno hardcodeado', () => {
+    // El locale entra por parámetro (el componente lo pasa desde useLocale).
+    // Se comprueba con sueco, donde "Ä" ordena DESPUÉS de "Z": en es/en va
+    // junto a la "A", así que el orden delata qué locale se usó de verdad.
+    const areas = [makeArea('a', 'Ätna'), makeArea('z', 'Zagros')];
+
+    expect(groupAreas(areas, 'es-AR')[0].areas.map((a) => a.name)).toEqual([
+      'Ätna',
+      'Zagros',
+    ]);
+    expect(groupAreas(areas, 'sv')[0].areas.map((a) => a.name)).toEqual([
+      'Zagros',
+      'Ätna',
+    ]);
   });
 });

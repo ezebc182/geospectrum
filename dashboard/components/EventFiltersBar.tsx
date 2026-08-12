@@ -14,6 +14,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { ChevronDown, Search, X } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -62,6 +63,7 @@ export function EventFiltersBar({
   total,
   className,
 }: EventFiltersBarProps) {
+  const t = useTranslations('events');
   const isFiltered = hasActiveFilters(filters);
 
   // Colapsado por defecto: en un panel angosto (la columna lateral del
@@ -104,7 +106,7 @@ export function EventFiltersBar({
             htmlFor="event-filter-query"
             className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
-            Buscar por zona
+            {t('searchByZone')}
           </label>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -113,7 +115,7 @@ export function EventFiltersBar({
               type="search"
               value={filters.query}
               onChange={(event) => update({ query: event.target.value })}
-              placeholder="Chile, Antofagasta, Japón…"
+              placeholder={t('searchPlaceholder')}
               className="pl-8"
             />
           </div>
@@ -128,7 +130,7 @@ export function EventFiltersBar({
           className="gap-1"
         >
           <ChevronDown className={cn('h-4 w-4 transition-transform', showMoreFilters && 'rotate-180')} />
-          Más filtros
+          {t('moreFilters')}
           {!showMoreFilters && hasHiddenActiveFilters(filters) && (
             <Badge variant="default" className="ml-1 h-4 min-w-4 rounded-full px-1 font-data text-[10px]">
               •
@@ -144,7 +146,7 @@ export function EventFiltersBar({
             className="gap-1"
           >
             <X className="h-4 w-4" />
-            Limpiar
+            {t('clear')}
           </Button>
         )}
 
@@ -153,18 +155,23 @@ export function EventFiltersBar({
             algo. Vive junto a la búsqueda (siempre visible) y no dentro del
             bloque colapsable, para que el conteo se vea aunque "Más filtros"
             esté cerrado. */}
+        {/* Rich text de next-intl (<m>/<n>) en vez de partir la frase en
+            fragmentos: el orden de "N de M eventos" no es el mismo en inglés,
+            y concatenar pedazos deja la traducción atada al orden del español. */}
         <span aria-live="polite" className="ml-auto text-sm text-muted-foreground">
-          {isFiltered ? (
-            <>
-              <span className="font-data font-semibold text-foreground">{matched}</span>
-              {' de '}
-              <span className="font-data">{total}</span> eventos
-            </>
-          ) : (
-            <>
-              <span className="font-data">{total}</span> eventos
-            </>
-          )}
+          {isFiltered
+            ? t.rich('matchedOfTotal', {
+                matched,
+                total,
+                m: (chunks) => (
+                  <span className="font-data font-semibold text-foreground">{chunks}</span>
+                ),
+                n: (chunks) => <span className="font-data">{chunks}</span>,
+              })
+            : t.rich('totalEvents', {
+                total,
+                n: (chunks) => <span className="font-data">{chunks}</span>,
+              })}
         </span>
       </div>
 
@@ -172,11 +179,11 @@ export function EventFiltersBar({
         <div className="flex flex-wrap items-end gap-3 border-t border-border pt-3">
           <div>
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Magnitud
+              {t('magnitude')}
             </span>
             <div className="flex items-center gap-1">
               <Input
-                aria-label="Magnitud mínima"
+                aria-label={t('minMagnitude')}
                 type="number"
                 inputMode="decimal"
                 step="0.1"
@@ -184,12 +191,12 @@ export function EventFiltersBar({
                 onChange={(event) =>
                   update({ minMagnitude: parseMagnitude(event.target.value) })
                 }
-                placeholder="mín"
+                placeholder={t('minPlaceholder')}
                 className="w-20 font-data"
               />
               <span className="text-muted-foreground">–</span>
               <Input
-                aria-label="Magnitud máxima"
+                aria-label={t('maxMagnitude')}
                 type="number"
                 inputMode="decimal"
                 step="0.1"
@@ -197,7 +204,7 @@ export function EventFiltersBar({
                 onChange={(event) =>
                   update({ maxMagnitude: parseMagnitude(event.target.value) })
                 }
-                placeholder="máx"
+                placeholder={t('maxPlaceholder')}
                 className="w-20 font-data"
               />
             </div>
@@ -208,13 +215,13 @@ export function EventFiltersBar({
               id="event-filter-period"
               className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
             >
-              Período
+              {t('period')}
             </span>
             {/* Botones de período en vez de un calendario: /report trae una
                 ventana de horas, así que un `<input type="date">` quedaba con
                 casi todos los días deshabilitados y parecía roto. */}
             <div role="group" aria-labelledby="event-filter-period" className="flex flex-wrap gap-1">
-              {TIME_PERIODS.map(({ value, label }) => {
+              {TIME_PERIODS.map(({ value }) => {
                 const isOn = filters.period === value;
                 return (
                   <Button
@@ -225,7 +232,7 @@ export function EventFiltersBar({
                     aria-pressed={isOn}
                     onClick={() => update({ period: value })}
                   >
-                    {label}
+                    {t(`periods.${value}`)}
                   </Button>
                 );
               })}
@@ -235,7 +242,7 @@ export function EventFiltersBar({
           {sources.length > 1 && (
             <div>
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Fuente
+                {t('source')}
               </span>
               <div className="flex flex-wrap gap-1">
                 {sources.map((source) => {
@@ -268,19 +275,22 @@ export function EventFiltersBar({
               onChange={(event) => update({ onlyFelt: event.target.checked })}
               className="h-4 w-4 cursor-pointer accent-seismic-600"
             />
-            Sólo sentidos
+            {t('onlyFelt')}
           </label>
         </div>
       )}
 
       {isFiltered && matched === 0 && (
         <p className="text-sm text-severity-moderate">
-          Ningún evento coincide con los filtros.
+          {t('noMatches')}
           {dateRange && (
             <>
-              {' '}El reporte en vivo cubre del{' '}
-              <span className="font-data">{dateRange.min}</span> al{' '}
-              <span className="font-data">{dateRange.max}</span>.
+              {' '}
+              {t.rich('liveReportRange', {
+                min: dateRange.min,
+                max: dateRange.max,
+                d: (chunks) => <span className="font-data">{chunks}</span>,
+              })}
             </>
           )}
         </p>

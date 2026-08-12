@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { useFormatter, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
 import { getActiveArea } from '@/lib/areas';
@@ -22,9 +23,14 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react';
-import { formatTimeAgo } from '@/lib/utils';
 
 export default function DashboardPage() {
+  const t = useTranslations('dashboard');
+  const tCommon = useTranslations('common');
+  // "Actualizado hace X min" sale de useFormatter().relativeTime en vez del
+  // formatTimeAgo casero de lib/utils (que hardcodea el español): así el
+  // relativo sigue al locale activo sin duplicar lógica de unidades.
+  const format = useFormatter();
   // Fusión de Dashboard + En Vivo (2026-08-05): antes eran dos páginas casi
   // iguales por debajo, con un mapa más pobre en /live (SeismicMapWithCities,
   // sin capas ni sync tabla→mapa). El control de cadencia de refresco de
@@ -121,10 +127,10 @@ export default function DashboardPage() {
     return (
       <div className="rounded-lg border-2 border-severity-critical/30 bg-severity-critical/10 p-8 text-center">
         <p className="text-lg font-semibold text-severity-critical">
-          Error al cargar datos
+          {t('loadError')}
         </p>
         <p className="mt-2 text-sm text-severity-critical/80">
-          {error?.message || 'No se pudo conectar con el servicio de monitoreo'}
+          {error?.message || t('loadErrorFallback')}
         </p>
       </div>
     );
@@ -143,28 +149,30 @@ export default function DashboardPage() {
       {/* Header con timestamp y control de refresco */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold text-foreground">
-          Dashboard de Monitoreo Sísmico
+          {t('title')}
         </h1>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Clock className="h-4 w-4" />
-            <span className="font-data">Actualizado {formatTimeAgo(timestamp_utc_generacion)}</span>
+            <span className="font-data">
+              {t('updated', { ago: format.relativeTime(new Date(timestamp_utc_generacion)) })}
+            </span>
           </div>
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}
             className="rounded-lg border-2 border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
           >
-            <option value={10000}>Actualizar cada 10s</option>
-            <option value={30000}>Actualizar cada 30s</option>
-            <option value={60000}>Actualizar cada 60s</option>
+            <option value={10000}>{t('refreshEvery', { seconds: 10 })}</option>
+            <option value={30000}>{t('refreshEvery', { seconds: 30 })}</option>
+            <option value={60000}>{t('refreshEvery', { seconds: 60 })}</option>
           </select>
           <button
             onClick={() => mutate()}
             className="flex items-center gap-2 rounded-lg bg-seismic-600 px-4 py-2 text-sm text-white transition-colors hover:bg-seismic-700"
           >
             <RefreshCw className="h-4 w-4" />
-            Actualizar ahora
+            {t('refreshNow')}
           </button>
         </div>
       </div>
@@ -173,7 +181,7 @@ export default function DashboardPage() {
       {data_source_errors.length > 0 && (
         <div className="rounded-lg border-2 border-severity-moderate/30 bg-severity-moderate/10 p-4">
           <p className="font-semibold text-severity-moderate">
-            Advertencias de fuentes de datos:
+            {t('sourceWarnings')}
           </p>
           <ul className="mt-2 list-disc list-inside text-sm text-severity-moderate/90">
             {data_source_errors.map((err, idx) => (
@@ -187,32 +195,32 @@ export default function DashboardPage() {
           protagonista del layout ahora. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KPICard
-          title="Total Eventos"
+          title={t('kpis.totalEvents')}
           value={kpis.total_eventos}
-          subtitle={`${kpis.tasa_eventos_por_hora.toFixed(1)} eventos/hora`}
+          subtitle={t('kpis.perHour', { rate: kpis.tasa_eventos_por_hora.toFixed(1) })}
           icon={<Activity />}
           color="blue"
           compact
         />
         <KPICard
-          title="Magnitud Máxima"
-          value={kpis.magnitud_max ? `M${kpis.magnitud_max.toFixed(1)}` : 'N/A'}
-          subtitle={kpis.magnitud_promedio_ponderada_por_energia ? `Promedio: M${kpis.magnitud_promedio_ponderada_por_energia.toFixed(1)}` : undefined}
+          title={t('kpis.maxMagnitude')}
+          value={kpis.magnitud_max ? `M${kpis.magnitud_max.toFixed(1)}` : tCommon('notAvailable')}
+          subtitle={kpis.magnitud_promedio_ponderada_por_energia ? t('kpis.average', { value: kpis.magnitud_promedio_ponderada_por_energia.toFixed(1) }) : undefined}
           icon={<TrendingUp />}
           color={kpis.magnitud_max && kpis.magnitud_max >= 5 ? 'red' : kpis.magnitud_max && kpis.magnitud_max >= 4 ? 'yellow' : 'green'}
           compact
         />
         <KPICard
-          title="Profundidad Media M≥4"
-          value={kpis.profundidad_media_M_ge_4 ? `${kpis.profundidad_media_M_ge_4.toFixed(0)} km` : 'N/A'}
+          title={t('kpis.meanDepth')}
+          value={kpis.profundidad_media_M_ge_4 ? `${kpis.profundidad_media_M_ge_4.toFixed(0)} km` : tCommon('notAvailable')}
           icon={<Layers />}
           color="gray"
           compact
         />
         <KPICard
-          title="Eventos Sentidos"
+          title={t('kpis.feltEvents')}
           value={kpis.eventos_sentidos}
-          subtitle={`${(kpis.porcentaje_eventos_sentidos * 100).toFixed(0)}% del total`}
+          subtitle={t('kpis.percentOfTotal', { percent: (kpis.porcentaje_eventos_sentidos * 100).toFixed(0) })}
           icon={<Users />}
           color={kpis.porcentaje_eventos_sentidos > 0.5 ? 'yellow' : 'green'}
           compact
@@ -233,10 +241,13 @@ export default function DashboardPage() {
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-xl font-semibold text-foreground">
               <MapPin className="h-5 w-5" />
-              Mapa de Epicentros y Ciudades
+              {t('mapTitle')}
             </h2>
+            {/* Antes decía "X of Y events in map area" EN INGLÉS hardcodeado
+                aunque la app estuviera en español — el diccionario lo corrige
+                en ambos idiomas. */}
             <Badge variant="secondary" className="font-data">
-              {visibleCounts.visible} of {visibleCounts.total} events in map area
+              {t('eventsInMapArea', { visible: visibleCounts.visible, total: visibleCounts.total })}
             </Badge>
           </div>
           <AdvancedSeismicMap
@@ -258,7 +269,7 @@ export default function DashboardPage() {
             type="button"
             onClick={toggleEventsPanel}
             aria-pressed={isEventsPanelOpen}
-            aria-label={isEventsPanelOpen ? 'Ocultar panel de eventos' : 'Mostrar panel de eventos'}
+            aria-label={isEventsPanelOpen ? t('hideEventsPanel') : t('showEventsPanel')}
             className="flex h-9 w-9 items-center justify-center rounded-md border-2 border-gray-300 hover:bg-muted/60 dark:border-gray-700"
           >
             {isEventsPanelOpen ? (
@@ -286,7 +297,7 @@ export default function DashboardPage() {
           >
             <div className="flex items-center justify-between border-b border-border bg-background px-4 py-3">
               <h2 className="whitespace-nowrap text-base font-semibold text-foreground">
-                Eventos Recientes
+                {t('recentEvents')}
               </h2>
             </div>
             <div className="h-[calc(100vh-20rem)] min-h-[500px] overflow-y-auto bg-background p-2">

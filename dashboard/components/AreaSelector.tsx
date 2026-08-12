@@ -14,6 +14,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { Check, ChevronDown, Globe, Search } from 'lucide-react';
 
 import {
@@ -29,8 +30,6 @@ import { countAreas, filterGroups, normalize } from '@/lib/area-search';
 import { getActiveArea, listAreas, setActiveArea } from '@/lib/areas';
 import type { Area } from '@/lib/types';
 import { cn } from '@/lib/utils';
-
-const DEFAULT_AREA_LABEL = 'Área por defecto';
 
 /**
  * A partir de cuántas áreas aparece el buscador.
@@ -48,6 +47,10 @@ interface AreaSelectorProps {
 }
 
 export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
+  const t = useTranslations('areas');
+  // Locale de FORMATO (es-AR/en-US): va al localeCompare de groupAreas para
+  // que el orden alfabético siga las reglas del idioma activo.
+  const locale = useLocale();
   const [areas, setAreas] = useState<Area[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -97,9 +100,13 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
     }
   };
 
+  // Los NOMBRES de las áreas vienen del backend y NO se traducen: son datos,
+  // no copy. Lo que sí sale del diccionario es la opción "por defecto" y las
+  // etiquetas de grupo.
+  const defaultAreaLabel = t('defaultArea');
   const activeArea = areas.find((area) => area.id === activeId) ?? null;
-  const activeLabel = activeArea ? activeArea.name : DEFAULT_AREA_LABEL;
-  const groups = groupAreas(areas);
+  const activeLabel = activeArea ? activeArea.name : defaultAreaLabel;
+  const groups = groupAreas(areas, locale);
 
   const showSearch = areas.length >= SEARCH_THRESHOLD;
   const visibleGroups = showSearch ? filterGroups(groups, query) : groups;
@@ -107,7 +114,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
   // "Área por defecto" es una opción más y se filtra con el mismo criterio, si
   // no quedaría fija arriba contradiciendo al buscador.
   const showDefaultOption =
-    !showSearch || normalize(DEFAULT_AREA_LABEL).includes(normalize(query));
+    !showSearch || normalize(defaultAreaLabel).includes(normalize(query));
 
   return (
     <DropdownMenu
@@ -121,7 +128,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
         disabled={saving}
         // Ancla del tour de onboarding (Decision 7 de email-invitations).
         data-tour-id="area-selector"
-        aria-label={`Área de interés: ${activeLabel}`}
+        aria-label={t('selectorAria', { area: activeLabel })}
         className="flex max-w-[16rem] items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 dark:border-gray-700"
       >
         <Globe className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
@@ -143,7 +150,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
         className="max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[18rem] overflow-y-auto"
       >
         <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
-          Área de interés
+          {t('title')}
         </DropdownMenuLabel>
 
         {showSearch && (
@@ -160,8 +167,8 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
                 type="text"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar área…"
-                aria-label="Buscar área de interés"
+                placeholder={t('searchPlaceholder')}
+                aria-label={t('searchAria')}
                 // Radix trata cada tecla como typeahead para mover el foco
                 // entre items: sin esto, escribir acá salta a una opción en vez
                 // de llenar el input. Escape sí se deja pasar, para que siga
@@ -179,7 +186,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
 
         {showDefaultOption && (
           <AreaOption
-            label={DEFAULT_AREA_LABEL}
+            label={defaultAreaLabel}
             isActive={activeId === null}
             onSelect={() => handleChange('')}
           />
@@ -192,7 +199,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
           <div key={group.id}>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
-              {group.label}
+              {t(`groups.${group.id}`)}
             </DropdownMenuLabel>
             {group.areas.map((area) => (
               <AreaOption
@@ -208,7 +215,7 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
         {/* Sin esto el panel queda vacío y parece colgado. */}
         {showSearch && !hasResults && !showDefaultOption && (
           <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-            No hay áreas que coincidan con «{query}»
+            {t('noMatches', { query })}
           </p>
         )}
       </DropdownMenuContent>

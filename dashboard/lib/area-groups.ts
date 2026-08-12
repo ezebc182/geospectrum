@@ -36,15 +36,6 @@ export const AREA_GROUP_ORDER: AreaGroupId[] = [
   'regions',
 ];
 
-export const AREA_GROUP_LABELS: Record<AreaGroupId, string> = {
-  mine: 'Mis áreas',
-  global: 'Global',
-  belts: 'Cinturones sísmicos',
-  subduction: 'Zonas de subducción',
-  faults: 'Fallas',
-  regions: 'Regiones',
-};
-
 /**
  * Slugs por categoría, tomados del catálogo real (18 áreas del sistema).
  * Lo que no figure acá cae en "Regiones", el default razonable para un área
@@ -103,7 +94,6 @@ export function groupOf(area: Area): AreaGroupId {
 
 export interface AreaGroup {
   id: AreaGroupId;
-  label: string;
   areas: Area[];
 }
 
@@ -111,8 +101,13 @@ export interface AreaGroup {
  * Agrupa y ordena las áreas para el selector. Los grupos vacíos se omiten: hoy
  * "Mis áreas" no existe hasta que el usuario cree la primera, y una etiqueta
  * sola sin nada abajo sólo agrega ruido.
+ *
+ * Sin `label` en el resultado: el componente deriva el texto del grupo con
+ * `t(`groups.${id}`)` del namespace `areas` (Decision 5 — este módulo es puro
+ * y no importa next-intl). `locale` viene del componente (`useLocale()`), para
+ * que el orden alfabético respete las reglas del idioma activo.
  */
-export function groupAreas(areas: Area[]): AreaGroup[] {
+export function groupAreas(areas: Area[], locale: string): AreaGroup[] {
   const byGroup = new Map<AreaGroupId, Area[]>();
 
   for (const area of areas) {
@@ -128,10 +123,9 @@ export function groupAreas(areas: Area[]): AreaGroup[] {
     return [
       {
         id,
-        label: AREA_GROUP_LABELS[id],
         // Alfabético dentro del grupo: el orden del backend no es significativo
-        // y `localeCompare` respeta los acentos del español (México, Perú).
-        areas: [...groupAreas].sort((a, b) => a.name.localeCompare(b.name, 'es')),
+        // y `localeCompare` con el locale activo respeta los acentos (México, Perú).
+        areas: [...groupAreas].sort((a, b) => a.name.localeCompare(b.name, locale)),
       },
     ];
   });

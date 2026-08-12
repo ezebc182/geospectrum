@@ -4,7 +4,8 @@
     "localeNames": {
       "es": "Español",
       "en": "English"
-    }
+    },
+    "notAvailable": "N/A"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -44,6 +45,118 @@
       "noInvitation": "El acceso es por invitación y tu cuenta todavía no tiene una. Sumate a la lista de espera o contactá a un administrador.",
       "googleRejected": "Google rechazó el inicio de sesión.",
       "generic": "No se pudo completar el inicio de sesión con Google."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard de Monitoreo Sísmico",
+    "updated": "Actualizado {ago}",
+    "refreshEvery": "Actualizar cada {seconds}s",
+    "refreshNow": "Actualizar ahora",
+    "loadError": "Error al cargar datos",
+    "loadErrorFallback": "No se pudo conectar con el servicio de monitoreo",
+    "sourceWarnings": "Advertencias de fuentes de datos:",
+    "kpis": {
+      "totalEvents": "Total Eventos",
+      "perHour": "{rate} eventos/hora",
+      "maxMagnitude": "Magnitud Máxima",
+      "average": "Promedio: M{value}",
+      "meanDepth": "Profundidad Media M≥4",
+      "feltEvents": "Eventos Sentidos",
+      "percentOfTotal": "{percent}% del total"
+    },
+    "mapTitle": "Mapa de Epicentros y Ciudades",
+    "eventsInMapArea": "{visible} de {total} eventos en el área del mapa",
+    "hideEventsPanel": "Ocultar panel de eventos",
+    "showEventsPanel": "Mostrar panel de eventos",
+    "recentEvents": "Eventos Recientes"
+  },
+  "events": {
+    "searchByZone": "Buscar por zona",
+    "searchPlaceholder": "Chile, Antofagasta, Japón…",
+    "moreFilters": "Más filtros",
+    "clear": "Limpiar",
+    "matchedOfTotal": "<m>{matched}</m> de <n>{total}</n> eventos",
+    "totalEvents": "<n>{total}</n> eventos",
+    "magnitude": "Magnitud",
+    "minMagnitude": "Magnitud mínima",
+    "maxMagnitude": "Magnitud máxima",
+    "minPlaceholder": "mín",
+    "maxPlaceholder": "máx",
+    "period": "Período",
+    "periods": {
+      "all": "Todo",
+      "6h": "Últimas 6 h",
+      "12h": "Últimas 12 h",
+      "24h": "Últimas 24 h",
+      "today": "Hoy",
+      "yesterday": "Ayer"
+    },
+    "source": "Fuente",
+    "onlyFelt": "Sólo sentidos",
+    "noMatches": "Ningún evento coincide con los filtros.",
+    "liveReportRange": "El reporte en vivo cubre del <d>{min}</d> al <d>{max}</d>.",
+    "columns": {
+      "button": "Columnas",
+      "choose": "Elegir columnas visibles",
+      "optional": "Columnas opcionales",
+      "sourceLabel": "Fuente",
+      "statusLabel": "Estado (revisado/sentido)"
+    },
+    "emptyWindow": "No hay eventos registrados en la ventana de tiempo actual",
+    "unknownPlace": "Desconocido",
+    "reviewed": "Revisado",
+    "felt": "Sentido",
+    "selectedOnMap": "Seleccionado en el mapa",
+    "showing": "Mostrando {shown} de {total} eventos",
+    "showingFiltered": "Mostrando {shown} de {total} eventos filtrados"
+  },
+  "filters": {
+    "title": "Filtros de Búsqueda",
+    "collapse": "Colapsar",
+    "expand": "Expandir",
+    "dataSources": "Fuentes de Datos",
+    "magnitude": "Magnitud",
+    "min": "Mínima",
+    "max": "Máxima",
+    "depthKm": "Profundidad (km)",
+    "timePeriod": "Período de Tiempo",
+    "windows": {
+      "hour1": "Última hora",
+      "hours6": "Últimas 6 horas",
+      "hours12": "Últimas 12 horas",
+      "hours24": "Últimas 24 horas",
+      "days3": "Últimos 3 días",
+      "week1": "Última semana",
+      "month1": "Último mes"
+    },
+    "geoRegion": "Región Geográfica",
+    "latMin": "Lat. Min",
+    "latMax": "Lat. Max",
+    "lonMin": "Lon. Min",
+    "lonMax": "Lon. Max",
+    "options": "Opciones",
+    "feltOnly": "Solo eventos sentidos",
+    "reviewedOnly": "Solo eventos revisados",
+    "selectSource": "⚠️ Selecciona al menos una fuente de datos",
+    "searching": "Buscando...",
+    "searchEvents": "Buscar Eventos",
+    "reset": "Resetear"
+  },
+  "areas": {
+    "monitoringStation": "Estación de monitoreo",
+    "title": "Área de interés",
+    "defaultArea": "Área por defecto",
+    "selectorAria": "Área de interés: {area}",
+    "searchPlaceholder": "Buscar área…",
+    "searchAria": "Buscar área de interés",
+    "noMatches": "No hay áreas que coincidan con «{query}»",
+    "groups": {
+      "mine": "Mis áreas",
+      "global": "Global",
+      "belts": "Cinturones sísmicos",
+      "subduction": "Zonas de subducción",
+      "faults": "Fallas",
+      "regions": "Regiones"
     }
   }
 }

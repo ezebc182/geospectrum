@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EMPTY_FILTERS,
+  TIME_PERIODS,
   availableSources,
   dateRangeOf,
   filterEvents,
@@ -271,5 +272,26 @@ describe('dateRangeOf', () => {
     ];
 
     expect(dateRangeOf(eventos)).toEqual({ min: '2026-07-15', max: '2026-07-15' });
+  });
+});
+
+describe('TIME_PERIODS', () => {
+  it('expone sólo el value: el texto lo resuelve el componente', () => {
+    // Decision 5 de i18n-dashboard: este módulo es puro y no importa
+    // next-intl; EventFiltersBar traduce con t(`periods.${value}`).
+    for (const period of TIME_PERIODS) {
+      expect(Object.keys(period)).toEqual(['value']);
+    }
+  });
+
+  it('cubre todos los períodos que sabe calcular periodWindow', () => {
+    expect(TIME_PERIODS.map((p) => p.value)).toEqual([
+      'all',
+      '6h',
+      '12h',
+      '24h',
+      'today',
+      'yesterday',
+    ]);
   });
 });

@@ -4,7 +4,8 @@
     "localeNames": {
       "es": "Español",
       "en": "English"
-    }
+    },
+    "notAvailable": "N/A"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -44,6 +45,118 @@
       "noInvitation": "Access is invitation-only and your account does not have one yet. Join the waitlist or contact an administrator.",
       "googleRejected": "Google rejected the sign-in.",
       "generic": "Google sign-in could not be completed."
+    }
+  },
+  "dashboard": {
+    "title": "Seismic Monitoring Dashboard",
+    "updated": "Updated {ago}",
+    "refreshEvery": "Refresh every {seconds}s",
+    "refreshNow": "Refresh now",
+    "loadError": "Failed to load data",
+    "loadErrorFallback": "Could not connect to the monitoring service",
+    "sourceWarnings": "Data source warnings:",
+    "kpis": {
+      "totalEvents": "Total Events",
+      "perHour": "{rate} events/hour",
+      "maxMagnitude": "Maximum Magnitude",
+      "average": "Average: M{value}",
+      "meanDepth": "Mean Depth M≥4",
+      "feltEvents": "Felt Events",
+      "percentOfTotal": "{percent}% of total"
+    },
+    "mapTitle": "Epicenters and Cities Map",
+    "eventsInMapArea": "{visible} of {total} events in the map area",
+    "hideEventsPanel": "Hide events panel",
+    "showEventsPanel": "Show events panel",
+    "recentEvents": "Recent Events"
+  },
+  "events": {
+    "searchByZone": "Search by zone",
+    "searchPlaceholder": "Chile, Antofagasta, Japan…",
+    "moreFilters": "More filters",
+    "clear": "Clear",
+    "matchedOfTotal": "<m>{matched}</m> of <n>{total}</n> events",
+    "totalEvents": "<n>{total}</n> events",
+    "magnitude": "Magnitude",
+    "minMagnitude": "Minimum magnitude",
+    "maxMagnitude": "Maximum magnitude",
+    "minPlaceholder": "min",
+    "maxPlaceholder": "max",
+    "period": "Period",
+    "periods": {
+      "all": "All",
+      "6h": "Last 6 h",
+      "12h": "Last 12 h",
+      "24h": "Last 24 h",
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "source": "Source",
+    "onlyFelt": "Felt only",
+    "noMatches": "No events match the filters.",
+    "liveReportRange": "The live report covers <d>{min}</d> to <d>{max}</d>.",
+    "columns": {
+      "button": "Columns",
+      "choose": "Choose visible columns",
+      "optional": "Optional columns",
+      "sourceLabel": "Source",
+      "statusLabel": "Status (reviewed/felt)"
+    },
+    "emptyWindow": "No events recorded in the current time window",
+    "unknownPlace": "Unknown",
+    "reviewed": "Reviewed",
+    "felt": "Felt",
+    "selectedOnMap": "Selected on the map",
+    "showing": "Showing {shown} of {total} events",
+    "showingFiltered": "Showing {shown} of {total} filtered events"
+  },
+  "filters": {
+    "title": "Search Filters",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "dataSources": "Data Sources",
+    "magnitude": "Magnitude",
+    "min": "Minimum",
+    "max": "Maximum",
+    "depthKm": "Depth (km)",
+    "timePeriod": "Time Period",
+    "windows": {
+      "hour1": "Last hour",
+      "hours6": "Last 6 hours",
+      "hours12": "Last 12 hours",
+      "hours24": "Last 24 hours",
+      "days3": "Last 3 days",
+      "week1": "Last week",
+      "month1": "Last month"
+    },
+    "geoRegion": "Geographic Region",
+    "latMin": "Lat. Min",
+    "latMax": "Lat. Max",
+    "lonMin": "Lon. Min",
+    "lonMax": "Lon. Max",
+    "options": "Options",
+    "feltOnly": "Felt events only",
+    "reviewedOnly": "Reviewed events only",
+    "selectSource": "⚠️ Select at least one data source",
+    "searching": "Searching...",
+    "searchEvents": "Search Events",
+    "reset": "Reset"
+  },
+  "areas": {
+    "monitoringStation": "Monitoring station",
+    "title": "Area of interest",
+    "defaultArea": "Default area",
+    "selectorAria": "Area of interest: {area}",
+    "searchPlaceholder": "Search area…",
+    "searchAria": "Search area of interest",
+    "noMatches": "No areas match “{query}”",
+    "groups": {
+      "mine": "My areas",
+      "global": "Global",
+      "belts": "Seismic belts",
+      "subduction": "Subduction zones",
+      "faults": "Faults",
+      "regions": "Regions"
     }
   }
 }

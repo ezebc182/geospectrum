@@ -6,6 +6,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Filter, X, Search } from 'lucide-react';
 import { DATA_SOURCES, type DataSourceId } from '@/lib/map-layers';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ interface FilterPanelProps {
 }
 
 export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = false, className = '' }: FilterPanelProps) {
+  const t = useTranslations('filters');
   const [isExpanded, setIsExpanded] = useState(true);
 
   const updateFilter = <K extends keyof SeismicFilters>(key: K, value: SeismicFilters[K]) => {
@@ -70,12 +72,12 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
       <div className="flex items-center justify-between border-b-2 border-border p-4">
         <div className="flex items-center gap-2">
           <Filter className="h-5 w-5 text-primary" />
-          <h3 className="font-bold text-lg text-foreground">Filtros de Búsqueda</h3>
+          <h3 className="font-bold text-lg text-foreground">{t('title')}</h3>
         </div>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="rounded p-1 hover:bg-muted"
-          aria-label={isExpanded ? 'Colapsar' : 'Expandir'}
+          aria-label={isExpanded ? t('collapse') : t('expand')}
         >
           {isExpanded ? <X className="h-5 w-5" /> : <Filter className="h-5 w-5" />}
         </button>
@@ -88,7 +90,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
             {/* Fuentes de Datos */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">
-              Fuentes de Datos
+              {t('dataSources')}
             </label>
             <div className="space-y-2">
               {DATA_SOURCES.map(source => (
@@ -111,12 +113,12 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
           {/* Magnitud */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">
-              Magnitud
+              {t('magnitude')}
             </label>
             <div className="space-y-3">
               <div>
                 <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                  <span>Mínima</span>
+                  <span>{t('min')}</span>
                   <span className="font-mono">M{filters.minMag.toFixed(1)}</span>
                 </div>
                 <input
@@ -131,7 +133,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
               </div>
               <div>
                 <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                  <span>Máxima</span>
+                  <span>{t('max')}</span>
                   <span className="font-mono">M{filters.maxMag.toFixed(1)}</span>
                 </div>
                 <input
@@ -150,11 +152,11 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
           {/* Profundidad */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">
-              Profundidad (km)
+              {t('depthKm')}
             </label>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-muted-foreground">Mínima</label>
+                <label className="text-xs text-muted-foreground">{t('min')}</label>
                 <input
                   type="number"
                   placeholder="0"
@@ -164,7 +166,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Máxima</label>
+                <label className="text-xs text-muted-foreground">{t('max')}</label>
                 <input
                   type="number"
                   placeholder="700"
@@ -179,31 +181,31 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
           {/* Período de Tiempo */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">
-              Período de Tiempo
+              {t('timePeriod')}
             </label>
             <select
               value={filters.windowMinutes}
               onChange={(e) => updateFilter('windowMinutes', parseInt(e.target.value))}
               className="w-full rounded-lg border-2 border-border bg-card px-3 py-2 text-foreground"
             >
-              <option value={60}>Última hora</option>
-              <option value={360}>Últimas 6 horas</option>
-              <option value={720}>Últimas 12 horas</option>
-              <option value={1440}>Últimas 24 horas</option>
-              <option value={4320}>Últimos 3 días</option>
-              <option value={10080}>Última semana</option>
-              <option value={43200}>Último mes</option>
+              <option value={60}>{t('windows.hour1')}</option>
+              <option value={360}>{t('windows.hours6')}</option>
+              <option value={720}>{t('windows.hours12')}</option>
+              <option value={1440}>{t('windows.hours24')}</option>
+              <option value={4320}>{t('windows.days3')}</option>
+              <option value={10080}>{t('windows.week1')}</option>
+              <option value={43200}>{t('windows.month1')}</option>
             </select>
           </div>
 
           {/* Región Geográfica */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">
-              Región Geográfica
+              {t('geoRegion')}
             </label>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-muted-foreground">Lat. Min</label>
+                <label className="text-xs text-muted-foreground">{t('latMin')}</label>
                 <input
                   type="number"
                   placeholder="-90"
@@ -214,7 +216,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Lat. Max</label>
+                <label className="text-xs text-muted-foreground">{t('latMax')}</label>
                 <input
                   type="number"
                   placeholder="90"
@@ -225,7 +227,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Lon. Min</label>
+                <label className="text-xs text-muted-foreground">{t('lonMin')}</label>
                 <input
                   type="number"
                   placeholder="-180"
@@ -236,7 +238,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Lon. Max</label>
+                <label className="text-xs text-muted-foreground">{t('lonMax')}</label>
                 <input
                   type="number"
                   placeholder="180"
@@ -252,7 +254,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
           {/* Opciones Adicionales */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">
-              Opciones
+              {t('options')}
             </label>
             <div className="space-y-2">
               <label className="flex cursor-pointer items-center gap-2">
@@ -262,7 +264,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                   onChange={(e) => updateFilter('feltOnly', e.target.checked)}
                   className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                 />
-                <span className="text-sm text-foreground">Solo eventos sentidos</span>
+                <span className="text-sm text-foreground">{t('feltOnly')}</span>
               </label>
               <label className="flex cursor-pointer items-center gap-2">
                 <input
@@ -271,7 +273,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                   onChange={(e) => updateFilter('reviewedOnly', e.target.checked)}
                   className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                 />
-                <span className="text-sm text-foreground">Solo eventos revisados</span>
+                <span className="text-sm text-foreground">{t('reviewedOnly')}</span>
               </label>
             </div>
           </div>
@@ -282,9 +284,7 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
             {/* Info de fuentes seleccionadas */}
             {filters.sources.length === 0 && (
               <div className="mx-4 mt-4 rounded-lg border-2 border-severity-moderate/30 bg-severity-moderate/10 p-3">
-                <p className="text-sm text-foreground">
-                  ⚠️ Selecciona al menos una fuente de datos
-                </p>
+                <p className="text-sm text-foreground">{t('selectSource')}</p>
               </div>
             )}
 
@@ -296,13 +296,13 @@ export function FilterPanel({ filters, onFiltersChange, onSearch, isSearching = 
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
               >
                 <Search className="h-4 w-4" />
-                {isSearching ? 'Buscando...' : 'Buscar Eventos'}
+                {isSearching ? t('searching') : t('searchEvents')}
               </button>
               <button
                 onClick={resetFilters}
                 className="rounded-lg border-2 border-border px-4 py-3 font-semibold text-foreground transition-colors hover:bg-muted"
               >
-                Resetear
+                {t('reset')}
               </button>
             </div>
           </div>
