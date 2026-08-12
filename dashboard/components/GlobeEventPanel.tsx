@@ -11,11 +11,16 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { Check, Share2 } from 'lucide-react';
 
-import { eventUrl, shareEvent, type ShareOutcome } from '@/lib/share-event';
+import {
+  eventUrl,
+  shareEvent,
+  type ShareMessages,
+  type ShareOutcome,
+} from '@/lib/share-event';
 import { globePointId } from '@/lib/globe-data';
 import { MagnitudeScale } from '@/components/MagnitudeScale';
 import {
@@ -66,8 +71,23 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
   const t = useTranslations('globe.panel');
+  const tShare = useTranslations('share');
   const format = useFormatter();
   const [outcome, setOutcome] = useState<ShareOutcome | null>(null);
+
+  // Mensajes del texto compartido, en el idioma activo (Decision 5: la lib es
+  // pura y los recibe por parámetro). Los parametrizados delegan en ICU.
+  const shareMessages = useMemo<ShareMessages>(
+    () => ({
+      title: tShare('title'),
+      headline: (magnitude, place) => tShare('headline', { magnitude, place }),
+      depth: (depth) => tShare('depth', { depth }),
+      unknownLocation: tShare('unknownLocation'),
+      unknownDate: tShare('unknownDate'),
+      unreviewedNotice: tShare('unreviewedNotice'),
+    }),
+    [tShare],
+  );
 
   // Texto del botón según cómo haya salido el último intento. Se guarda el
   // OUTCOME (no el texto resuelto): si el idioma cambia con el estado puesto,
@@ -80,7 +100,7 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
     // La URL lleva ?event=<id> para que quien la abra caiga en este mismo
     // sismo. Sin el parámetro el link abre el globo girando y el mensaje
     // pierde la mitad de su sentido.
-    setOutcome(await shareEvent(evento, eventUrl(globePointId(evento))));
+    setOutcome(await shareEvent(evento, shareMessages, eventUrl(globePointId(evento))));
   };
 
   // Radix cierra el Sheet con onOpenChange(false); el estado real del evento

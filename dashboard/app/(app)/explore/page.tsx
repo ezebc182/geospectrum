@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { FilterPanel, type SeismicFilters } from '@/components/FilterPanel';
 import { AdvancedSeismicMap } from '@/components/AdvancedSeismicMap';
 import { EventsTable } from '@/components/EventsTable';
@@ -11,7 +12,18 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
+/**
+ * Estado de error de la búsqueda: se guarda el CÓDIGO (o el mensaje crudo del
+ * backend, fuera de alcance por decisión del usuario) y se traduce al render —
+ * un cambio de idioma re-traduce el error visible (patrón de los errores OAuth
+ * del login y del panel admin).
+ */
+type SearchError =
+  | { kind: 'noResults' }
+  | { kind: 'failed'; message: string | null };
+
 export default function ExplorePage() {
+  const t = useTranslations('explore');
   const [filters, setFilters] = useState<SeismicFilters>({
     sources: ['usgs', 'emsc', 'inpres'],
     minMag: 2.5,
@@ -29,7 +41,7 @@ export default function ExplorePage() {
 
   const [eventos, setEventos] = useState<SeismicEvent[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SearchError | null>(null);
   const [view, setView] = useState<'map' | 'list'>('map');
 
   const handleSearch = async () => {
@@ -56,10 +68,10 @@ export default function ExplorePage() {
       setEventos(results);
 
       if (results.length === 0) {
-        setError('No se encontraron eventos con los filtros especificados');
+        setError({ kind: 'noResults' });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al buscar eventos');
+      setError({ kind: 'failed', message: err instanceof Error ? err.message : null });
       console.error('Search error:', err);
     } finally {
       setIsSearching(false);
@@ -69,7 +81,21 @@ export default function ExplorePage() {
   const exportToCSV = () => {
     if (eventos.length === 0) return;
 
-    const headers = ['ID', 'Fecha (UTC)', 'Latitud', 'Longitud', 'Profundidad (km)', 'Magnitud', 'Tipo Mag', 'Lugar', 'Sentido', 'Revisado', 'Fuentes'];
+    // Los encabezados y los Sí/No del CSV también son superficie user-facing
+    // (mismo criterio que el fileName de ExportData en settings).
+    const headers = [
+      t('csv.id'),
+      t('csv.dateUtc'),
+      t('csv.latitude'),
+      t('csv.longitude'),
+      t('csv.depthKm'),
+      t('csv.magnitude'),
+      t('csv.magType'),
+      t('csv.place'),
+      t('csv.felt'),
+      t('csv.reviewed'),
+      t('csv.sources'),
+    ];
     const rows = eventos.map(e => [
       e.id,
       e.hora_utc,
@@ -79,8 +105,8 @@ export default function ExplorePage() {
       e.mag,
       e.mag_tipo || '',
       e.lugar || '',
-      e.sentido ? 'Sí' : 'No',
-      e.revisado ? 'Sí' : 'No',
+      e.sentido ? t('csv.yes') : t('csv.no'),
+      e.revisado ? t('csv.yes') : t('csv.no'),
       e.fuentes.join('+'),
     ]);
 
@@ -101,11 +127,9 @@ export default function ExplorePage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground mb-2">
-          Explorador de Eventos Sísmicos
+          {t('title')}
         </h1>
-        <p className="text-muted-foreground">
-          Búsqueda avanzada con múltiples fuentes de datos y filtros personalizados
-        </p>
+        <p className="text-muted-foreground">{t('subtitle')}</p>
       </div>
 
       {/* Layout Principal */}
@@ -127,10 +151,15 @@ export default function ExplorePage() {
           <Card className="p-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Resultados: </span>
-                  <span className="font-bold text-lg text-foreground">{eventos.length}</span>
-                  <span className="text-muted-foreground"> eventos</span>
+                <div className="text-sm text-muted-foreground">
+                  {/* t.rich preserva el resaltado del número sin atar la
+                      traducción al orden de palabras del español. */}
+                  {t.rich('resultsCount', {
+                    count: eventos.length,
+                    n: (chunks) => (
+                      <span className="font-bold text-lg text-foreground">{chunks}</span>
+                    ),
+                  })}
                 </div>
 
                 {eventos.length > 0 && (
@@ -152,7 +181,7 @@ export default function ExplorePage() {
                     }`}
                   >
                     <MapPin className="h-4 w-4" />
-                    Mapa
+                    {t('viewMap')}
                   </button>
                   <button
                     onClick={() => setView('list')}
@@ -163,7 +192,7 @@ export default function ExplorePage() {
                     }`}
                   >
                     <List className="h-4 w-4" />
-                    Lista
+                    {t('viewList')}
                   </button>
                 </div>
 
@@ -171,7 +200,7 @@ export default function ExplorePage() {
                 {eventos.length > 0 && (
                   <Button onClick={exportToCSV}>
                     <Download className="h-4 w-4" />
-                    Exportar CSV
+                    {t('exportCsv')}
                   </Button>
                 )}
               </div>
@@ -181,7 +210,11 @@ export default function ExplorePage() {
           {/* Error Message */}
           {error && (
             <div className="border-2 border-severity-critical/30 bg-severity-critical/10 rounded-lg p-4">
-              <p className="text-severity-critical">{error}</p>
+              <p className="text-severity-critical">
+                {error.kind === 'noResults'
+                  ? t('noEventsFound')
+                  : error.message ?? t('searchError')}
+              </p>
             </div>
           )}
 
@@ -198,11 +231,9 @@ export default function ExplorePage() {
                 <div className="border-2 border-dashed border-border bg-muted rounded-lg p-12 text-center">
                   <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-foreground mb-2">
-                    No hay resultados
+                    {t('noResultsTitle')}
                   </h3>
-                  <p className="text-muted-foreground">
-                    Ajusta los filtros y haz clic en "Buscar Eventos" para ver resultados
-                  </p>
+                  <p className="text-muted-foreground">{t('noResultsHint')}</p>
                 </div>
               )}
             </div>
@@ -220,11 +251,9 @@ export default function ExplorePage() {
                 <div className="border-2 border-dashed border-border bg-muted rounded-lg p-12 text-center">
                   <List className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-foreground mb-2">
-                    No hay resultados
+                    {t('noResultsTitle')}
                   </h3>
-                  <p className="text-muted-foreground">
-                    Ajusta los filtros y haz clic en "Buscar Eventos" para ver resultados
-                  </p>
+                  <p className="text-muted-foreground">{t('noResultsHint')}</p>
                 </div>
               )}
             </div>
@@ -234,7 +263,7 @@ export default function ExplorePage() {
           {eventos.length > 0 && (
             <div className="border-2 border-severity-low/30 bg-severity-low/10 rounded-lg p-4">
               <h4 className="font-semibold text-foreground mb-2">
-                Fuentes de Datos Utilizadas
+                {t('sourcesUsed')}
               </h4>
               <div className="flex flex-wrap gap-2">
                 {filters.sources.map(source => (
@@ -243,9 +272,7 @@ export default function ExplorePage() {
                   </Badge>
                 ))}
               </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                Los eventos pueden estar deduplicados si aparecen en múltiples fuentes
-              </p>
+              <p className="text-sm text-muted-foreground mt-2">{t('dedupNote')}</p>
             </div>
           )}
         </div>

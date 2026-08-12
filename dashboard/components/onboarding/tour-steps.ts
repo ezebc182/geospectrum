@@ -11,60 +11,65 @@
  * navegación (p. ej. el link al Globo 3D en el sidebar) en vez de visitar
  * cada sección.
  *
- * El import de tipos es type-only: se borra al compilar, así este módulo no
- * arrastra driver.js al bundle — el runtime entra solo por el import dinámico
- * de useTour.ts.
+ * i18n (i18n-dashboard, Decision 5): los textos salen del diccionario, así que
+ * la constante pasó a ser `buildTourSteps(t)` — useTour la invoca con el `t`
+ * del namespace `onboarding` en cada arranque del tour, de modo que un cambio
+ * de idioma se refleja en el próximo tour sin estado residual.
+ *
+ * Los imports son type-only: se borran al compilar, así este módulo no
+ * arrastra driver.js ni next-intl al bundle — el runtime de driver.js entra
+ * solo por el import dinámico de useTour.ts.
  */
 
 import type { DriveStep } from 'driver.js';
+import type { useTranslations } from 'next-intl';
 
-export const TOUR_STEPS: DriveStep[] = [
-  {
-    element: '[data-tour-id="map"]',
-    popover: {
-      title: 'Mapa de epicentros',
-      description:
-        'Acá viven los eventos sísmicos de tu área de interés en tiempo real: ' +
-        'cada círculo es un sismo, con tamaño y color según su magnitud. ' +
-        'Podés activar capas (placas tectónicas, ciudades) desde el botón de Capas.',
-      side: 'top',
-      align: 'center',
+/**
+ * `t` del namespace `onboarding` con su tipado real de claves. El contrato
+ * genérico `(key: string) => string` del design no compila: el `t` de
+ * next-intl solo acepta las claves del namespace (más angosto que `string`),
+ * y por contravarianza no es asignable a un parámetro que exige aceptar
+ * cualquier string. El tipo exacto, type-only, resuelve ambas cosas.
+ */
+export type OnboardingTranslator = ReturnType<typeof useTranslations<'onboarding'>>;
+
+export function buildTourSteps(t: OnboardingTranslator): DriveStep[] {
+  return [
+    {
+      element: '[data-tour-id="map"]',
+      popover: {
+        title: t('tour.steps.map.title'),
+        description: t('tour.steps.map.description'),
+        side: 'top',
+        align: 'center',
+      },
     },
-  },
-  {
-    element: '[data-tour-id="nav-globe"]',
-    popover: {
-      title: 'Globo 3D',
-      description:
-        'La misma actividad sísmica, pero sobre un globo terráqueo interactivo: ' +
-        'ideal para ver la actividad global de un vistazo y entender los patrones ' +
-        'a escala planetaria.',
-      side: 'right',
-      align: 'start',
+    {
+      element: '[data-tour-id="nav-globe"]',
+      popover: {
+        title: t('tour.steps.globe.title'),
+        description: t('tour.steps.globe.description'),
+        side: 'right',
+        align: 'start',
+      },
     },
-  },
-  {
-    element: '[data-tour-id="area-selector"]',
-    popover: {
-      title: 'Áreas de interés',
-      description:
-        'Elegí qué región monitorear: Andes, Japón, Cascadia y más. ' +
-        'El área activa condiciona todo el dashboard — mapa, indicadores, ' +
-        'tabla de eventos y alertas.',
-      side: 'bottom',
-      align: 'start',
+    {
+      element: '[data-tour-id="area-selector"]',
+      popover: {
+        title: t('tour.steps.areas.title'),
+        description: t('tour.steps.areas.description'),
+        side: 'bottom',
+        align: 'start',
+      },
     },
-  },
-  {
-    element: '[data-tour-id="alerts-bell"]',
-    popover: {
-      title: 'Alertas',
-      description:
-        'La campana concentra las alertas activas: eventos significativos, ' +
-        'enjambres y actividad sentida en tu área. El número indica cuántas ' +
-        'hay ahora mismo.',
-      side: 'bottom',
-      align: 'end',
+    {
+      element: '[data-tour-id="alerts-bell"]',
+      popover: {
+        title: t('tour.steps.alerts.title'),
+        description: t('tour.steps.alerts.description'),
+        side: 'bottom',
+        align: 'end',
+      },
     },
-  },
-];
+  ];
+}

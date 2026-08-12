@@ -401,5 +401,96 @@
       "revokeCancel": "Cancelar",
       "revokeConfirm": "Revocar"
     }
+  },
+  "onboarding": {
+    "welcomeTitle": "¡Bienvenido a GeoSpectrum!",
+    "welcomeDescription": "Vamos a dejar tu cuenta lista en dos pasos y después te mostramos el dashboard. ¿Cómo te llamás?",
+    "nameLabel": "Tu nombre",
+    "namePlaceholder": "Nombre y apellido",
+    "nameSaveError": "No se pudo guardar el nombre. Reintentá, o saltá el tour y cargalo después desde Configuración.",
+    "skip": "Saltar",
+    "saving": "Guardando…",
+    "continue": "Continuar",
+    "areaTitle": "Elegí tu área de interés",
+    "areaDescription": "El área activa define qué región monitoreás: mapa, indicadores y alertas se recortan a ella. La podés cambiar cuando quieras desde el encabezado.",
+    "startTour": "Comenzar el tour",
+    "tour": {
+      "progress": "{current} de {total}",
+      "next": "Siguiente",
+      "previous": "Anterior",
+      "done": "Listo",
+      "steps": {
+        "map": {
+          "title": "Mapa de epicentros",
+          "description": "Acá viven los eventos sísmicos de tu área de interés en tiempo real: cada círculo es un sismo, con tamaño y color según su magnitud. Podés activar capas (placas tectónicas, ciudades) desde el botón de Capas."
+        },
+        "globe": {
+          "title": "Globo 3D",
+          "description": "La misma actividad sísmica, pero sobre un globo terráqueo interactivo: ideal para ver la actividad global de un vistazo y entender los patrones a escala planetaria."
+        },
+        "areas": {
+          "title": "Áreas de interés",
+          "description": "Elegí qué región monitorear: Andes, Japón, Cascadia y más. El área activa condiciona todo el dashboard — mapa, indicadores, tabla de eventos y alertas."
+        },
+        "alerts": {
+          "title": "Alertas",
+          "description": "La campana concentra las alertas activas: eventos significativos, enjambres y actividad sentida en tu área. El número indica cuántas hay ahora mismo."
+        }
+      }
+    }
+  },
+  "notifications": {
+    "bellAria": "Alertas activas: {count}",
+    "activeAlerts": "Alertas activas",
+    "types": {
+      "evento_significativo": "Evento significativo",
+      "enjambre": "Enjambre",
+      "actividad_sentida": "Actividad sentida"
+    },
+    "empty": "No hay alertas activas",
+    "noneMatchFilter": "Ninguna alerta coincide con el filtro",
+    "relatedEvents": "{count, plural, one {# evento relacionado} other {# eventos relacionados}}"
+  },
+  "share": {
+    "title": "Monitor sísmico",
+    "headline": "Sismo {magnitude} — {place}",
+    "unknownLocation": "ubicación desconocida",
+    "unknownDate": "fecha desconocida",
+    "depth": "{depth} km de profundidad",
+    "unreviewedNotice": "Solución automática, sin revisar por analista."
+  },
+  "analytics": {
+    "title": "Análisis Sísmico Avanzado",
+    "loadError": "Error al cargar datos",
+    "fullEventsTable": "Tabla Completa de Eventos"
+  },
+  "explore": {
+    "title": "Explorador de Eventos Sísmicos",
+    "subtitle": "Búsqueda avanzada con múltiples fuentes de datos y filtros personalizados",
+    "resultsCount": "Resultados: <n>{count}</n> eventos",
+    "viewMap": "Mapa",
+    "viewList": "Lista",
+    "exportCsv": "Exportar CSV",
+    "noResultsTitle": "No hay resultados",
+    "noResultsHint": "Ajusta los filtros y haz clic en \"Buscar Eventos\" para ver resultados",
+    "noEventsFound": "No se encontraron eventos con los filtros especificados",
+    "searchError": "Error al buscar eventos",
+    "sourcesUsed": "Fuentes de Datos Utilizadas",
+    "dedupNote": "Los eventos pueden estar deduplicados si aparecen en múltiples fuentes",
+    "csv": {
+      "id": "ID",
+      "dateUtc": "Fecha (UTC)",
+      "latitude": "Latitud",
+      "longitude": "Longitud",
+      "depthKm": "Profundidad (km)",
+      "magnitude": "Magnitud",
+      "magType": "Tipo Mag",
+      "place": "Lugar",
+      "felt": "Sentido",
+      "reviewed": "Revisado",
+      "sources": "Fuentes",
+      "yes": "Sí",
+      "no": "No"
+    }
   }
 }

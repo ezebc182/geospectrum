@@ -401,5 +401,96 @@
       "revokeCancel": "Cancel",
       "revokeConfirm": "Revoke"
     }
+  },
+  "onboarding": {
+    "welcomeTitle": "Welcome to GeoSpectrum!",
+    "welcomeDescription": "Let's get your account ready in two steps, then we'll show you the dashboard. What's your name?",
+    "nameLabel": "Your name",
+    "namePlaceholder": "First and last name",
+    "nameSaveError": "Your name could not be saved. Retry, or skip the tour and add it later from Settings.",
+    "skip": "Skip",
+    "saving": "Saving…",
+    "continue": "Continue",
+    "areaTitle": "Choose your area of interest",
+    "areaDescription": "The active area defines which region you monitor: the map, indicators and alerts are scoped to it. You can change it anytime from the header.",
+    "startTour": "Start the tour",
+    "tour": {
+      "progress": "{current} of {total}",
+      "next": "Next",
+      "previous": "Previous",
+      "done": "Done",
+      "steps": {
+        "map": {
+          "title": "Epicenter map",
+          "description": "This is where the seismic events of your area of interest live in real time: each circle is an earthquake, sized and colored by magnitude. You can enable layers (tectonic plates, cities) from the Layers button."
+        },
+        "globe": {
+          "title": "3D Globe",
+          "description": "The same seismic activity, but on an interactive globe: ideal for seeing global activity at a glance and understanding patterns at planetary scale."
+        },
+        "areas": {
+          "title": "Areas of interest",
+          "description": "Choose which region to monitor: Andes, Japan, Cascadia and more. The active area drives the whole dashboard — map, indicators, events table and alerts."
+        },
+        "alerts": {
+          "title": "Alerts",
+          "description": "The bell gathers the active alerts: significant events, swarms and felt activity in your area. The number shows how many there are right now."
+        }
+      }
+    }
+  },
+  "notifications": {
+    "bellAria": "Active alerts: {count}",
+    "activeAlerts": "Active alerts",
+    "types": {
+      "evento_significativo": "Significant event",
+      "enjambre": "Swarm",
+      "actividad_sentida": "Felt activity"
+    },
+    "empty": "No active alerts",
+    "noneMatchFilter": "No alert matches the filter",
+    "relatedEvents": "{count, plural, one {# related event} other {# related events}}"
+  },
+  "share": {
+    "title": "Seismic monitor",
+    "headline": "{magnitude} earthquake — {place}",
+    "unknownLocation": "unknown location",
+    "unknownDate": "unknown date",
+    "depth": "{depth} km deep",
+    "unreviewedNotice": "Automatic solution, not reviewed by an analyst."
+  },
+  "analytics": {
+    "title": "Advanced Seismic Analysis",
+    "loadError": "Failed to load data",
+    "fullEventsTable": "Full Events Table"
+  },
+  "explore": {
+    "title": "Seismic Event Explorer",
+    "subtitle": "Advanced search across multiple data sources with custom filters",
+    "resultsCount": "Results: <n>{count}</n> events",
+    "viewMap": "Map",
+    "viewList": "List",
+    "exportCsv": "Export CSV",
+    "noResultsTitle": "No results",
+    "noResultsHint": "Adjust the filters and click \"Search Events\" to see results",
+    "noEventsFound": "No events were found with the specified filters",
+    "searchError": "Failed to search events",
+    "sourcesUsed": "Data Sources Used",
+    "dedupNote": "Events may be deduplicated when they appear in multiple sources",
+    "csv": {
+      "id": "ID",
+      "dateUtc": "Date (UTC)",
+      "latitude": "Latitude",
+      "longitude": "Longitude",
+      "depthKm": "Depth (km)",
+      "magnitude": "Magnitude",
+      "magType": "Mag Type",
+      "place": "Place",
+      "felt": "Felt",
+      "reviewed": "Reviewed",
+      "sources": "Sources",
+      "yes": "Yes",
+      "no": "No"
+    }
   }
 }

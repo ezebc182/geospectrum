@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
+import { useTranslations } from 'next-intl';
 import { Bell, AlertTriangle, Users, Activity } from 'lucide-react';
 
 import { reportFetcher } from '@/lib/api';
@@ -16,11 +17,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 
-/** Orden y label de cada chip de filtro — mismo orden en que suelen aparecer. */
-const ALERT_TYPES: { id: AlertType; label: string }[] = [
-  { id: 'evento_significativo', label: 'Evento significativo' },
-  { id: 'enjambre', label: 'Enjambre' },
-  { id: 'actividad_sentida', label: 'Actividad sentida' },
+/** Orden de los chips de filtro — mismo orden en que suelen aparecer. El label
+ * lo resuelve el componente con `t(`types.${id}`)` (Decision 5: las constantes
+ * de módulo no llaman a t()). */
+const ALERT_TYPE_IDS: AlertType[] = [
+  'evento_significativo',
+  'enjambre',
+  'actividad_sentida',
 ];
 
 /**
@@ -37,6 +40,7 @@ const ALERT_TYPES: { id: AlertType; label: string }[] = [
  * primera en pedirlo, p. ej. /explore o /live).
  */
 export function NotificationBell() {
+  const t = useTranslations('notifications');
   const { data } = useSWR('/report', reportFetcher, {
     refreshInterval: 60000,
     revalidateOnFocus: true,
@@ -65,7 +69,7 @@ export function NotificationBell() {
       <DropdownMenuTrigger
         // Ancla del tour de onboarding (Decision 7 de email-invitations).
         data-tour-id="alerts-bell"
-        aria-label={`Alertas activas: ${alertas.length}`}
+        aria-label={t('bellAria', { count: alertas.length })}
         className="relative flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
@@ -87,7 +91,7 @@ export function NotificationBell() {
         className="max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[22rem] overflow-y-auto"
       >
         <DropdownMenuLabel className="flex items-center justify-between text-xs uppercase tracking-wider text-muted-foreground">
-          <span>Alertas activas</span>
+          <span>{t('activeAlerts')}</span>
           {hasAlerts && (
             <Badge variant="destructive" className="font-data">
               {alertas.length}
@@ -97,7 +101,7 @@ export function NotificationBell() {
 
         {hasAlerts && (
           <div className="flex flex-wrap gap-1.5 px-2 pb-2 pt-1">
-            {ALERT_TYPES.map(({ id, label }) => {
+            {ALERT_TYPE_IDS.map((id) => {
               const isActive = activeTypes.has(id);
               return (
                 <button
@@ -112,7 +116,7 @@ export function NotificationBell() {
                       : 'border-border text-muted-foreground hover:bg-accent'
                   )}
                 >
-                  {label}
+                  {t(`types.${id}`)}
                 </button>
               );
             })}
@@ -123,11 +127,11 @@ export function NotificationBell() {
 
         {!hasAlerts ? (
           <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-            No hay alertas activas
+            {t('empty')}
           </div>
         ) : alertasFiltradas.length === 0 ? (
           <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-            Ninguna alerta coincide con el filtro
+            {t('noneMatchFilter')}
           </div>
         ) : (
           // divs planos, no DropdownMenuItem: las alertas son contenido a
@@ -164,6 +168,7 @@ function getAlertIconComponent(tipo: string) {
 }
 
 function AlertRow({ alerta }: { alerta: Alert }) {
+  const t = useTranslations('notifications');
   const severity = getAlertSeverity(alerta.tipo);
 
   return (
@@ -176,12 +181,12 @@ function AlertRow({ alerta }: { alerta: Alert }) {
               {getAlertIcon(alerta.tipo)}
             </span>
             <span className="text-xs font-medium uppercase tracking-wide">
-              {alerta.tipo.replace('_', ' ')}
+              {t(`types.${alerta.tipo}`)}
             </span>
           </div>
           <p className="mt-1 text-sm font-medium">{alerta.descripcion}</p>
           <p className="mt-1 font-data text-xs opacity-75">
-            {alerta.eventos_relacionados.length} evento(s) relacionado(s)
+            {t('relatedEvents', { count: alerta.eventos_relacionados.length })}
           </p>
         </div>
       </div>

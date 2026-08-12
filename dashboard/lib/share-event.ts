@@ -3,9 +3,29 @@
  *
  * Vive aparte del panel porque es lógica pura —entra un evento, sale el texto—
  * y así se testea sin montar el DOM ni simular navigator.share.
+ *
+ * i18n (Decision 5): este módulo NO importa next-intl. Los textos llegan por
+ * parámetro en `ShareMessages`, que el componente arma desde `useTranslations`.
+ * Los mensajes parametrizados (headline, profundidad) son funciones y no
+ * strings con tokens: la interpolación la hace ICU en el componente, sin
+ * reinventar un replace() acá, y el orden de palabras queda libre por idioma.
  */
 
 import type { SeismicEvent } from '@/lib/types';
+
+/** Textos del mensaje a compartir, ya resueltos en el idioma activo. */
+export interface ShareMessages {
+  /** Título del share sheet nativo (navigator.share). */
+  title: string;
+  /** Primera línea: magnitud formateada ("M5.2") + lugar. */
+  headline: (magnitude: string, place: string) => string;
+  /** Línea de profundidad: recibe los km ya redondeados ("35"). */
+  depth: (km: string) => string;
+  unknownLocation: string;
+  unknownDate: string;
+  /** Aviso de solución automática sin revisar. */
+  unreviewedNotice: string;
+}
 
 /**
  * Texto del mensaje a compartir.
@@ -17,32 +37,34 @@ import type { SeismicEvent } from '@/lib/types';
  * La hora va en UTC y con la sigla explícita: un sismo lo comenta gente en
  * varios husos y "14:30" sin referencia no significa nada.
  */
-export function buildShareText(evento: SeismicEvent): string {
+export function buildShareText(evento: SeismicEvent, messages: ShareMessages): string {
   const magnitud = `M${evento.mag.toFixed(1)}`;
-  const lugar = evento.lugar ?? 'ubicación desconocida';
+  const lugar = evento.lugar ?? messages.unknownLocation;
   const profundidad =
     evento.prof_km === null || evento.prof_km === undefined
       ? null
-      : `${evento.prof_km.toFixed(0)} km de profundidad`;
+      : messages.depth(evento.prof_km.toFixed(0));
 
   const partes = [
-    `Sismo ${magnitud} — ${lugar}`,
-    [formatUtc(evento.hora_utc), profundidad].filter(Boolean).join(' · '),
+    messages.headline(magnitud, lugar),
+    [formatUtc(evento.hora_utc, messages.unknownDate), profundidad]
+      .filter(Boolean)
+      .join(' · '),
   ];
 
   // Los eventos automáticos se revisan después y la magnitud puede corregirse:
   // avisarlo evita que alguien comparta un dato preliminar como definitivo.
   if (!evento.revisado) {
-    partes.push('Solución automática, sin revisar por analista.');
+    partes.push(messages.unreviewedNotice);
   }
 
   return partes.filter(Boolean).join('\n');
 }
 
 /** Hora del evento en UTC, legible y sin ambigüedad de huso. */
-function formatUtc(isoString: string): string {
+function formatUtc(isoString: string, unknownDate: string): string {
   const fecha = new Date(isoString);
-  if (Number.isNaN(fecha.getTime())) return 'fecha desconocida';
+  if (Number.isNaN(fecha.getTime())) return unknownDate;
 
   return `${fecha.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
@@ -79,13 +101,14 @@ export type ShareOutcome = 'shared' | 'copied' | 'dismissed' | 'failed';
  */
 export async function shareEvent(
   evento: SeismicEvent,
+  messages: ShareMessages,
   url?: string,
 ): Promise<ShareOutcome> {
-  const text = buildShareText(evento);
+  const text = buildShareText(evento, messages);
 
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: 'Monitor sísmico', text, url });
+      await navigator.share({ title: messages.title, text, url });
       return 'shared';
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return 'dismissed';

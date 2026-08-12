@@ -1,6 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
+import { useTranslations } from 'next-intl';
 import { reportFetcher } from '@/lib/api';
 import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { MagnitudeTimeChart } from '@/components/MagnitudeTimeChart';
@@ -10,6 +11,7 @@ import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { BarChart3 } from 'lucide-react';
 
 export default function AnalyticsPage() {
+  const t = useTranslations('analytics');
   const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
     refreshInterval: 60000,
   });
@@ -31,7 +33,7 @@ export default function AnalyticsPage() {
   if (error || !data) {
     return (
       <div className="rounded-lg border-2 border-red-200 bg-red-50 p-8 text-center">
-        <p className="text-lg font-semibold text-red-900">Error al cargar datos</p>
+        <p className="text-lg font-semibold text-red-900">{t('loadError')}</p>
       </div>
     );
   }
@@ -43,7 +45,7 @@ export default function AnalyticsPage() {
       <div className="flex items-center gap-3">
         <BarChart3 className="h-8 w-8 text-seismic-600" />
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Análisis Sísmico Avanzado
+          {t('title')}
         </h1>
       </div>
 
@@ -59,7 +61,7 @@ export default function AnalyticsPage() {
 
       <div className="rounded-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6">
         <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
-          Tabla Completa de Eventos
+          {t('fullEventsTable')}
         </h2>
         <EventsTable eventos={eventos} filterable />
       </div>

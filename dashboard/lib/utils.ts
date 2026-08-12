@@ -63,8 +63,15 @@ export function formatDepth(prof_km: number | null | undefined): string {
   return `${prof_km.toFixed(1)} km`;
 }
 
-export function formatDateTime(isoString: string): string {
-  return new Date(isoString).toLocaleString('es-AR', {
+/**
+ * Fecha+hora legible en el locale de FORMATO activo (es-AR/en-US, el que
+ * expone `useLocale()` — Decision 2: el mapping app→formato vive solo en
+ * i18n/request.ts, por eso acá el locale entra por parámetro y no hay ningún
+ * 'es-AR' clavado). Los componentes prefieren `useFormatter().dateTime(...,
+ * 'medium')`; esta función queda para call-sites que ya reciben el locale.
+ */
+export function formatDateTime(isoString: string, locale: string): string {
+  return new Date(isoString).toLocaleString(locale, {
     dateStyle: 'medium',
     timeStyle: 'medium',
   });
@@ -84,16 +91,9 @@ export function formatDateTimeCompact(isoString: string): string {
   );
 }
 
-export function formatTimeAgo(isoString: string): string {
-  const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-  if (seconds < 60) return 'hace instantes';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `hace ${days} d`;
-}
+// formatTimeAgo se ELIMINÓ (i18n-dashboard, Fase 6): hardcodeaba "hace X min"
+// en español y su último call-site migró a useFormatter().relativeTime() en la
+// Fase 3 — quedaba como código muerto que la auditoría de cobertura marcaría.
 
 const ALERT_ICONS: Record<string, string> = {
   evento_significativo: '⚠️',

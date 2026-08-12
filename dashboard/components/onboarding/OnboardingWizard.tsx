@@ -21,6 +21,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 
 import { AreaSelector } from '@/components/AreaSelector';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ interface OnboardingWizardProps {
 }
 
 export function OnboardingWizard({ onFinished }: OnboardingWizardProps) {
+  const t = useTranslations('onboarding');
   const router = useRouter();
   const { startTour } = useTour();
 
@@ -135,51 +137,43 @@ export function OnboardingWizard({ onFinished }: OnboardingWizardProps) {
         {step === 1 ? (
           <>
             <DialogHeader>
-              <DialogTitle>¡Bienvenido a GeoSpectrum!</DialogTitle>
-              <DialogDescription>
-                Vamos a dejar tu cuenta lista en dos pasos y después te mostramos
-                el dashboard. ¿Cómo te llamás?
-              </DialogDescription>
+              <DialogTitle>{t('welcomeTitle')}</DialogTitle>
+              <DialogDescription>{t('welcomeDescription')}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-2">
               <label htmlFor="onboarding-name" className="text-sm font-medium">
-                Tu nombre
+                {t('nameLabel')}
               </label>
               <Input
                 id="onboarding-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Nombre y apellido"
+                placeholder={t('namePlaceholder')}
                 autoComplete="name"
                 disabled={saving}
               />
               {saveError && (
                 <p role="alert" className="text-sm text-destructive">
-                  No se pudo guardar el nombre. Reintentá, o saltá el tour y
-                  cargalo después desde Configuración.
+                  {t('nameSaveError')}
                 </p>
               )}
             </div>
 
             <DialogFooter>
               <Button variant="ghost" onClick={handleSkip} disabled={saving}>
-                Saltar
+                {t('skip')}
               </Button>
               <Button onClick={handleStep1Next} disabled={saving}>
-                {saving ? 'Guardando…' : 'Continuar'}
+                {saving ? t('saving') : t('continue')}
               </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Elegí tu área de interés</DialogTitle>
-              <DialogDescription>
-                El área activa define qué región monitoreás: mapa, indicadores y
-                alertas se recortan a ella. La podés cambiar cuando quieras desde
-                el encabezado.
-              </DialogDescription>
+              <DialogTitle>{t('areaTitle')}</DialogTitle>
+              <DialogDescription>{t('areaDescription')}</DialogDescription>
             </DialogHeader>
 
             <div className="flex justify-center py-2">
@@ -195,9 +189,9 @@ export function OnboardingWizard({ onFinished }: OnboardingWizardProps) {
 
             <DialogFooter>
               <Button variant="ghost" onClick={handleSkip}>
-                Saltar
+                {t('skip')}
               </Button>
-              <Button onClick={handleStartTour}>Comenzar el tour</Button>
+              <Button onClick={handleStartTour}>{t('startTour')}</Button>
             </DialogFooter>
           </>
         )}

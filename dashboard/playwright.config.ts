@@ -19,6 +19,11 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:3008',
     trace: 'retain-on-failure',
+    // i18n-dashboard: la UI resuelve el idioma por cookie → Accept-Language →
+    // 'es'. El chromium de Playwright manda en-US por defecto y los E2E
+    // existentes assertan el copy en español: el browser del test declara ser
+    // un usuario rioplatense (mismo formato es-AR que mapea i18n/request.ts).
+    locale: 'es-AR',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

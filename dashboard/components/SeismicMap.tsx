@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import type { SeismicEvent } from '@/lib/types';
 import { getMagnitudeColor, formatMagnitude, formatDateTime } from '@/lib/utils';
 
@@ -16,6 +17,11 @@ interface SeismicMapProps {
 }
 
 export function SeismicMap({ eventos, region, className }: SeismicMapProps) {
+  // Componente legacy sin montar en ningún layout — migrado igual por
+  // completitud (mismo criterio que Header.tsx en la Fase 2). El locale entra
+  // a las deps del efecto de markers: los popups se regeneran al cambiarlo.
+  const t = useTranslations('map');
+  const locale = useLocale();
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
 
@@ -85,17 +91,17 @@ export function SeismicMap({ eventos, region, className }: SeismicMapProps) {
             .bindPopup(`
               <div class="text-sm">
                 <p class="font-bold">M${formatMagnitude(evento.mag)}</p>
-                <p>${evento.lugar || 'Desconocido'}</p>
-                <p class="text-xs text-gray-600">${formatDateTime(evento.hora_utc)}</p>
-                <p class="text-xs">Prof: ${evento.prof_km ? `${evento.prof_km.toFixed(0)} km` : 'N/A'}</p>
-                <p class="text-xs">Fuente: ${evento.fuentes.join(', ')}</p>
+                <p>${evento.lugar || t('popup.unknownLocation')}</p>
+                <p class="text-xs text-gray-600">${formatDateTime(evento.hora_utc, locale)}</p>
+                <p class="text-xs">${t('popup.depth')}: ${evento.prof_km ? `${evento.prof_km.toFixed(0)} km` : 'N/A'}</p>
+                <p class="text-xs">${t('popup.source')}: ${evento.fuentes.join(', ')}</p>
               </div>
             `)
             .addTo(map);
         });
       });
     }
-  }, [eventos]);
+  }, [eventos, t, locale]);
 
   return (
     <div className={className}>
