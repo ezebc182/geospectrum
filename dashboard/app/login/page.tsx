@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Activity, LogIn } from 'lucide-react';
 
+import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { Button } from '@/components/ui/button';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -115,7 +116,7 @@ function LoginPageContent() {
       <EpicenterPulse className="bottom-[20%] left-[28%] h-2.5 w-2.5" />
       <EpicenterPulse className="bottom-[30%] right-[10%] h-3 w-3" />
 
-      <header className="relative z-10 mx-auto w-full max-w-6xl px-6 py-5">
+      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
         <Link
           href="/"
           className="inline-flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -123,6 +124,9 @@ function LoginPageContent() {
           <Activity className="h-6 w-6 text-primary" aria-hidden="true" />
           <span className="font-heading text-lg font-semibold tracking-tight">GeoSpectrum</span>
         </Link>
+        {/* Un visitante anónimo (invitado nuevo) también necesita poder
+            cambiar el idioma — sin sesión el switcher solo escribe la cookie. */}
+        <LocaleSwitcher />
       </header>
 
       <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-16">
