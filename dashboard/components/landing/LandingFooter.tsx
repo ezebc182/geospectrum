@@ -12,12 +12,13 @@
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { Activity, CheckCircle2, Loader2 } from 'lucide-react';
 
 import { signupBeta } from '@/lib/api';
+import { toAppLocale } from '@/lib/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { LandingCopy } from '@/lib/landing-i18n';
 
 type FormStatus = 'idle' | 'sending' | 'success' | 'invalid' | 'error';
 
@@ -30,11 +31,12 @@ function looksLikeEmail(value: string): boolean {
   return /^\S+@\S+\.\S+$/.test(value);
 }
 
-interface LandingFooterProps {
-  copy: LandingCopy;
-}
-
-export function LandingFooter({ copy }: LandingFooterProps) {
+export function LandingFooter() {
+  const t = useTranslations('landing.footer');
+  // Locale activo de la landing → viaja en el POST de beta: el backend lo
+  // persiste (Fase 1) y de ahí sale el idioma del email de confirmación,
+  // de la invitación y de la aprobación (cadena beta→invitación→emails).
+  const locale = toAppLocale(useLocale());
   const [email, setEmail] = useState('');
   const [website, setWebsite] = useState(''); // honeypot
   const [status, setStatus] = useState<FormStatus>('idle');
@@ -50,7 +52,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
 
     setStatus('sending');
     try {
-      await signupBeta(trimmed, website);
+      await signupBeta(trimmed, website, locale);
       setStatus('success');
     } catch {
       // 429 (rate limit) y 5xx terminan igual acá: el mensaje pide
@@ -69,14 +71,14 @@ export function LandingFooter({ copy }: LandingFooterProps) {
             <span className="font-heading text-lg font-semibold">GeoSpectrum</span>
           </p>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
-            {copy.footer.tagline}
+            {t('tagline')}
           </p>
         </div>
 
         {/* Producto */}
-        <nav aria-label={copy.footer.productColumn}>
+        <nav aria-label={t('productColumn')}>
           <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            {copy.footer.productColumn}
+            {t('productColumn')}
           </h2>
           <ul className="mt-4 space-y-3 text-sm">
             <li>
@@ -84,7 +86,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
                 href="#como-funciona"
                 className="text-foreground/80 transition-colors hover:text-foreground"
               >
-                {copy.footer.linkHow}
+                {t('linkHow')}
               </a>
             </li>
             <li>
@@ -92,7 +94,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
                 href="#capacidades"
                 className="text-foreground/80 transition-colors hover:text-foreground"
               >
-                {copy.footer.linkFeatures}
+                {t('linkFeatures')}
               </a>
             </li>
             <li>
@@ -100,7 +102,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
                 href="/login"
                 className="text-foreground/80 transition-colors hover:text-foreground"
               >
-                {copy.footer.linkLogin}
+                {t('linkLogin')}
               </Link>
             </li>
           </ul>
@@ -109,20 +111,20 @@ export function LandingFooter({ copy }: LandingFooterProps) {
         {/* Datos */}
         <div>
           <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            {copy.footer.dataColumn}
+            {t('dataColumn')}
           </h2>
           <ul className="mt-4 space-y-3 font-mono text-xs text-muted-foreground">
-            <li>{copy.footer.sources}</li>
-            <li>{copy.footer.coverage}</li>
-            <li>{copy.footer.history}</li>
+            <li>{t('sources')}</li>
+            <li>{t('coverage')}</li>
+            <li>{t('history')}</li>
           </ul>
         </div>
 
         {/* Beta */}
         <div>
-          <h2 className="font-heading text-base font-semibold">{copy.footer.beta.title}</h2>
+          <h2 className="font-heading text-base font-semibold">{t('beta.title')}</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {copy.footer.beta.subtitle}
+            {t('beta.subtitle')}
           </p>
 
           {status === 'success' ? (
@@ -131,7 +133,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
               role="status"
             >
               <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {copy.footer.beta.success}
+              {t('beta.success')}
             </p>
           ) : (
             <form onSubmit={handleSubmit} className="mt-4" noValidate>
@@ -153,7 +155,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
               <div className="flex flex-col gap-2 sm:flex-row">
                 <div className="flex-1">
                   <label htmlFor="beta-email" className="sr-only">
-                    {copy.footer.beta.emailLabel}
+                    {t('beta.emailLabel')}
                   </label>
                   <Input
                     id="beta-email"
@@ -162,7 +164,7 @@ export function LandingFooter({ copy }: LandingFooterProps) {
                     inputMode="email"
                     autoComplete="email"
                     required
-                    placeholder={copy.footer.beta.placeholder}
+                    placeholder={t('beta.placeholder')}
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
@@ -185,10 +187,10 @@ export function LandingFooter({ copy }: LandingFooterProps) {
                   {status === 'sending' ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                      {copy.footer.beta.sending}
+                      {t('beta.sending')}
                     </>
                   ) : (
-                    copy.footer.beta.button
+                    t('beta.button')
                   )}
                 </Button>
               </div>
@@ -200,8 +202,8 @@ export function LandingFooter({ copy }: LandingFooterProps) {
                   className="mt-2 text-sm text-destructive"
                 >
                   {status === 'invalid'
-                    ? copy.footer.beta.invalid
-                    : copy.footer.beta.error}
+                    ? t('beta.invalid')
+                    : t('beta.error')}
                 </p>
               )}
             </form>
@@ -211,8 +213,8 @@ export function LandingFooter({ copy }: LandingFooterProps) {
 
       <div className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-6 py-6 text-xs text-muted-foreground md:flex-row">
-          <p>{copy.footer.legal}</p>
-          <p className="font-mono">{copy.footer.sources}</p>
+          <p>{t('legal')}</p>
+          <p className="font-mono">{t('sources')}</p>
         </div>
       </div>
     </footer>

@@ -2,6 +2,7 @@
  * Cliente API para GeoSpectrum Service
  */
 
+import type { AppLocale } from './locale';
 import type { BetaSignup, MonitorReport, SeismicEvent, Alert } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -160,13 +161,20 @@ export async function approveBetaSignup(id: string): Promise<void> {
  *
  * `website` es el honeypot del form: viaja siempre (vacío para humanos) —
  * el backend descarta en silencio los payloads donde venga con contenido.
+ * `locale` es el idioma activo de la landing: el backend lo persiste en
+ * beta_signups.locale y de ahí sale el idioma del email de confirmación y
+ * de la invitación al aprobar (cadena beta→invitación→emails, Fase 1).
  * Lanza en 4xx/5xx: el form distingue rate-limit/errores para el mensaje.
  */
-export async function signupBeta(email: string, website: string): Promise<void> {
+export async function signupBeta(
+  email: string,
+  website: string,
+  locale: AppLocale,
+): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/beta-signups`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, website }),
+    body: JSON.stringify({ email, website, locale }),
   });
 
   if (!response.ok) {

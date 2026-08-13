@@ -101,7 +101,7 @@ function createErrorKey(err: unknown): CreateErrorKey {
 }
 
 /** Opciones de fecha de los listados admin (día + mes corto + hora): antes
- * un toLocaleDateString('es-AR') fijo, ahora el locale activo vía
+ * un toLocaleDateString con es-AR fijo, ahora el locale activo vía
  * useFormatter (Decision 6). */
 const DATE_OPTIONS = {
   day: '2-digit',

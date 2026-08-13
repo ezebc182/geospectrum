@@ -5,7 +5,8 @@
       "es": "Español",
       "en": "English"
     },
-    "notAvailable": "N/A"
+    "notAvailable": "N/A",
+    "refreshingArea": "Actualizando datos del área seleccionada…"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -252,6 +253,25 @@
       "liveBadge": "Vivo",
       "dragToReorder": "Arrastrar para reordenar",
       "removeCity": "Eliminar ciudad"
+    },
+    "spectrogramsPage": {
+      "title": "Espectrogramas Sísmicos",
+      "subtitle": "Monitoreo de {count} ubicaciones · {live} con streaming en vivo",
+      "columns": "{count} columnas",
+      "addCity": "Agregar Ciudad",
+      "liveLegendLabel": "Vivo:",
+      "liveLegendDescription": "streaming SeedLink en tiempo real",
+      "historyLegendLabel": "24h:",
+      "historyLegendDescription": "histórico FDSN, 0.1–20 Hz",
+      "addLocation": "Agregar Ubicación",
+      "closeSelector": "Cerrar el selector",
+      "searchPlacePlaceholder": "Buscar cualquier ciudad o lugar del mundo (ej. Caracas)...",
+      "searchPresetPlaceholder": "...o elegí una de las ciudades de alto riesgo precargadas",
+      "alreadyAdded": "Ya agregaste ese lugar.",
+      "livePill": "vivo",
+      "emptyTitle": "No hay ciudades seleccionadas",
+      "emptyHint": "Agrega ciudades para comenzar a monitorear su actividad sísmica",
+      "addCities": "Agregar Ciudades"
     }
   },
   "settings": {
@@ -449,7 +469,8 @@
     },
     "empty": "No hay alertas activas",
     "noneMatchFilter": "Ninguna alerta coincide con el filtro",
-    "relatedEvents": "{count, plural, one {# evento relacionado} other {# eventos relacionados}}"
+    "relatedEvents": "{count, plural, one {# evento relacionado} other {# eventos relacionados}}",
+    "allNormal": "Todos los parámetros dentro de rangos normales"
   },
   "share": {
     "title": "Monitor sísmico",
@@ -491,6 +512,153 @@
       "sources": "Fuentes",
       "yes": "Sí",
       "no": "No"
+    }
+  },
+  "landing": {
+    "nav": {
+      "login": "Iniciar sesión",
+      "localeToggle": "EN",
+      "localeToggleAria": "Switch to English"
+    },
+    "hero": {
+      "badge": "Monitoreo en vivo",
+      "titleTop": "La Tierra no avisa.",
+      "titleAccent": "GeoSpectrum sí.",
+      "subtitle": "Monitoreo sísmico global en tiempo real: ingesta continua de USGS, EMSC e INPRES, detección de enjambres, espectrogramas en vivo y alertas sobre las áreas que a usted le importan.",
+      "ctaPrimary": "Explorar el monitor",
+      "ctaSecondary": "Cómo funciona",
+      "statsTracked": "eventos en seguimiento",
+      "statsMax": "máxima",
+      "statsLast": "último",
+      "tickerTitle": "Actividad reciente",
+      "depthShort": "prof."
+    },
+    "how": {
+      "kicker": "Cómo funciona",
+      "title": "Del sensor a su pantalla, en un flujo continuo",
+      "steps": [
+        {
+          "title": "Ingesta multi-fuente",
+          "description": "Eventos M3.0+ de todo el planeta desde USGS, EMSC e INPRES, deduplicados y normalizados en un catálogo único que se actualiza de forma continua."
+        },
+        {
+          "title": "Análisis en tiempo real",
+          "description": "KPIs por área, detección de enjambres, eventos significativos y actividad sentida — calculados sobre el catálogo vivo, no sobre reportes viejos."
+        },
+        {
+          "title": "Alertas y visualización",
+          "description": "Globo 3D, mapas con placas tectónicas y espectrogramas en vivo. Las alertas se disparan sobre sus áreas de interés, no sobre el mundo entero."
+        }
+      ]
+    },
+    "features": {
+      "kicker": "Capacidades",
+      "title": "Una sala de control sísmica, no otro visor de mapas",
+      "items": [
+        {
+          "title": "Globo 3D en vivo",
+          "description": "El Anillo de Fuego completo, sin cortes de proyección: cada sismo pulsa sobre la esfera con tamaño y color según su magnitud."
+        },
+        {
+          "title": "Mapas con contexto tectónico",
+          "description": "Límites de placas estilizados por tipo de borde, ciudades de referencia y encuadre automático del área activa."
+        },
+        {
+          "title": "Espectrogramas en vivo",
+          "description": "Señal sísmica cruda de estaciones vía SeedLink, renderizada en el navegador — lo que la estación escucha, usted lo ve."
+        },
+        {
+          "title": "Áreas de interés propias",
+          "description": "Defina las regiones que le importan — los Andes, Japón, Cascadia — y el monitor filtra eventos, KPIs y alertas para cada una."
+        },
+        {
+          "title": "Histórico de 12 meses",
+          "description": "Un año de catálogo consultable para comparar la actividad de hoy contra la línea de base real de la región."
+        },
+        {
+          "title": "Alertas inteligentes",
+          "description": "Enjambres, eventos significativos y actividad sentida — clasificados por severidad, sin ruido de fondo."
+        }
+      ]
+    },
+    "cta": {
+      "titleTop": "El planeta ya está en movimiento.",
+      "titleAccent": "Empiece a mirarlo en serio.",
+      "subtitle": "Acceda con su cuenta de Google y explore la actividad sísmica global con las mismas herramientas que ve en esta página.",
+      "button": "Iniciar sesión"
+    },
+    "footer": {
+      "tagline": "Sala de control sísmica global: datos en vivo, contexto tectónico y alertas sobre sus áreas de interés.",
+      "beta": {
+        "title": "Sumarse a la beta",
+        "subtitle": "Deje su email y le enviamos una invitación cuando se abra el próximo cupo.",
+        "placeholder": "su@email.com",
+        "button": "Quiero mi invitación",
+        "sending": "Enviando…",
+        "success": "Listo — le avisamos cuando haya cupo.",
+        "invalid": "Ingrese un email válido.",
+        "error": "No se pudo registrar. Intente de nuevo en unos minutos.",
+        "emailLabel": "Email para la beta"
+      },
+      "productColumn": "Producto",
+      "dataColumn": "Datos",
+      "linkHow": "Cómo funciona",
+      "linkFeatures": "Capacidades",
+      "linkLogin": "Iniciar sesión",
+      "sources": "Fuentes: USGS · EMSC · INPRES",
+      "coverage": "Cobertura global M3.0+",
+      "history": "Histórico de 12 meses",
+      "legal": "© 2026 GeoSpectrum · geospectrum.org"
+    },
+    "meta": {
+      "title": "GeoSpectrum — Monitoreo sísmico global en tiempo real",
+      "description": "Sismos de todo el planeta en un globo 3D en vivo: ingesta continua de USGS, EMSC e INPRES, detección de enjambres, espectrogramas y alertas sobre sus áreas de interés."
+    }
+  },
+  "invite": {
+    "loading": "Validando tu invitación…",
+    "errors": {
+      "invalidTitle": "Invitación no válida",
+      "invalidMessage": "Este link de invitación no existe. Revisá que la URL esté completa o pedile a quien te invitó que la genere de nuevo.",
+      "goneTitle": "Invitación vencida o revocada",
+      "goneMessage": "Este link ya no sirve: la invitación expiró, fue revocada o ya se usó. Pedile a quien te invitó que la reenvíe — el reenvío genera un link nuevo.",
+      "networkTitle": "No se pudo validar la invitación",
+      "networkMessage": "Hubo un problema de conexión al validar el link. Recargá la página para intentar de nuevo."
+    },
+    "roles": {
+      "superadmin": "Superadmin",
+      "admin": "Administrador",
+      "moderador": "Moderador",
+      "viewer": "Observador"
+    },
+    "accept": {
+      "kicker": "Invitación",
+      "title": "Te invitaron a GeoSpectrum",
+      "emailLabel": "Email",
+      "roleLabel": "Rol",
+      "expiresLabel": "Válida hasta",
+      "passwordLabel": "Elegí una contraseña",
+      "passwordPlaceholder": "Mínimo 8 caracteres",
+      "confirmLabel": "Confirmar contraseña",
+      "confirmPlaceholder": "Repetí la contraseña",
+      "mismatch": "Las contraseñas no coinciden.",
+      "showPassword": "Mostrar contraseña",
+      "hidePassword": "Ocultar contraseña",
+      "strengthLabel": "Fuerza",
+      "strengthLevels": [
+        "Muy débil",
+        "Débil",
+        "Aceptable",
+        "Fuerte"
+      ],
+      "submit": "Crear cuenta y entrar",
+      "submitting": "Creando tu cuenta…",
+      "divider": "o",
+      "google": "Continuar con Google",
+      "errorGone": "La invitación dejó de ser válida mientras completabas el alta. Pedí un reenvío del link.",
+      "errorConflict": "Este email ya tiene una cuenta. Entrá desde la página de login.",
+      "errorGeneric": "No se pudo crear la cuenta. Intentá de nuevo en unos segundos.",
+      "googleHint": "Usá la cuenta de Google de <mono>{email}</mono> — la invitación está atada a ese email."
     }
   }
 }

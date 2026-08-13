@@ -1,50 +1,43 @@
 /**
- * Wrapper client de la landing: es el dueño del locale.
+ * Wrapper client de la landing: es el dueño del TOGGLE de idioma.
  *
- * El estado inicial es 'es' fijo (no detectLandingLocale()) a propósito: el
- * HTML del servidor se renderiza una sola vez y detectar el idioma durante el
- * render inicial del cliente produciría un mismatch de hidratación para los
- * visitantes en inglés. Se detecta post-hydration en un efecto — el flash de
- * español para un visitante anglo es de un frame y es el costo de no partir
- * el routing en rutas [locale] por una sola página.
+ * El locale ya no vive acá (i18n-dashboard, Fase 7): lo resuelve la cascada
+ * server-side de i18n/request.ts (cookie NEXT_LOCALE → Accept-Language →
+ * 'es') y los hijos consumen useTranslations directo. El toggle escribe la
+ * cookie común y hace router.refresh() — la misma mecánica que el switcher
+ * del dashboard — así la elección hecha en la landing se propaga a /login y
+ * al resto de la app sin re-elegir. La vieja preferencia de
+ * localStorage['landing-locale'] NO se migra (Decision 3, pérdida aceptada):
+ * la primera visita post-deploy re-detecta por Accept-Language.
  */
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useLocale } from 'next-intl';
 
-import {
-  LANDING_COPY,
-  detectLandingLocale,
-  storeLandingLocale,
-  type LandingLocale,
-} from '@/lib/landing-i18n';
+import { setLocaleCookie, toAppLocale } from '@/lib/locale';
 import { LandingHero } from '@/components/landing/LandingHero';
 import { LandingSections } from '@/components/landing/LandingSections';
 import { LandingFooter } from '@/components/landing/LandingFooter';
 
 export function LandingContent() {
-  const [locale, setLocale] = useState<LandingLocale>('es');
-
-  useEffect(() => {
-    setLocale(detectLandingLocale());
-  }, []);
+  const router = useRouter();
+  // useLocale() da el locale de FORMATO (es-AR/en-US); se colapsa al
+  // identificador de app para calcular el destino del toggle.
+  const locale = toAppLocale(useLocale());
 
   const toggleLocale = useCallback(() => {
-    setLocale((current) => {
-      const next: LandingLocale = current === 'es' ? 'en' : 'es';
-      storeLandingLocale(next);
-      return next;
-    });
-  }, []);
-
-  const copy = LANDING_COPY[locale];
+    setLocaleCookie(locale === 'es' ? 'en' : 'es');
+    router.refresh();
+  }, [locale, router]);
 
   return (
     <>
-      <LandingHero copy={copy} locale={locale} onToggleLocale={toggleLocale} />
-      <LandingSections copy={copy} />
-      <LandingFooter copy={copy} />
+      <LandingHero onToggleLocale={toggleLocale} />
+      <LandingSections />
+      <LandingFooter />
     </>
   );
 }

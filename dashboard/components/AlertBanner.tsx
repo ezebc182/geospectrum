@@ -1,8 +1,15 @@
 /**
- * Banner de alertas activas
+ * Banner de alertas activas.
+ *
+ * LEGACY: hoy no está montado en ningún layout (las alertas viven en
+ * NotificationBell). Migrado igual a next-intl por completitud (mismo
+ * criterio que Header.tsx y SeismicMap.tsx) reusando el ns `notifications`
+ * — si se re-monta, sale bilingüe.
  */
 
 'use client';
+
+import { useTranslations } from 'next-intl';
 
 import { Alert } from '@/lib/types';
 import { getAlertIcon, getAlertSeverity, cn } from '@/lib/utils';
@@ -41,6 +48,7 @@ function getAlertIconComponent(tipo: string) {
 }
 
 export function AlertBanner({ alertas, className }: AlertBannerProps) {
+  const t = useTranslations('notifications');
   if (alertas.length === 0) {
     return (
       <div
@@ -52,10 +60,8 @@ export function AlertBanner({ alertas, className }: AlertBannerProps) {
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-6 w-6 text-severity-ok" />
           <div>
-            <p className="font-semibold text-foreground">No hay alertas activas</p>
-            <p className="text-sm text-muted-foreground">
-              Todos los parámetros dentro de rangos normales
-            </p>
+            <p className="font-semibold text-foreground">{t('empty')}</p>
+            <p className="text-sm text-muted-foreground">{t('allNormal')}</p>
           </div>
         </div>
       </div>
@@ -65,7 +71,7 @@ export function AlertBanner({ alertas, className }: AlertBannerProps) {
   return (
     <div className={cn('space-y-3', className)}>
       <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
-        Alertas Activas
+        {t('activeAlerts')}
         <Badge variant="destructive" className="font-data">
           {alertas.length}
         </Badge>
@@ -88,12 +94,14 @@ export function AlertBanner({ alertas, className }: AlertBannerProps) {
                     {getAlertIcon(alerta.tipo)}
                   </span>
                   <Badge variant={severityBadgeVariant[severity]} className="uppercase tracking-wide">
-                    {alerta.tipo.replace('_', ' ')}
+                    {t(`types.${alerta.tipo}`)}
                   </Badge>
                 </div>
+                {/* alerta.descripcion viene del backend — fuera de alcance
+                    (decisión del usuario), mismo criterio que NotificationBell. */}
                 <p className="mt-1 text-sm font-medium">{alerta.descripcion}</p>
                 <p className="mt-1 font-data text-xs opacity-75">
-                  {alerta.eventos_relacionados.length} evento(s) relacionado(s)
+                  {t('relatedEvents', { count: alerta.eventos_relacionados.length })}
                 </p>
               </div>
             </div>

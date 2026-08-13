@@ -16,6 +16,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 
@@ -37,6 +38,7 @@ export function AreaRefreshIndicator({
   children,
   className,
 }: AreaRefreshIndicatorProps) {
+  const t = useTranslations('common');
   return (
     <div className="relative" aria-busy={isRefreshing}>
       {/* La barra se monta sólo cuando hace falta para que la animación arranque
@@ -48,7 +50,7 @@ export function AreaRefreshIndicator({
           className="absolute inset-x-0 -top-2 z-20 h-1 overflow-hidden rounded-full bg-muted"
         >
           <div className="h-full w-1/4 animate-indeterminate-bar rounded-full bg-seismic-600" />
-          <span className="sr-only">Actualizando datos del área seleccionada…</span>
+          <span className="sr-only">{t('refreshingArea')}</span>
         </div>
       )}
 

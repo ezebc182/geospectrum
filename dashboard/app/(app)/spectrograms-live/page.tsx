@@ -9,6 +9,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   DndContext,
   closestCenter,
@@ -46,6 +47,7 @@ function loadStoredCities(): SeismicCity[] | null {
 }
 
 export default function SpectrogramsLivePage() {
+  const t = useTranslations('charts.spectrogramsPage');
   const [selectedCities, setSelectedCities] = useState<SeismicCity[]>(
     HIGH_RISK_SEISMIC_CITIES.slice(0, 12)
   );
@@ -58,7 +60,9 @@ export default function SpectrogramsLivePage() {
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeResults, setPlaceResults] = useState<GeocodingResult[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
-  const [customError, setCustomError] = useState<string | null>(null);
+  // Se guarda la CLAVE del error (no el texto) para que se re-traduzca si
+  // el usuario cambia de idioma con el error visible (patrón del repo).
+  const [customError, setCustomError] = useState<'alreadyAdded' | null>(null);
 
   // Qué ciudades tienen streaming en vivo disponible — determina en qué
   // tarjetas aparece el toggle Vivo/24h.
@@ -141,7 +145,7 @@ export default function SpectrogramsLivePage() {
     });
 
     if (selectedCities.find((c) => c.id === location.id)) {
-      setCustomError('Ya agregaste ese lugar.');
+      setCustomError('alreadyAdded');
       return;
     }
 
@@ -179,10 +183,10 @@ export default function SpectrogramsLivePage() {
           <div>
             <h1 className="font-heading text-3xl font-bold text-foreground mb-2 flex items-center gap-3">
               <Activity className="h-8 w-8 text-primary" />
-              Espectrogramas Sísmicos
+              {t('title')}
             </h1>
             <p className="text-muted-foreground">
-              Monitoreo de {selectedCities.length} ubicaciones · {liveCount} con streaming en vivo
+              {t('subtitle', { count: selectedCities.length, live: liveCount })}
             </p>
           </div>
 
@@ -194,10 +198,10 @@ export default function SpectrogramsLivePage() {
                 onChange={(e) => setGridCols(Number(e.target.value) as GridSize)}
                 className="bg-transparent text-sm font-medium text-foreground border-none outline-none cursor-pointer"
               >
-                <option value={2}>2 columnas</option>
-                <option value={3}>3 columnas</option>
-                <option value={4}>4 columnas</option>
-                <option value={6}>6 columnas</option>
+                <option value={2}>{t('columns', { count: 2 })}</option>
+                <option value={3}>{t('columns', { count: 3 })}</option>
+                <option value={4}>{t('columns', { count: 4 })}</option>
+                <option value={6}>{t('columns', { count: 6 })}</option>
               </select>
             </div>
 
@@ -206,7 +210,7 @@ export default function SpectrogramsLivePage() {
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity font-semibold"
             >
               <Plus className="h-4 w-4" />
-              Agregar Ciudad
+              {t('addCity')}
             </button>
           </div>
         </div>
@@ -214,13 +218,13 @@ export default function SpectrogramsLivePage() {
         <div className="flex items-center justify-between bg-accent border border-border rounded-lg p-4">
           <div className="flex items-center gap-4 text-sm font-data">
             <div>
-              <span className="text-accent-foreground font-semibold font-sans">Vivo:</span>
-              <span className="text-muted-foreground ml-2">streaming SeedLink en tiempo real</span>
+              <span className="text-accent-foreground font-semibold font-sans">{t('liveLegendLabel')}</span>
+              <span className="text-muted-foreground ml-2">{t('liveLegendDescription')}</span>
             </div>
             <div className="h-4 w-px bg-border"></div>
             <div>
-              <span className="text-accent-foreground font-semibold font-sans">24h:</span>
-              <span className="text-muted-foreground ml-2">histórico FDSN, 0.1–20 Hz</span>
+              <span className="text-accent-foreground font-semibold font-sans">{t('historyLegendLabel')}</span>
+              <span className="text-muted-foreground ml-2">{t('historyLegendDescription')}</span>
             </div>
           </div>
         </div>
@@ -232,10 +236,11 @@ export default function SpectrogramsLivePage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
               <Plus className="h-5 w-5" />
-              Agregar Ubicación
+              {t('addLocation')}
             </h3>
             <button
               onClick={() => setShowCitySelector(false)}
+              aria-label={t('closeSelector')}
               className="p-1 hover:bg-accent rounded"
             >
               <X className="h-5 w-5" />
@@ -246,7 +251,7 @@ export default function SpectrogramsLivePage() {
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Buscar cualquier ciudad o lugar del mundo (ej. Caracas)..."
+              placeholder={t('searchPlacePlaceholder')}
               value={placeQuery}
               onChange={(e) => setPlaceQuery(e.target.value)}
               className="w-full pl-10 pr-10 py-2 border border-border rounded-lg bg-background text-foreground"
@@ -273,7 +278,9 @@ export default function SpectrogramsLivePage() {
                 ))}
               </div>
             )}
-            {customError && <p className="text-xs text-destructive mt-2">{customError}</p>}
+            {customError && (
+              <p className="text-xs text-destructive mt-2">{t(customError)}</p>
+            )}
           </div>
 
           <div className="pt-2 border-t border-border mt-2">
@@ -281,7 +288,7 @@ export default function SpectrogramsLivePage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="...o elegí una de las ciudades de alto riesgo precargadas"
+                placeholder={t('searchPresetPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-background text-foreground"
@@ -301,7 +308,9 @@ export default function SpectrogramsLivePage() {
                     <div className="font-medium text-foreground text-sm flex items-center gap-1.5">
                       {city.name}
                       {liveChannelsByCity[city.id] && (
-                        <span className="text-[9px] uppercase font-bold text-severity-low">vivo</span>
+                        <span className="text-[9px] uppercase font-bold text-severity-low">
+                          {t('livePill')}
+                        </span>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground">{city.country}</div>
@@ -332,16 +341,14 @@ export default function SpectrogramsLivePage() {
       ) : (
         <div className="flex flex-col items-center justify-center h-96 bg-card border border-dashed border-border rounded-lg">
           <Activity className="h-16 w-16 text-muted-foreground mb-4" />
-          <h3 className="text-xl font-semibold text-foreground mb-2">No hay ciudades seleccionadas</h3>
-          <p className="text-muted-foreground mb-4">
-            Agrega ciudades para comenzar a monitorear su actividad sísmica
-          </p>
+          <h3 className="text-xl font-semibold text-foreground mb-2">{t('emptyTitle')}</h3>
+          <p className="text-muted-foreground mb-4">{t('emptyHint')}</p>
           <button
             onClick={() => setShowCitySelector(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity font-semibold"
           >
             <Plus className="h-4 w-4" />
-            Agregar Ciudades
+            {t('addCities')}
           </button>
         </div>
       )}

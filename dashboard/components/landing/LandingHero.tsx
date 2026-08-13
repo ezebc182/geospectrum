@@ -13,12 +13,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useFormatter, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { Activity, ArrowRight, Languages, Radio } from 'lucide-react';
 
 import { eventsFetcher } from '@/lib/api';
 import { magnitudeColor } from '@/lib/globe-data';
-import { relativeTime, type LandingCopy, type LandingLocale } from '@/lib/landing-i18n';
 import { Button } from '@/components/ui/button';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
@@ -66,12 +66,14 @@ const SPOTLIGHT_POOL_SIZE = 15;
  * Infocard del spotlight: DOM imperativo porque htmlElementsData de
  * react-globe.gl ancla nodos, no componentes React. Los textos van por
  * textContent a propósito — `lugar` viene de feeds externos (USGS/EMSC) y
- * no se inyecta HTML de terceros ni por accidente.
+ * no se inyecta HTML de terceros ni por accidente. Recibe los strings YA
+ * traducidos/formateados por parámetro (Decision 5: nada fuera de
+ * componentes importa next-intl).
  */
 function buildSpotlightCard(
   evento: SeismicEvent,
-  locale: LandingLocale,
   depthLabel: string,
+  relativeLabel: string,
 ): HTMLElement {
   const color = magnitudeColor(evento.mag);
 
@@ -103,7 +105,7 @@ function buildSpotlightCard(
   meta.className = 'mt-1 text-[10px] uppercase tracking-wider text-muted-foreground';
   const depth =
     evento.prof_km !== null ? `${depthLabel} ${Math.round(evento.prof_km)} km · ` : '';
-  meta.textContent = `${depth}${relativeTime(evento.hora_utc, locale)}`;
+  meta.textContent = `${depth}${relativeLabel}`;
 
   card.append(mag, place, meta);
 
@@ -117,12 +119,12 @@ function buildSpotlightCard(
 }
 
 interface LandingHeroProps {
-  copy: LandingCopy;
-  locale: LandingLocale;
   onToggleLocale: () => void;
 }
 
-export function LandingHero({ copy, locale, onToggleLocale }: LandingHeroProps) {
+export function LandingHero({ onToggleLocale }: LandingHeroProps) {
+  const t = useTranslations('landing');
+  const format = useFormatter();
   const heroRef = useRef<HTMLDivElement>(null);
   const [globeHeight, setGlobeHeight] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -214,9 +216,14 @@ export function LandingHero({ copy, locale, onToggleLocale }: LandingHeroProps) 
     return {
       lat: evento.lat,
       lng: evento.lon,
-      render: () => buildSpotlightCard(evento, locale, copy.hero.depthShort),
+      render: () =>
+        buildSpotlightCard(
+          evento,
+          t('hero.depthShort'),
+          format.relativeTime(new Date(evento.hora_utc)),
+        ),
     };
-  }, [spotlight, locale, copy.hero.depthShort]);
+  }, [spotlight, t, format]);
 
   return (
     <section ref={heroRef} className="relative min-h-dvh overflow-hidden">
@@ -264,14 +271,14 @@ export function LandingHero({ copy, locale, onToggleLocale }: LandingHeroProps) 
             <Button
               variant="ghost"
               onClick={onToggleLocale}
-              aria-label={copy.nav.localeToggleAria}
+              aria-label={t('nav.localeToggleAria')}
               className="min-h-11 gap-1.5 font-mono text-xs"
             >
               <Languages className="h-4 w-4" aria-hidden="true" />
-              {copy.nav.localeToggle}
+              {t('nav.localeToggle')}
             </Button>
             <Button asChild variant="outline" className="min-h-11">
-              <Link href="/login">{copy.nav.login}</Link>
+              <Link href="/login">{t('nav.login')}</Link>
             </Button>
           </div>
         </nav>
@@ -286,55 +293,55 @@ export function LandingHero({ copy, locale, onToggleLocale }: LandingHeroProps) 
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75 motion-reduce:animate-none" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
               </span>
-              {copy.hero.badge}
+              {t('hero.badge')}
             </p>
 
             <h1 className="font-heading text-4xl font-bold leading-tight tracking-tight md:text-6xl">
-              {copy.hero.titleTop}
+              {t('hero.titleTop')}
               <br />
-              <span className="text-primary">{copy.hero.titleAccent}</span>
+              <span className="text-primary">{t('hero.titleAccent')}</span>
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg">
-              {copy.hero.subtitle}
+              {t('hero.subtitle')}
             </p>
 
             <div className="pointer-events-auto mt-8 flex flex-wrap items-center gap-4">
               <Button asChild size="lg" className="min-h-12 px-6 text-base">
                 <Link href="/login">
-                  {copy.hero.ctaPrimary}
+                  {t('hero.ctaPrimary')}
                   <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
                 </Link>
               </Button>
               <Button asChild size="lg" variant="ghost" className="min-h-12 px-6 text-base">
-                <a href="#como-funciona">{copy.hero.ctaSecondary}</a>
+                <a href="#como-funciona">{t('hero.ctaSecondary')}</a>
               </Button>
             </div>
 
             {stats && (
               <dl className="mt-8 flex flex-wrap gap-x-8 gap-y-3 font-mono text-sm tabular-nums text-muted-foreground">
                 <div>
-                  <dt className="sr-only">{copy.hero.statsTracked}</dt>
+                  <dt className="sr-only">{t('hero.statsTracked')}</dt>
                   <dd>
                     <span className="text-foreground">{stats.total}</span>{' '}
-                    {copy.hero.statsTracked}
+                    {t('hero.statsTracked')}
                   </dd>
                 </div>
                 <div>
-                  <dt className="sr-only">{copy.hero.statsMax}</dt>
+                  <dt className="sr-only">{t('hero.statsMax')}</dt>
                   <dd>
                     M
                     <span className="text-foreground">
                       {stats.magnitudMax.toFixed(1)}
                     </span>{' '}
-                    {copy.hero.statsMax}
+                    {t('hero.statsMax')}
                   </dd>
                 </div>
                 <div>
-                  <dt className="sr-only">{copy.hero.statsLast}</dt>
+                  <dt className="sr-only">{t('hero.statsLast')}</dt>
                   <dd>
-                    {copy.hero.statsLast}{' '}
-                    {relativeTime(stats.masReciente.hora_utc, locale)}
+                    {t('hero.statsLast')}{' '}
+                    {format.relativeTime(new Date(stats.masReciente.hora_utc))}
                   </dd>
                 </div>
               </dl>
@@ -348,11 +355,11 @@ export function LandingHero({ copy, locale, onToggleLocale }: LandingHeroProps) 
             {recientes.length > 0 && (
               <aside
                 className="rounded-xl border border-border bg-card/70 p-4 backdrop-blur"
-                aria-label={copy.hero.tickerTitle}
+                aria-label={t('hero.tickerTitle')}
               >
                 <h2 className="mb-3 flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
                   <Radio className="h-3.5 w-3.5" aria-hidden="true" />
-                  {copy.hero.tickerTitle}
+                  {t('hero.tickerTitle')}
                 </h2>
                 <ol className="space-y-2.5">
                   {recientes.map((evento) => (
@@ -370,7 +377,7 @@ export function LandingHero({ copy, locale, onToggleLocale }: LandingHeroProps) 
                         {evento.lugar ?? `${evento.lat.toFixed(1)}, ${evento.lon.toFixed(1)}`}
                       </span>
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        {relativeTime(evento.hora_utc, locale)}
+                        {format.relativeTime(new Date(evento.hora_utc))}
                       </span>
                     </li>
                   ))}

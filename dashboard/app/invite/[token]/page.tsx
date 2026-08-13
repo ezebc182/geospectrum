@@ -2,14 +2,17 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useFormatter, useTranslations } from 'next-intl';
 import { Activity, Eye, EyeOff, LogIn, MailX, UserPlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { ApiStatusError, login, registerWithInvitation, validateInvitationToken } from '@/lib/auth';
-import { INVITE_COPY, passwordStrength } from '@/lib/invite-i18n';
-import type { InviteCopy } from '@/lib/invite-i18n';
-import type { InvitationLocale, InvitationValidation } from '@/lib/types';
+import { getLocaleCookie, setLocaleCookie } from '@/lib/locale';
+import { passwordStrength } from '@/lib/password-strength';
+import type { InvitationValidation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -29,9 +32,13 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
  * - 404 → "invitación no válida"; 410 → "vencida/revocada". En error NO se
  *   renderiza formulario ni botón de Google.
  *
- * i18n (pulido post-QA): todo el copy vive en lib/invite-i18n.ts (ES/EN).
- * El idioma inicial es el `locale` de la invitación (respuesta de validate);
- * el toggle de arriba permite cambiarlo en caliente.
+ * i18n (i18n-dashboard, Fase 7): el copy vive en el ns `invite` de
+ * messages/{es,en}.json. El idioma inicial se SIEMBRA desde el `locale` de
+ * la invitación (respuesta de validate): si el visitante no tiene cookie
+ * NEXT_LOCALE, la página la setea y refresca — así el primer login
+ * post-aceptación aterriza en el dashboard en ese idioma. Si ya había
+ * cookie (elección explícita previa), la siembra NO la pisa. El switcher
+ * global del header permite cambiar en caliente como en toda la app.
  */
 
 type ValidationState =
@@ -41,16 +48,11 @@ type ValidationState =
   | { kind: 'gone' } // 410: expirada / revocada / ya usada
   | { kind: 'error' }; // red caída u otro fallo no contemplado
 
-function formatExpiry(iso: string, locale: InvitationLocale): string {
-  return new Intl.DateTimeFormat(locale === 'es' ? 'es-AR' : 'en-US', {
-    dateStyle: 'long',
-  }).format(new Date(iso));
-}
-
 export default function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = React.use(params);
+  const router = useRouter();
+  const t = useTranslations('invite');
   const [state, setState] = React.useState<ValidationState>({ kind: 'loading' });
-  const [locale, setLocale] = React.useState<InvitationLocale>('es');
 
   React.useEffect(() => {
     let cancelled = false;
@@ -59,9 +61,13 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
       .then((invitation) => {
         if (cancelled) return;
         setState({ kind: 'valid', invitation });
-        // El idioma del email en que llegó el link manda como default; el
-        // toggle sigue disponible para cambiarlo en caliente.
-        setLocale(invitation.locale === 'en' ? 'en' : 'es');
+        // Siembra del idioma del invitado (Decision 3): el locale de la
+        // invitación manda SOLO si el visitante no eligió antes — con
+        // cookie previa (válida), su elección explícita gana y no se pisa.
+        if (getLocaleCookie() === null) {
+          setLocaleCookie(invitation.locale);
+          router.refresh();
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -77,9 +83,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
     return () => {
       cancelled = true;
     };
-  }, [token]);
-
-  const copy = INVITE_COPY[locale];
+  }, [token, router]);
 
   return (
     <div className="dark relative flex min-h-dvh flex-col overflow-hidden bg-background text-foreground">
@@ -97,69 +101,34 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
           <span className="font-heading text-lg font-semibold tracking-tight">GeoSpectrum</span>
         </Link>
 
-        <LocaleSwitcher locale={locale} onChange={setLocale} ariaLabel={copy.localeSwitcherAria} />
+        {/* Switcher global (cookie + refresh), reemplaza al toggle propio
+            que tenía la página: la elección acá vale para toda la app. */}
+        <LocaleSwitcher />
       </header>
 
       <main className="relative z-10 flex flex-1 items-center justify-center px-4 pb-16">
         <div className="w-full max-w-sm rounded-2xl border border-border bg-card/70 p-8 backdrop-blur">
           {state.kind === 'loading' && (
-            <p className="text-sm text-muted-foreground">{copy.loading}</p>
+            <p className="text-sm text-muted-foreground">{t('loading')}</p>
           )}
 
           {state.kind === 'valid' && (
-            <AcceptInvitation token={token} invitation={state.invitation} copy={copy} locale={locale} />
+            <AcceptInvitation token={token} invitation={state.invitation} />
           )}
 
           {state.kind === 'invalid' && (
-            <InvitationError title={copy.errors.invalidTitle} message={copy.errors.invalidMessage} />
+            <InvitationError title={t('errors.invalidTitle')} message={t('errors.invalidMessage')} />
           )}
 
           {state.kind === 'gone' && (
-            <InvitationError title={copy.errors.goneTitle} message={copy.errors.goneMessage} />
+            <InvitationError title={t('errors.goneTitle')} message={t('errors.goneMessage')} />
           )}
 
           {state.kind === 'error' && (
-            <InvitationError title={copy.errors.networkTitle} message={copy.errors.networkMessage} />
+            <InvitationError title={t('errors.networkTitle')} message={t('errors.networkMessage')} />
           )}
         </div>
       </main>
-    </div>
-  );
-}
-
-/** Toggle ES/EN — dos botones, el activo resaltado. Sin persistencia: la
- * página se visita una sola vez y el default ya viene de la invitación. */
-function LocaleSwitcher({
-  locale,
-  onChange,
-  ariaLabel,
-}: {
-  locale: InvitationLocale;
-  onChange: (locale: InvitationLocale) => void;
-  ariaLabel: string;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className="inline-flex overflow-hidden rounded-lg border border-border text-xs font-medium"
-    >
-      {(['es', 'en'] as const).map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={locale === option}
-          onClick={() => onChange(option)}
-          className={cn(
-            'px-3 py-1.5 uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            locale === option
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted/60',
-          )}
-        >
-          {option === 'es' ? 'ES' : 'EN'}
-        </button>
-      ))}
     </div>
   );
 }
@@ -178,10 +147,14 @@ function InvitationError({ title, message }: { title: string; message: string })
 
 /** Barra de fuerza: 4 segmentos, color según score (1–4). Solo feedback
  * visual — la política real la valida el backend. */
-function StrengthMeter({ password, copy }: { password: string; copy: InviteCopy }) {
+function StrengthMeter({ password }: { password: string }) {
+  const t = useTranslations('invite');
   const score = passwordStrength(password);
   if (score === 0) return null;
 
+  // Los 4 niveles son un array en el diccionario (índice = score - 1),
+  // misma jerarquía que el viejo INVITE_COPY — de ahí el t.raw.
+  const levels = t.raw('accept.strengthLevels') as readonly string[];
   const colors = ['bg-destructive', 'bg-severity-high', 'bg-severity-moderate', 'bg-primary'];
 
   return (
@@ -198,7 +171,7 @@ function StrengthMeter({ password, copy }: { password: string; copy: InviteCopy 
         ))}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {copy.accept.strengthLabel}: {copy.accept.strengthLevels[score - 1]}
+        {t('accept.strengthLabel')}: {levels[score - 1]}
       </p>
     </div>
   );
@@ -212,7 +185,6 @@ function PasswordInput({
   placeholder,
   visible,
   onToggleVisible,
-  copy,
   ariaInvalid,
 }: {
   id: string;
@@ -221,9 +193,9 @@ function PasswordInput({
   placeholder: string;
   visible: boolean;
   onToggleVisible: () => void;
-  copy: InviteCopy;
   ariaInvalid?: boolean;
 }) {
+  const t = useTranslations('invite');
   const ToggleIcon = visible ? EyeOff : Eye;
   return (
     <div className="relative mt-2">
@@ -242,7 +214,7 @@ function PasswordInput({
       <button
         type="button"
         onClick={onToggleVisible}
-        aria-label={visible ? copy.accept.hidePassword : copy.accept.showPassword}
+        aria-label={visible ? t('accept.hidePassword') : t('accept.showPassword')}
         className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ToggleIcon className="h-4 w-4" aria-hidden="true" />
@@ -254,14 +226,12 @@ function PasswordInput({
 function AcceptInvitation({
   token,
   invitation,
-  copy,
-  locale,
 }: {
   token: string;
   invitation: InvitationValidation;
-  copy: InviteCopy;
-  locale: InvitationLocale;
 }) {
+  const t = useTranslations('invite');
+  const format = useFormatter();
   const [password, setPassword] = React.useState('');
   const [confirm, setConfirm] = React.useState('');
   const [showPassword, setShowPassword] = React.useState(false);
@@ -309,24 +279,26 @@ function AcceptInvitation({
   return (
     <div>
       <p className="font-mono text-xs uppercase tracking-widest text-primary">
-        {copy.accept.kicker}
+        {t('accept.kicker')}
       </p>
-      <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight">{copy.accept.title}</h1>
+      <h1 className="mt-2 font-heading text-2xl font-bold tracking-tight">{t('accept.title')}</h1>
 
       {/* Email y rol READ-ONLY: vienen de la invitación, server-side. No hay
           (ni debe haber) ningún control para cambiarlos. */}
       <dl className="mt-4 space-y-1 rounded-lg border border-border bg-background/50 p-3 text-sm">
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">{copy.accept.emailLabel}</dt>
+          <dt className="text-muted-foreground">{t('accept.emailLabel')}</dt>
           <dd className="truncate font-mono">{invitation.email}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">{copy.accept.roleLabel}</dt>
-          <dd className="font-medium">{copy.roles[invitation.role] ?? invitation.role}</dd>
+          <dt className="text-muted-foreground">{t('accept.roleLabel')}</dt>
+          <dd className="font-medium">{t(`roles.${invitation.role}`)}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">{copy.accept.expiresLabel}</dt>
-          <dd>{formatExpiry(invitation.expires_at, locale)}</dd>
+          <dt className="text-muted-foreground">{t('accept.expiresLabel')}</dt>
+          {/* Antes formatExpiry con Intl crudo y locale clavado; ahora el
+              formatter de next-intl con el locale activo (es-AR/en-US). */}
+          <dd>{format.dateTime(new Date(invitation.expires_at), { dateStyle: 'long' })}</dd>
         </div>
       </dl>
 
@@ -335,54 +307,52 @@ function AcceptInvitation({
           role="alert"
           className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          {copy.accept[errorKey]}
+          {t(`accept.${errorKey}`)}
         </p>
       )}
 
       <form onSubmit={handleSubmit} className="mt-5">
         <label htmlFor="invite-password" className="block text-sm font-medium">
-          {copy.accept.passwordLabel}
+          {t('accept.passwordLabel')}
         </label>
         <PasswordInput
           id="invite-password"
           value={password}
           onChange={setPassword}
-          placeholder={copy.accept.passwordPlaceholder}
+          placeholder={t('accept.passwordPlaceholder')}
           visible={showPassword}
           onToggleVisible={() => setShowPassword((v) => !v)}
-          copy={copy}
         />
-        <StrengthMeter password={password} copy={copy} />
+        <StrengthMeter password={password} />
 
         <label htmlFor="invite-password-confirm" className="mt-4 block text-sm font-medium">
-          {copy.accept.confirmLabel}
+          {t('accept.confirmLabel')}
         </label>
         <PasswordInput
           id="invite-password-confirm"
           value={confirm}
           onChange={setConfirm}
-          placeholder={copy.accept.confirmPlaceholder}
+          placeholder={t('accept.confirmPlaceholder')}
           visible={showPassword}
           onToggleVisible={() => setShowPassword((v) => !v)}
-          copy={copy}
           ariaInvalid={mismatch}
         />
         {mismatch && (
           <p role="alert" className="mt-2 text-xs text-destructive">
-            {copy.accept.mismatch}
+            {t('accept.mismatch')}
           </p>
         )}
 
         <Button type="submit" className="mt-4 min-h-11 w-full" disabled={!canSubmit}>
           <UserPlus className="mr-2 h-4 w-4" aria-hidden="true" />
-          {submitting ? copy.accept.submitting : copy.accept.submit}
+          {submitting ? t('accept.submitting') : t('accept.submit')}
         </Button>
       </form>
 
       <div className="mt-5 flex items-center gap-3" aria-hidden="true">
         <span className="h-px flex-1 bg-border" />
         <span className="text-xs uppercase tracking-widest text-muted-foreground">
-          {copy.accept.divider}
+          {t('accept.divider')}
         </span>
         <span className="h-px flex-1 bg-border" />
       </div>
@@ -395,12 +365,15 @@ function AcceptInvitation({
         disabled={submitting}
       >
         <LogIn className="mr-2 h-4 w-4" aria-hidden="true" />
-        {copy.accept.google}
+        {t('accept.google')}
       </Button>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-        {copy.accept.googleHint[0]}
-        <span className="font-mono">{invitation.email}</span>
-        {copy.accept.googleHint[1]}
+        {/* La vieja pareja [prefijo, sufijo] es UNA clave ICU: el email va
+            interpolado dentro del tag <mono> — texto visible idéntico. */}
+        {t.rich('accept.googleHint', {
+          email: invitation.email,
+          mono: (chunks) => <span className="font-mono">{chunks}</span>,
+        })}
       </p>
     </div>
   );

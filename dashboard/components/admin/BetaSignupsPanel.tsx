@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { BetaSignup } from '@/lib/types';
 
 /** Opciones de fecha del listado (día + mes corto + hora): antes un
- * toLocaleDateString('es-AR') fijo, ahora el locale activo vía useFormatter
+ * toLocaleDateString con es-AR fijo, ahora el locale activo vía useFormatter
  * (Decision 6). */
 const DATE_OPTIONS = {
   day: '2-digit',

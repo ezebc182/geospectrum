@@ -5,7 +5,8 @@
       "es": "Español",
       "en": "English"
     },
-    "notAvailable": "N/A"
+    "notAvailable": "N/A",
+    "refreshingArea": "Updating data for the selected area…"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -252,6 +253,25 @@
       "liveBadge": "Live",
       "dragToReorder": "Drag to reorder",
       "removeCity": "Remove city"
+    },
+    "spectrogramsPage": {
+      "title": "Seismic Spectrograms",
+      "subtitle": "Monitoring {count} locations · {live} with live streaming",
+      "columns": "{count} columns",
+      "addCity": "Add City",
+      "liveLegendLabel": "Live:",
+      "liveLegendDescription": "real-time SeedLink streaming",
+      "historyLegendLabel": "24h:",
+      "historyLegendDescription": "FDSN history, 0.1–20 Hz",
+      "addLocation": "Add Location",
+      "closeSelector": "Close the selector",
+      "searchPlacePlaceholder": "Search any city or place in the world (e.g. Caracas)...",
+      "searchPresetPlaceholder": "...or pick one of the preloaded high-risk cities",
+      "alreadyAdded": "You already added that place.",
+      "livePill": "live",
+      "emptyTitle": "No cities selected",
+      "emptyHint": "Add cities to start monitoring their seismic activity",
+      "addCities": "Add Cities"
     }
   },
   "settings": {
@@ -449,7 +469,8 @@
     },
     "empty": "No active alerts",
     "noneMatchFilter": "No alert matches the filter",
-    "relatedEvents": "{count, plural, one {# related event} other {# related events}}"
+    "relatedEvents": "{count, plural, one {# related event} other {# related events}}",
+    "allNormal": "All parameters within normal ranges"
   },
   "share": {
     "title": "Seismic monitor",
@@ -491,6 +512,153 @@
       "sources": "Sources",
       "yes": "Yes",
       "no": "No"
+    }
+  },
+  "landing": {
+    "nav": {
+      "login": "Sign in",
+      "localeToggle": "ES",
+      "localeToggleAria": "Cambiar a español"
+    },
+    "hero": {
+      "badge": "Live monitoring",
+      "titleTop": "The Earth doesn't warn you.",
+      "titleAccent": "GeoSpectrum does.",
+      "subtitle": "Global seismic monitoring in real time: continuous ingestion from USGS, EMSC and INPRES, swarm detection, live spectrograms and alerts on the areas you care about.",
+      "ctaPrimary": "Explore the monitor",
+      "ctaSecondary": "How it works",
+      "statsTracked": "events tracked",
+      "statsMax": "max",
+      "statsLast": "latest",
+      "tickerTitle": "Recent activity",
+      "depthShort": "depth"
+    },
+    "how": {
+      "kicker": "How it works",
+      "title": "From the sensor to your screen, in one continuous flow",
+      "steps": [
+        {
+          "title": "Multi-source ingestion",
+          "description": "M3.0+ events worldwide from USGS, EMSC and INPRES, deduplicated and normalized into a single catalog that updates continuously."
+        },
+        {
+          "title": "Real-time analysis",
+          "description": "Per-area KPIs, swarm detection, significant events and felt activity — computed on the live catalog, not on stale reports."
+        },
+        {
+          "title": "Alerts and visualization",
+          "description": "3D globe, maps with tectonic plates and live spectrograms. Alerts fire on your areas of interest, not on the whole world."
+        }
+      ]
+    },
+    "features": {
+      "kicker": "Capabilities",
+      "title": "A seismic control room, not another map viewer",
+      "items": [
+        {
+          "title": "Live 3D globe",
+          "description": "The full Ring of Fire, with no projection cuts: every quake pulses on the sphere, sized and colored by magnitude."
+        },
+        {
+          "title": "Maps with tectonic context",
+          "description": "Plate boundaries styled by boundary type, reference cities and automatic framing of the active area."
+        },
+        {
+          "title": "Live spectrograms",
+          "description": "Raw seismic signal from stations via SeedLink, rendered in your browser — what the station hears, you see."
+        },
+        {
+          "title": "Your own areas of interest",
+          "description": "Define the regions you care about — the Andes, Japan, Cascadia — and the monitor filters events, KPIs and alerts for each one."
+        },
+        {
+          "title": "12 months of history",
+          "description": "A year of queryable catalog to compare today's activity against the region's real baseline."
+        },
+        {
+          "title": "Smart alerts",
+          "description": "Swarms, significant events and felt activity — classified by severity, without background noise."
+        }
+      ]
+    },
+    "cta": {
+      "titleTop": "The planet is already moving.",
+      "titleAccent": "Start watching it for real.",
+      "subtitle": "Sign in with your Google account and explore global seismic activity with the same tools you see on this page.",
+      "button": "Sign in"
+    },
+    "footer": {
+      "tagline": "A global seismic control room: live data, tectonic context and alerts on your areas of interest.",
+      "beta": {
+        "title": "Join the beta",
+        "subtitle": "Leave your email and we'll send you an invitation when the next spots open.",
+        "placeholder": "you@email.com",
+        "button": "Request my invite",
+        "sending": "Sending…",
+        "success": "Done — we'll let you know when a spot opens.",
+        "invalid": "Enter a valid email.",
+        "error": "Couldn't sign you up. Try again in a few minutes.",
+        "emailLabel": "Email for the beta"
+      },
+      "productColumn": "Product",
+      "dataColumn": "Data",
+      "linkHow": "How it works",
+      "linkFeatures": "Capabilities",
+      "linkLogin": "Sign in",
+      "sources": "Sources: USGS · EMSC · INPRES",
+      "coverage": "Global coverage M3.0+",
+      "history": "12 months of history",
+      "legal": "© 2026 GeoSpectrum · geospectrum.org"
+    },
+    "meta": {
+      "title": "GeoSpectrum — Global seismic monitoring in real time",
+      "description": "Earthquakes across the planet on a live 3D globe: continuous ingestion from USGS, EMSC and INPRES, swarm detection, spectrograms and alerts on your areas of interest."
+    }
+  },
+  "invite": {
+    "loading": "Validating your invitation…",
+    "errors": {
+      "invalidTitle": "Invalid invitation",
+      "invalidMessage": "This invitation link does not exist. Check that the URL is complete or ask the person who invited you to generate it again.",
+      "goneTitle": "Invitation expired or revoked",
+      "goneMessage": "This link no longer works: the invitation expired, was revoked, or was already used. Ask the person who invited you to resend it — resending generates a new link.",
+      "networkTitle": "Could not validate the invitation",
+      "networkMessage": "There was a connection problem while validating the link. Reload the page to try again."
+    },
+    "roles": {
+      "superadmin": "Superadmin",
+      "admin": "Administrator",
+      "moderador": "Moderator",
+      "viewer": "Viewer"
+    },
+    "accept": {
+      "kicker": "Invitation",
+      "title": "You've been invited to GeoSpectrum",
+      "emailLabel": "Email",
+      "roleLabel": "Role",
+      "expiresLabel": "Valid until",
+      "passwordLabel": "Choose a password",
+      "passwordPlaceholder": "At least 8 characters",
+      "confirmLabel": "Confirm password",
+      "confirmPlaceholder": "Repeat the password",
+      "mismatch": "Passwords do not match.",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "strengthLabel": "Strength",
+      "strengthLevels": [
+        "Very weak",
+        "Weak",
+        "Fair",
+        "Strong"
+      ],
+      "submit": "Create account and sign in",
+      "submitting": "Creating your account…",
+      "divider": "or",
+      "google": "Continue with Google",
+      "errorGone": "The invitation stopped being valid while you were signing up. Ask for the link to be resent.",
+      "errorConflict": "This email already has an account. Sign in from the login page.",
+      "errorGeneric": "Could not create the account. Try again in a few seconds.",
+      "googleHint": "Use the Google account for <mono>{email}</mono> — the invitation is tied to that email."
     }
   }
 }

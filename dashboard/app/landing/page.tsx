@@ -12,14 +12,16 @@
  */
 
 import type { Metadata } from 'next';
+import { getTranslations } from 'next-intl/server';
 
 import { LandingContent } from '@/components/landing/LandingContent';
 
-export const metadata: Metadata = {
-  title: 'GeoSpectrum — Monitoreo sísmico global en tiempo real',
-  description:
-    'Sismos de todo el planeta en un globo 3D en vivo: ingesta continua de USGS, EMSC e INPRES, detección de enjambres, espectrogramas y alertas sobre sus áreas de interés.',
-};
+// Metadata según el locale de la cascada server-side (antes era Metadata
+// estática en español — el <title> del tab es superficie user-facing).
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('landing.meta');
+  return { title: t('title'), description: t('description') };
+}
 
 export default function LandingPage() {
   return (

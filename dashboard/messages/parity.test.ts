@@ -10,10 +10,15 @@ import { describe, expect, it } from 'vitest';
 import en from './en.json';
 import es from './es.json';
 
-type MessageTree = { [key: string]: string | MessageTree };
+/** Nodo del árbol de mensajes: hoja string, objeto anidado o array (las
+ * listas de la landing/invite: how.steps, features.items, strengthLevels). */
+type MessageNode = string | MessageNode[] | { [key: string]: MessageNode };
+type MessageTree = { [key: string]: MessageNode };
 
-/** Aplana el árbol de mensajes a claves con puntos: nav.userMenu.logout. */
-function flattenKeys(tree: MessageTree, prefix = ''): Map<string, string> {
+/** Aplana el árbol de mensajes a claves con puntos: nav.userMenu.logout.
+ * Los arrays aplanan con índice numérico (landing.how.steps.0.title) — la
+ * paridad exige también el MISMO largo de lista en ambos idiomas. */
+function flattenKeys(tree: MessageTree | MessageNode[], prefix = ''): Map<string, string> {
   const flat = new Map<string, string>();
   for (const [key, value] of Object.entries(tree)) {
     const path = prefix ? `${prefix}.${key}` : key;
