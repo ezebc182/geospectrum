@@ -158,6 +158,26 @@
       "subduction": "Subduction zones",
       "faults": "Faults",
       "regions": "Regions"
+    },
+    "names": {
+      "global": "Global — the whole planet",
+      "anillo_de_fuego": "Belt — Ring of Fire",
+      "cinturon_alpino_himalayo": "Belt — Alpine-Himalayan",
+      "indonesia": "Indonesia and the Sunda Trench",
+      "japon": "Japan and the Japan Trench",
+      "filipinas": "Philippines",
+      "chile": "Chile and the Peru-Chile Trench",
+      "peru": "Peru and the Peru-Chile Trench (north)",
+      "mexico": "Mexico and the Middle America Trench",
+      "centroamerica": "Central America",
+      "kamchatka_aleutianas": "Kamchatka, Kurils and Aleutians",
+      "himalaya": "Himalaya and the Tibetan Plateau",
+      "papua_nueva_guinea": "Papua New Guinea and Melanesia",
+      "san_andres": "San Andreas Fault (California)",
+      "cascadia": "Cascadia Subduction Zone",
+      "anatolia": "Anatolia (North Anatolian Fault)",
+      "nueva_zelanda": "New Zealand",
+      "mediterraneo_oriental": "Eastern Mediterranean and the Hellenic Arc"
     }
   },
   "map": {

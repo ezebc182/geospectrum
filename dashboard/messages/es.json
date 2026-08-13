@@ -158,6 +158,26 @@
       "subduction": "Zonas de subducción",
       "faults": "Fallas",
       "regions": "Regiones"
+    },
+    "names": {
+      "global": "Global — todo el planeta",
+      "anillo_de_fuego": "Cinturón — Anillo de Fuego",
+      "cinturon_alpino_himalayo": "Cinturón — Alpino-Himalayo",
+      "indonesia": "Indonesia y fosa de la Sonda",
+      "japon": "Japón y fosa de Japón",
+      "filipinas": "Filipinas",
+      "chile": "Chile y fosa Perú-Chile",
+      "peru": "Perú y fosa Perú-Chile (norte)",
+      "mexico": "México y fosa Mesoamericana",
+      "centroamerica": "Centroamérica",
+      "kamchatka_aleutianas": "Kamchatka, Kuriles y Aleutianas",
+      "himalaya": "Himalaya y meseta tibetana",
+      "papua_nueva_guinea": "Papúa Nueva Guinea y Melanesia",
+      "san_andres": "Falla de San Andrés (California)",
+      "cascadia": "Zona de subducción de Cascadia",
+      "anatolia": "Anatolia (falla Norte de Anatolia)",
+      "nueva_zelanda": "Nueva Zelanda",
+      "mediterraneo_oriental": "Mediterráneo oriental y arco helénico"
     }
   },
   "map": {

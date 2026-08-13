@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { groupAreas } from '@/lib/area-groups';
+import { localizeAreaNames, type AreaNameTranslator } from '@/lib/area-name';
 import { countAreas, filterGroups, normalize } from '@/lib/area-search';
 import { getActiveArea, listAreas, setActiveArea } from '@/lib/areas';
 import type { Area } from '@/lib/types';
@@ -100,13 +101,20 @@ export function AreaSelector({ onAreaChange }: AreaSelectorProps) {
     }
   };
 
-  // Los NOMBRES de las áreas vienen del backend y NO se traducen: son datos,
-  // no copy. Lo que sí sale del diccionario es la opción "por defecto" y las
-  // etiquetas de grupo.
+  // Los nombres de las áreas del SISTEMA se traducen por slug
+  // (`areas.names.<slug>`, hallazgo del QA: salían en español con la UI en
+  // inglés); las custom del usuario y cualquier slug sin clave conservan el
+  // nombre de la base. Se localiza ANTES de agrupar y filtrar para que el
+  // orden alfabético y la búsqueda operen sobre el nombre que el usuario ve.
+  //
+  // El cast es inevitable: las claves de t() están tipadas como unión literal
+  // de es.json y el slug es dinámico; en runtime lo cubre t.has() (clave
+  // ausente => nombre de la base, sin error de next-intl).
   const defaultAreaLabel = t('defaultArea');
-  const activeArea = areas.find((area) => area.id === activeId) ?? null;
+  const localizedAreas = localizeAreaNames(areas, t as unknown as AreaNameTranslator);
+  const activeArea = localizedAreas.find((area) => area.id === activeId) ?? null;
   const activeLabel = activeArea ? activeArea.name : defaultAreaLabel;
-  const groups = groupAreas(areas, locale);
+  const groups = groupAreas(localizedAreas, locale);
 
   const showSearch = areas.length >= SEARCH_THRESHOLD;
   const visibleGroups = showSearch ? filterGroups(groups, query) : groups;
