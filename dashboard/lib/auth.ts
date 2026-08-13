@@ -17,6 +17,7 @@ import type {
   LoginResult,
   MeResponse,
   TotpSetupResponse,
+  UserListItem,
   UserProfile,
   UserProfileUpdate,
   UserPublic,
@@ -59,6 +60,13 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
  * completa) — esto NO es un error, es un resultado válido: se retorna como
  * `{requiresTwoFactor: true}` en vez de lanzar, para que el caller muestre
  * el segundo paso del login (ver design.md Decision 1).
+ *
+ * Lanza `ApiStatusError` (no un Error pelado) desde user-management: el
+ * backend distingue 401 "credenciales inválidas" de 403 "cuenta
+ * desactivada" (este último SOLO con password verificada, para no volver el
+ * endpoint un oráculo de enumeración — design.md Decision 3), y la UI
+ * necesita el status para mostrar copy distinto. El mensaje sigue siendo el
+ * genérico del backend en el 401.
  */
 export async function login(email: string, password: string): Promise<LoginResult> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -69,7 +77,10 @@ export async function login(email: string, password: string): Promise<LoginResul
   });
 
   if (!response.ok) {
-    throw new Error('invalid credentials');
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'invalid credentials'),
+    );
   }
 
   const body = await response.json();
@@ -415,6 +426,69 @@ export async function registerWithInvitation(
   }
 
   return response.json();
+}
+
+// ============================================================================
+// Gestión de usuarios (user-management, Fase 2). Los tres endpoints exigen
+// rol admin+ en el backend (`require_min_role(ADMIN)`), que es la autoridad
+// REAL de permisos — la UI deshabilitando botones es UX, no seguridad.
+// Todos lanzan ApiStatusError porque la pantalla mapea copy por status:
+// 403 jerarquía, 404 inexistente, 409 self o estado ya alcanzado
+// (design.md § Interfaces / Contracts).
+// ============================================================================
+
+/** Listado completo de usuarios (admin+). Incluye superadmins y al propio
+ * actor: la UI deshabilita las acciones que el backend rechazaría. */
+export async function listUsers(): Promise<UserListItem[]> {
+  const response = await fetch(`${API_BASE_URL}/auth/users`, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo listar los usuarios'),
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Desactiva una cuenta (soft-delete, 204). Bloquea los tres caminos de
+ * acceso: login por password, login por Google y las sesiones ya emitidas
+ * (que mueren en el request siguiente). Errores: 409 auto-desactivación,
+ * 404 inexistente, 403 rol igual o superior, 409 ya desactivada.
+ */
+export async function deactivateUser(userId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/deactivate`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo desactivar la cuenta'),
+    );
+  }
+}
+
+/** Reactiva una cuenta desactivada (204). Misma matriz de errores que
+ * `deactivateUser`, con 409 cuando la cuenta ya estaba activa. */
+export async function reactivateUser(userId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/reactivate`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo reactivar la cuenta'),
+    );
+  }
 }
 
 /** Input del paso 2 — exactamente lo que devolvió `createInvitation()` /

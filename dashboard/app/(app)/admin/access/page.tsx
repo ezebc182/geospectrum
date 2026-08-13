@@ -16,24 +16,28 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { MailPlus, UserCheck } from 'lucide-react';
+import { MailPlus, UserCheck, Users } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
 import { BetaSignupsPanel } from '@/components/admin/BetaSignupsPanel';
 import { InvitationsPanel } from '@/components/admin/InvitationsPanel';
+import { UsersPanel } from '@/components/admin/UsersPanel';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
 
-type AccessTab = 'waitlist' | 'invitations';
+/** Las tres etapas de la vida de un acceso, en orden: landing → lista de
+ * espera → invitación → usuario (user-management, design.md Decision 7). */
+type AccessTab = 'waitlist' | 'invitations' | 'users';
 
 /** Labels fuera de la constante de módulo (Decision 5): el componente
  * resuelve t(`tabs.${id}`) con el idioma activo. */
 const TABS: { id: AccessTab; icon: typeof UserCheck }[] = [
   { id: 'waitlist', icon: UserCheck },
   { id: 'invitations', icon: MailPlus },
+  { id: 'users', icon: Users },
 ];
 
 function AccessTabs() {
@@ -43,8 +47,10 @@ function AccessTabs() {
   const searchParams = useSearchParams();
 
   // Cualquier valor desconocido de ?tab cae a la lista de espera — es el
-  // primer paso del flujo (landing → espera → invitación).
-  const tab: AccessTab = searchParams.get('tab') === 'invitations' ? 'invitations' : 'waitlist';
+  // primer paso del flujo (landing → espera → invitación → usuario).
+  const requestedTab = searchParams.get('tab');
+  const tab: AccessTab =
+    requestedTab === 'invitations' || requestedTab === 'users' ? requestedTab : 'waitlist';
 
   function selectTab(next: AccessTab) {
     // replace (no push): cambiar de pestaña no debe apilar historial.
@@ -74,7 +80,9 @@ function AccessTabs() {
       </div>
 
       <div role="tabpanel">
-        {tab === 'waitlist' ? <BetaSignupsPanel /> : <InvitationsPanel />}
+        {tab === 'waitlist' && <BetaSignupsPanel />}
+        {tab === 'invitations' && <InvitationsPanel />}
+        {tab === 'users' && <UsersPanel />}
       </div>
     </>
   );

@@ -195,6 +195,33 @@ export interface InvitationValidation {
 }
 
 /**
+ * Item de `GET /auth/users` (user-management, design.md Decision 9) — espejo
+ * exacto de `UserListItem` en src/models/user.py, con las fechas como string
+ * ISO (lo que serializa FastAPI).
+ *
+ * Tipo DEDICADO, no una extensión de `UserPublic`: `password_hash` y
+ * `totp_secret` son inexpresables por construcción, y el contrato de auth
+ * (login/register/me) no se contamina con campos de administración.
+ *
+ * `has_google`/`has_password` son booleanos DERIVADOS por el backend
+ * (`google_id IS NOT NULL`, `password_hash IS NOT NULL`): la UI necesita
+ * saber CÓMO entra la persona, no su identificador de Google.
+ *
+ * `deactivated_at`: `null` = cuenta activa (migración 012).
+ */
+export interface UserListItem {
+  id: string;
+  email: string;
+  role: UserRole;
+  name: string | null;
+  avatar_url: string | null;
+  has_google: boolean;
+  has_password: boolean;
+  created_at: string;
+  deactivated_at: string | null;
+}
+
+/**
  * Interesado en la beta (GET /beta-signups, solo admin+). El estado se
  * deriva de approved_at: null = pendiente de aprobación.
  */

@@ -44,6 +44,7 @@
       "invalidIdToken": "No se pudo completar el inicio de sesión con Google.",
       "emailNotVerified": "Tu cuenta de Google no tiene el email verificado. Verificalo con Google e intentá de nuevo.",
       "noInvitation": "El acceso es por invitación y tu cuenta todavía no tiene una. Sumate a la lista de espera o contactá a un administrador.",
+      "accountDeactivated": "Tu cuenta fue desactivada. Contactá a un administrador para recuperar el acceso.",
       "googleRejected": "Google rechazó el inicio de sesión.",
       "generic": "No se pudo completar el inicio de sesión con Google."
     }
@@ -367,7 +368,8 @@
       "tablistAria": "Secciones de accesos",
       "tabs": {
         "waitlist": "Lista de espera",
-        "invitations": "Invitaciones"
+        "invitations": "Invitaciones",
+        "users": "Usuarios"
       }
     },
     "roles": {
@@ -440,6 +442,44 @@
       "revokeDialogDescription": "El link enviado a <mono>{email}</mono> deja de funcionar de inmediato. Esta acción no se puede deshacer — si te arrepentís vas a tener que crear una invitación nueva.",
       "revokeCancel": "Cancelar",
       "revokeConfirm": "Revocar"
+    },
+    "users": {
+      "title": "Usuarios",
+      "description": "Cuentas ya creadas — el final del embudo de accesos. Desactivar bloquea los tres caminos de entrada (password, Google y las sesiones ya abiertas) sin borrar ningún dato.",
+      "refreshAria": "Actualizar listado",
+      "empty": "Todavía no hay usuarios. Cuando alguien acepte una invitación, aparece acá.",
+      "loadError": "No se pudo cargar el listado. Verificá tu sesión e intentá de nuevo.",
+      "sessionLost": "Tu sesión cambió o expiró — volvé a iniciar sesión.",
+      "you": "vos",
+      "createdTooltip": "Alta {date}",
+      "deactivatedTooltip": "Desactivada {date}",
+      "status": {
+        "active": "Activa",
+        "deactivated": "Desactivada"
+      },
+      "origin": {
+        "google": "Google",
+        "password": "Password"
+      },
+      "processing": "Procesando…",
+      "deactivate": "Desactivar",
+      "reactivate": "Reactivar",
+      "disabledReason": {
+        "self": "No podés desactivar tu propia cuenta.",
+        "hierarchy": "No podés gestionar una cuenta con un rol igual o superior al tuyo."
+      },
+      "deactivateDialogTitle": "¿Desactivar la cuenta?",
+      "deactivateDialogDescription": "<mono>{email}</mono> pierde el acceso de inmediato: no va a poder entrar con password ni con Google, y la sesión que tenga abierta muere en el próximo request. No se borra ningún dato — la podés reactivar cuando quieras.",
+      "deactivateCancel": "Cancelar",
+      "deactivateConfirm": "Desactivar",
+      "errors": {
+        "self": "No podés desactivar tu propia cuenta.",
+        "hierarchy": "No podés gestionar una cuenta con un rol igual o superior al tuyo.",
+        "notFound": "Esa cuenta ya no existe. Actualizá el listado.",
+        "conflict": "Esa cuenta ya está en ese estado. Actualizá el listado.",
+        "deactivateGeneric": "No se pudo desactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
+        "reactivateGeneric": "No se pudo reactivar la cuenta de {email}. Intentá de nuevo en unos segundos."
+      }
     }
   },
   "onboarding": {

@@ -9,6 +9,7 @@ import { Activity, LogIn } from 'lucide-react';
 
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { Button } from '@/components/ui/button';
+import { resolveGoogleOAuthError } from '@/lib/login-errors';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -24,42 +25,6 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
  * forzado, pulsos de epicentro de fondo (CSS puro, respetan
  * prefers-reduced-motion vía motion-reduce).
  */
-
-/**
- * Mapeo de los códigos de error que el backend anexa como
- * `?error=<código>` al redirigir a `/login` tras un fallo del flujo
- * OAuth de Google (ver `src/main.py`, callback `GET /auth/google/callback`).
- * Códigos exactos: `google_oauth_cancelled`, `google_oauth_token_exchange_failed`,
- * `google_oauth_invalid_id_token`, `google_oauth_email_not_verified`,
- * `google_no_invitation` (cierre invitation-only), y cualquier
- * `google_oauth_<valor-de-error-de-google>` (ej. `access_denied`) que no
- * matchee las claves conocidas cae en el mensaje genérico. Los mensajes
- * salen del diccionario (ns `auth.oauthErrors`) en el locale activo —
- * incluido el rechazo por falta de invitación (Requirement MODIFIED
- * "Login sin alta abierta y con error claro de invitación").
- */
-type AuthTranslator = ReturnType<typeof useTranslations<'auth'>>;
-
-function resolveGoogleOAuthError(code: string, t: AuthTranslator): string {
-  switch (code) {
-    case 'google_oauth_cancelled':
-      return t('oauthErrors.cancelled');
-    case 'google_oauth_token_exchange_failed':
-      return t('oauthErrors.tokenExchangeFailed');
-    case 'google_oauth_invalid_id_token':
-      return t('oauthErrors.invalidIdToken');
-    case 'google_oauth_email_not_verified':
-      return t('oauthErrors.emailNotVerified');
-    case 'google_no_invitation':
-      return t('oauthErrors.noInvitation');
-    default:
-      // Cualquier otro `google_oauth_<algo>` no mapeado explícitamente
-      // (ej. `google_oauth_access_denied`) es un rechazo por parte de Google.
-      return code.startsWith('google_oauth_')
-        ? t('oauthErrors.googleRejected')
-        : t('oauthErrors.generic');
-  }
-}
 
 /** Pulso de epicentro decorativo. Tamaños/posiciones fijos: es escenografía. */
 function EpicenterPulse({ className }: { className: string }) {

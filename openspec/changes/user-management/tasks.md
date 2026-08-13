@@ -128,21 +128,21 @@ Convenciones de este archivo:
 
 ## Phase 2: Frontend — pestaña Usuarios, i18n y tests
 
-- [ ] 2.1 `dashboard/lib/types.ts`: agregar la interface `UserListItem` (espejo exacto del
+- [x] 2.1 `dashboard/lib/types.ts`: agregar la interface `UserListItem` (espejo exacto del
       modelo Python, fechas como `string` ISO).
 
-- [ ] 2.2 `dashboard/lib/auth.ts`: agregar `listUsers()`, `deactivateUser(id)` y
+- [x] 2.2 `dashboard/lib/auth.ts`: agregar `listUsers()`, `deactivateUser(id)` y
       `reactivateUser(id)` siguiendo el patrón existente de las funciones de invitaciones
       (`credentials: 'include'`, `ApiStatusError` con el status para que la UI mapee copy).
 
-- [ ] 2.3 `dashboard/messages/es.json` y `en.json`: agregar `admin.access.tabs.users`,
+- [x] 2.3 `dashboard/messages/es.json` y `en.json`: agregar `admin.access.tabs.users`,
       el bloque `admin.users.*` (título, descripción, vacío, error de carga, columnas,
       estados activa/desactivada, origen Google/password, acciones, copy del diálogo de
       confirmación, razones de deshabilitado, errores por status 403/404/409) y
       `auth.oauthErrors.accountDeactivated`. Reusar `admin.roles.*` existente.
       **AC**: [Requirement: Paridad de claves ES/EN / Scenario: El test de paridad pasa].
 
-- [ ] 2.4 `dashboard/components/admin/UsersPanel.tsx` (nuevo): lista con SWR, badges de
+- [x] 2.4 `dashboard/components/admin/UsersPanel.tsx` (nuevo): lista con SWR, badges de
       estado y origen, `AlertDialog` de confirmación para desactivar, acción directa para
       reactivar, botones deshabilitados por jerarquía (`ROLE_LEVEL` de `lib/types.ts`) y
       por self, con explicación accesible. El estado guarda el OUTCOME (kind + datos), no
@@ -151,28 +151,28 @@ Convenciones de este archivo:
       **AC**: [Requirement: Desactivar una cuenta requiere confirmación explícita],
       [Requirement: La UI refleja los guards de jerarquía].
 
-- [ ] 2.5 `dashboard/app/(app)/admin/access/page.tsx`: agregar la tercera pestaña `users`
+- [x] 2.5 `dashboard/app/(app)/admin/access/page.tsx`: agregar la tercera pestaña `users`
       al array `TABS` (con ícono de lucide, ej. `Users`) y al render del `tabpanel`;
       mantener el fallback a `waitlist` para valores desconocidos de `?tab=`.
       **AC**: [Scenario: Un admin abre la pestaña de usuarios], [Scenario: Deep-link a una
       pestaña desconocida].
 
-- [ ] 2.6 (CONFIRMADA por el usuario el 2026-08-13 — ya no es opcional; la Open Question del design queda CERRADA: sí se quiere el redirect) Crear
+- [x] 2.6 (CONFIRMADA por el usuario el 2026-08-13 — ya no es opcional; la Open Question del design queda CERRADA: sí se quiere el redirect) Crear
       `dashboard/app/(app)/admin/users/page.tsx` como redirect a
       `/admin/access?tab=users`, mismo patrón que las redirecciones de `/beta` y
       `/admin/invitations`.
 
-- [ ] 2.7 `dashboard/app/login/page.tsx`: mapear `account_deactivated` en
+- [x] 2.7 `dashboard/app/login/page.tsx`: mapear `account_deactivated` en
       `resolveGoogleOAuthError` y mostrar el mismo copy cuando `POST /auth/login` responde
       403 por cuenta desactivada.
       **AC**: [Requirement: Mensaje de cuenta desactivada en el login] y sus dos
       escenarios.
 
-- [ ] 2.8 `dashboard/components/admin/UsersPanel.test.tsx` (nuevo, Vitest): confirmar
+- [x] 2.8 `dashboard/components/admin/UsersPanel.test.tsx` (nuevo, Vitest): confirmar
       dispara la llamada, cancelar NO la dispara, deshabilitados por self y por jerarquía,
       error del backend traducido sin romper la lista.
 
-- [ ] 2.9 Correr los tests del dashboard (Vitest, incluido `messages/parity.test.ts`).
+- [x] 2.9 Correr los tests del dashboard (Vitest, incluido `messages/parity.test.ts`).
       **NUNCA** `npm run build`.
 
 ## Phase 3: Verificación y rollout

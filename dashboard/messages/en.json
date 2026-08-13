@@ -44,6 +44,7 @@
       "invalidIdToken": "Google sign-in could not be completed.",
       "emailNotVerified": "Your Google account email is not verified. Verify it with Google and try again.",
       "noInvitation": "Access is invitation-only and your account does not have one yet. Join the waitlist or contact an administrator.",
+      "accountDeactivated": "Your account has been deactivated. Contact an administrator to restore access.",
       "googleRejected": "Google rejected the sign-in.",
       "generic": "Google sign-in could not be completed."
     }
@@ -367,7 +368,8 @@
       "tablistAria": "Access sections",
       "tabs": {
         "waitlist": "Waitlist",
-        "invitations": "Invitations"
+        "invitations": "Invitations",
+        "users": "Users"
       }
     },
     "roles": {
@@ -440,6 +442,44 @@
       "revokeDialogDescription": "The link sent to <mono>{email}</mono> stops working immediately. This action cannot be undone — if you change your mind you will have to create a new invitation.",
       "revokeCancel": "Cancel",
       "revokeConfirm": "Revoke"
+    },
+    "users": {
+      "title": "Users",
+      "description": "Accounts already created — the end of the access funnel. Deactivating blocks all three entry paths (password, Google and already-open sessions) without deleting any data.",
+      "refreshAria": "Refresh list",
+      "empty": "No users yet. Once someone accepts an invitation, they show up here.",
+      "loadError": "The list could not be loaded. Check your session and try again.",
+      "sessionLost": "Your session changed or expired — sign in again.",
+      "you": "you",
+      "createdTooltip": "Joined {date}",
+      "deactivatedTooltip": "Deactivated {date}",
+      "status": {
+        "active": "Active",
+        "deactivated": "Deactivated"
+      },
+      "origin": {
+        "google": "Google",
+        "password": "Password"
+      },
+      "processing": "Working…",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "disabledReason": {
+        "self": "You cannot deactivate your own account.",
+        "hierarchy": "You cannot manage an account with a role equal to or higher than yours."
+      },
+      "deactivateDialogTitle": "Deactivate this account?",
+      "deactivateDialogDescription": "<mono>{email}</mono> loses access immediately: they will not be able to sign in with a password or with Google, and any open session dies on the next request. No data is deleted — you can reactivate the account at any time.",
+      "deactivateCancel": "Cancel",
+      "deactivateConfirm": "Deactivate",
+      "errors": {
+        "self": "You cannot deactivate your own account.",
+        "hierarchy": "You cannot manage an account with a role equal to or higher than yours.",
+        "notFound": "That account no longer exists. Refresh the list.",
+        "conflict": "That account is already in that state. Refresh the list.",
+        "deactivateGeneric": "Could not deactivate {email}. Try again in a few seconds.",
+        "reactivateGeneric": "Could not reactivate {email}. Try again in a few seconds."
+      }
     }
   },
   "onboarding": {
