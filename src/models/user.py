@@ -117,6 +117,46 @@ class UserInDB(BaseModel):
     # el default acá evita romper cualquier construcción manual de UserInDB
     # en tests que no lo especifiquen (mismo criterio que name/avatar_url).
     totp_enabled: bool = False
+    # deactivated_at (migración 012, user-management): None = cuenta ACTIVA.
+    # Lo lee el guard de POST /auth/login para rechazar con 403 a una cuenta
+    # desactivada DESPUÉS de verificar la password. Default None con el mismo
+    # criterio que totp_enabled: get_user_by_email()/get_user_by_id() siempre
+    # lo traen explícito del SELECT, pero el default evita romper las
+    # construcciones manuales de UserInDB que hacen los tests.
+    deactivated_at: Optional[datetime] = None
+
+
+class UserListItem(BaseModel):
+    """Item de `GET /auth/users` (user-management, design.md Decision 9).
+
+    Tipo DEDICADO, no una extensión de `UserPublic`. Dos razones:
+
+    1. `UserPublic` se usa en los responses de login/registro: agregarle
+       `deactivated_at`/`created_at` contaminaría el contrato de auth con
+       campos que sólo le importan a la pantalla de administración.
+    2. `password_hash` y `totp_secret` son INEXPRESABLES por construcción del
+       tipo — no hay forma de que un cambio futuro en la query los filtre
+       "sin querer" al response. Mismo argumento con el que el proyecto
+       separó `InvitationPublic` de los tokens en claro.
+
+    `has_google`/`has_password` son booleanos DERIVADOS en la query
+    (`google_id IS NOT NULL`, `password_hash IS NOT NULL`) en vez del
+    `google_id` crudo: el admin necesita saber CÓMO entra la persona (para
+    entender qué le bloquea la desactivación), no el identificador de Google.
+    Menos superficie expuesta, misma utilidad.
+
+    `deactivated_at`: None = cuenta activa (ver migración 012).
+    """
+
+    id: UUID
+    email: EmailStr
+    role: UserRole
+    name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    has_google: bool
+    has_password: bool
+    created_at: datetime
+    deactivated_at: Optional[datetime] = None
 
 
 class CurrentUser(BaseModel):

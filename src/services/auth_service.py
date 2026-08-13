@@ -28,10 +28,12 @@ from src.models.user import (
     AccountExport,
     CurrentUser,
     UserInDB,
+    UserListItem,
     UserProfile,
     UserProfileUpdate,
     UserPublic,
     UserRole,
+    role_level,
 )
 
 # InvitationRequiredError se define en invitation_service (Fase 2 de
@@ -103,6 +105,62 @@ class TotpNotEnabledError(Exception):
 
 class LastSuperadminError(Exception):
     """El usuario es el único superadmin del sistema; no puede auto-eliminarse."""
+
+
+# --- user-management (migración 012) — desactivación de cuentas ------------
+#
+# Mismo patrón que el resto del módulo: clases simples, sin lógica propia,
+# traducidas a códigos HTTP explícitos por el endpoint (src/main.py). La
+# matriz completa vive en openspec/changes/user-management/design.md
+# (§ Interfaces / Contracts).
+
+
+class AccountDeactivatedError(Exception):
+    """La cuenta tiene `deactivated_at IS NOT NULL`: no puede iniciar sesión.
+
+    La levanta `resolve_or_create_google_user()` (camino Google, mapeada a
+    `_google_error_redirect("account_deactivated")`). El camino password no la
+    usa: ahí el guard vive en el endpoint, que necesita distinguir el 403
+    explícito del 401 no-enumerante según si la password verificó o no.
+    """
+
+
+class UserNotFoundError(Exception):
+    """No existe ninguna fila en `users` con el id objetivo — 404."""
+
+
+class CannotDeactivateSelfError(Exception):
+    """Un actor intentó desactivarse a sí mismo — 409, no 403.
+
+    409 y no 403 a propósito: no es una falta de permisos. Un superadmin tiene
+    TODO el permiso del mundo y aun así no puede hacerlo — es un conflicto con
+    el estado (te estarías dejando afuera del sistema), no una autorización
+    faltante.
+    """
+
+
+class CannotManageHigherOrEqualRoleError(Exception):
+    """El rol del objetivo es de nivel IGUAL O SUPERIOR al del actor — 403.
+
+    Misma regla que ya aplica `CannotInviteHigherRoleError` en las
+    invitaciones y que documenta `ROLE_LEVEL` en src/models/user.py: se
+    gestionan sólo niveles ESTRICTAMENTE menores. Consecuencia deliberada:
+    nadie puede desactivar a un superadmin (ni siquiera otro superadmin), lo
+    que hace innecesario un guard de "último superadmin" acá.
+    """
+
+
+class UserAlreadyDeactivatedError(Exception):
+    """Se intentó desactivar una cuenta que ya estaba desactivada — 409.
+
+    Rechazo explícito y no un no-op silencioso, con el mismo criterio que la
+    revocación de una invitación ya aceptada: además, evita pisar el
+    `deactivated_at` original con un timestamp nuevo.
+    """
+
+
+class UserNotDeactivatedError(Exception):
+    """Se intentó reactivar una cuenta que ya estaba activa — 409 (simetría)."""
 
 
 # --- account-settings (fix post-verify) — rate-limiting de login-verify ----
@@ -421,7 +479,7 @@ class AuthService:
         async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, email, password_hash, role, google_id, name, "
-                "avatar_url, totp_enabled "
+                "avatar_url, totp_enabled, deactivated_at "
                 "FROM users WHERE email = $1",
                 email,
             )
@@ -439,6 +497,10 @@ class AuthService:
             # POST /auth/login lo consulta para decidir si el login requiere
             # segundo factor (design.md Decision 1).
             totp_enabled=row["totp_enabled"],
+            # deactivated_at (migración 012, user-management): POST /auth/login
+            # lo lee para rechazar con 403 a una cuenta desactivada, DESPUÉS de
+            # verificar la password (rechazo no-enumerante, design.md Decision 3).
+            deactivated_at=row["deactivated_at"],
         )
 
     async def get_user_by_id(self, user_id: UUID) -> Optional[UserInDB]:
@@ -452,7 +514,7 @@ class AuthService:
         async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, email, password_hash, role, google_id, name, "
-                "avatar_url, totp_enabled "
+                "avatar_url, totp_enabled, deactivated_at "
                 "FROM users WHERE id = $1",
                 user_id,
             )
@@ -467,6 +529,7 @@ class AuthService:
             name=row["name"],
             avatar_url=row["avatar_url"],
             totp_enabled=row["totp_enabled"],
+            deactivated_at=row["deactivated_at"],
         )
 
     async def resolve_or_create_google_user(
@@ -501,6 +564,16 @@ class AuthService:
         Precondición: el caller (endpoint) YA validó email_verified=true del
         ID token de Google antes de invocar este método (design.md Decision 4).
 
+        (user-management, Decision 5) Si el usuario resuelto — por `google_id`
+        o por email — tiene `deactivated_at IS NOT NULL`, se levanta
+        `AccountDeactivatedError` ANTES de cualquier UPDATE. El guard vive
+        ADENTRO de este método y no en el endpoint precisamente porque este
+        método ESCRIBE (refresco de name/avatar_url y auto-link de google_id):
+        chequear afuera significaría que el intento de login de una cuenta
+        desactivada igual le modifica filas. Contraste con
+        `InvitationRequiredError`: aquella se levanta cuando NO hay usuario,
+        ésta cuando SÍ hay usuario pero está desactivado.
+
         `name`/`avatar_url` (extensión migración 004): claims OpenID Connect
         `name`/`picture` del ID token de Google, extraídos por el caller
         (src/main.py google_callback()). Se persisten y REFRESCAN en las 3
@@ -514,17 +587,32 @@ class AuthService:
         """
         async with self._require_pool().acquire() as conn:
             async with conn.transaction():
-                row = await conn.fetchrow(
-                    """
-                    UPDATE users SET name = $1, avatar_url = $2
-                    WHERE google_id = $3
-                    RETURNING id, email, role
-                    """,
-                    name,
-                    avatar_url,
+                # (user-management, tarea 1.9) La rama "ya vinculado" pasó de
+                # ser un `UPDATE ... RETURNING` a un `SELECT` + `UPDATE`
+                # separados. Motivo: el guard de cuenta desactivada DEBE correr
+                # entre la RESOLUCIÓN del usuario y cualquier ESCRITURA sobre
+                # su fila — con el UPDATE-RETURNING original, el refresco de
+                # name/avatar_url ya había ocurrido para cuando podíamos mirar
+                # `deactivated_at`, y el requirement es explícito: "la fila de
+                # `users` no se modifica". Sigue siendo una sola transacción,
+                # así que el snapshot es el mismo y no se abre ningún race.
+                linked = await conn.fetchrow(
+                    "SELECT id, email, role, deactivated_at FROM users WHERE google_id = $1",
                     google_id,
                 )
-                if row is not None:
+                if linked is not None:
+                    if linked["deactivated_at"] is not None:
+                        raise AccountDeactivatedError(email)
+                    row = await conn.fetchrow(
+                        """
+                        UPDATE users SET name = $1, avatar_url = $2
+                        WHERE google_id = $3
+                        RETURNING id, email, role
+                        """,
+                        name,
+                        avatar_url,
+                        google_id,
+                    )
                     return UserPublic(
                         id=row["id"],
                         email=row["email"],
@@ -535,9 +623,16 @@ class AuthService:
                     )
 
                 existing = await conn.fetchrow(
-                    "SELECT id, email, role, password_hash, google_id FROM users WHERE email = $1",
+                    "SELECT id, email, role, password_hash, google_id, deactivated_at "
+                    "FROM users WHERE email = $1",
                     email,
                 )
+                # Guard del auto-link: una cuenta desactivada creada por
+                # password NO se vincula con Google. Sin este chequeo, el
+                # intento de login de un desactivado le escribiría `google_id`
+                # (escenario "Auto-link no se aplica a cuentas desactivadas").
+                if existing is not None and existing["deactivated_at"] is not None:
+                    raise AccountDeactivatedError(email)
                 if (
                     existing is not None
                     and existing["password_hash"] is not None
@@ -1088,3 +1183,154 @@ class AuthService:
                         raise LastSuperadminError()
 
                 await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+
+    # -------------------------------------------------------------------
+    # user-management (migración 012) — desactivación/reactivación de cuentas
+    # -------------------------------------------------------------------
+
+    async def is_user_active(self, user_id: UUID) -> bool:
+        """¿La cuenta existe Y no está desactivada?
+
+        Lo consulta `get_current_user()` (src/api/deps.py) en CADA request
+        autenticado — ver design.md Decision 4. Devuelve False tanto para una
+        cuenta desactivada como para una fila inexistente: los dos casos
+        producen el mismo 401 genérico, y el segundo cierra de regalo un
+        agujero preexistente (el JWT de una cuenta borrada con `DELETE
+        /account` seguía siendo válido hasta 24 h).
+
+        Es un lookup por PK, el mismo costo que `get_onboarding_status()` ya
+        paga hoy en cada `/auth/me`.
+        """
+        async with self._require_pool().acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT deactivated_at FROM users WHERE id = $1",
+                user_id,
+            )
+        if row is None:
+            return False
+        return row["deactivated_at"] is None
+
+    async def list_users(self) -> list[UserListItem]:
+        """[Requirement: Listado de usuarios para administración]
+
+        Devuelve TODOS los usuarios (activos y desactivados, incluido el
+        propio actor y los superadmins) ordenados por fecha de alta
+        descendente. Sin paginación: la beta tiene decenas de filas, no miles
+        (declarado out of scope en el proposal).
+
+        `has_google`/`has_password` se derivan EN LA QUERY: ni `google_id` ni
+        `password_hash` salen de la base para este método — la garantía de que
+        no se filtra un secreto es doble (el SELECT no los lee, y
+        `UserListItem` no puede expresarlos).
+        """
+        async with self._require_pool().acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, email, role, name, avatar_url, created_at, deactivated_at,
+                       google_id IS NOT NULL AS has_google,
+                       password_hash IS NOT NULL AS has_password
+                FROM users
+                ORDER BY created_at DESC
+                """
+            )
+        return [
+            UserListItem(
+                id=row["id"],
+                email=row["email"],
+                role=UserRole(row["role"]),
+                name=row["name"],
+                avatar_url=row["avatar_url"],
+                has_google=row["has_google"],
+                has_password=row["has_password"],
+                created_at=row["created_at"],
+                deactivated_at=row["deactivated_at"],
+            )
+            for row in rows
+        ]
+
+    @staticmethod
+    async def _load_manageable_target(
+        conn: asyncpg.Connection, actor: CurrentUser, target_id: UUID
+    ) -> asyncpg.Record:
+        """Los guards COMPARTIDOS por deactivate_user()/reactivate_user().
+
+        Corre DENTRO de la transacción del caller y devuelve la fila objetivo
+        ya lockeada con `FOR UPDATE`, para que el chequeo de estado y el
+        UPDATE posterior sean atómicos (dos desactivaciones concurrentes se
+        serializan: la segunda ve el timestamp que escribió la primera y sale
+        por `UserAlreadyDeactivatedError`, en vez de pisarlo).
+
+        Orden de los guards (design.md Decision 6, NO reordenar):
+
+        1. self → `CannotDeactivateSelfError`. Va PRIMERO, antes del 404,
+           porque un actor autenticado siempre existe: si el id coincide con
+           el suyo, la causa real es "te estás gestionando a vos mismo", no
+           "no existe".
+        2. inexistente → `UserNotFoundError`.
+        3. jerarquía → `CannotManageHigherOrEqualRoleError` (nivel del target
+           >= nivel del actor).
+
+        El guard de estado (ya desactivado / ya activo) lo aplica cada caller,
+        porque es lo único que difiere entre ambas operaciones.
+        """
+        if target_id == actor.id:
+            raise CannotDeactivateSelfError(str(target_id))
+
+        row = await conn.fetchrow(
+            "SELECT id, role, deactivated_at FROM users WHERE id = $1 FOR UPDATE",
+            target_id,
+        )
+        if row is None:
+            raise UserNotFoundError(str(target_id))
+
+        if role_level(UserRole(row["role"])) >= role_level(actor.role):
+            raise CannotManageHigherOrEqualRoleError(str(target_id))
+
+        return row
+
+    async def deactivate_user(self, actor: CurrentUser, target_id: UUID) -> None:
+        """[Requirement: Desactivación de cuenta (soft-delete)]
+
+        Setea `deactivated_at = now()` sin tocar ninguna otra columna: email,
+        rol, password_hash y google_id quedan intactos — es un soft-delete,
+        no un borrado.
+
+        Guards en orden: self (409) → inexistente (404) → jerarquía (403) →
+        ya desactivada (409). Ver `_load_manageable_target()`.
+        """
+        async with self._require_pool().acquire() as conn:
+            async with conn.transaction():
+                row = await self._load_manageable_target(conn, actor, target_id)
+                if row["deactivated_at"] is not None:
+                    # Rechazo explícito, no un no-op: además de ser honesto con
+                    # el caller, preserva el timestamp ORIGINAL de la primera
+                    # desactivación (no se pisa con un now() nuevo).
+                    raise UserAlreadyDeactivatedError(str(target_id))
+
+                await conn.execute(
+                    "UPDATE users SET deactivated_at = now() WHERE id = $1",
+                    target_id,
+                )
+
+    async def reactivate_user(self, actor: CurrentUser, target_id: UUID) -> None:
+        """[Requirement: Reactivación de cuenta]
+
+        Vuelve `deactivated_at` a NULL, restaurando el acceso completo por
+        ambos caminos de login. 409 si la cuenta ya estaba activa (simetría
+        con el 409 de desactivar dos veces).
+
+        Aplica los mismos guards que `deactivate_user()`, incluido el de self:
+        por Decision 4 un actor autenticado tiene su cuenta activa, así que
+        auto-reactivarse es inalcanzable en la práctica — pero se valida igual
+        por simetría, para no depender de una invariante que vive en otra capa.
+        """
+        async with self._require_pool().acquire() as conn:
+            async with conn.transaction():
+                row = await self._load_manageable_target(conn, actor, target_id)
+                if row["deactivated_at"] is None:
+                    raise UserNotDeactivatedError(str(target_id))
+
+                await conn.execute(
+                    "UPDATE users SET deactivated_at = NULL WHERE id = $1",
+                    target_id,
+                )

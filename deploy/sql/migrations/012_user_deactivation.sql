@@ -1,0 +1,42 @@
+-- Migration 012: desactivación de cuentas (soft-delete) — user-management.
+--
+-- `users.deactivated_at` es la ÚNICA fuente de verdad del estado de una cuenta:
+--
+-- * NULLABLE a propósito, con la MISMA semántica que ya usan
+--   `users.onboarding_completed_at` (007) e `invitations.revoked_at` (007):
+--   NULL = "todavía no pasó" = cuenta ACTIVA. Un timestamp significa
+--   "desactivada desde ese instante".
+-- * TIMESTAMPTZ y no BOOLEAN (design.md Decision 1): lleva la misma
+--   información que un booleano MÁS el cuándo, sin costo extra. Un booleano
+--   obligaría a agregar después una columna de fecha en cuanto alguien
+--   pregunte "¿desde cuándo está desactivada?".
+-- * SIN default: toda fila preexistente queda en NULL, es decir activa —
+--   exactamente el comportamiento actual. Cero backfill, cero riesgo de dejar
+--   a alguien afuera al aplicar la migración.
+--
+-- Sin CHECK ni índice (design.md Decision 2): no hay valores inválidos que
+-- restringir, y la consulta caliente (`get_current_user()` en cada request) es
+-- por PK (`WHERE id = $1`), ya indexada. Un índice sobre `deactivated_at` para
+-- "listar desactivados" es innecesario con decenas de filas.
+--
+-- Convención del proyecto (ver 001-011): manual, sin Alembic, idempotente. Se
+-- aplica sola al arranque de la API (scripts/apply_migrations.py) y los tests
+-- la toman por glob alfabético (tests/conftest.py::_migrated).
+--
+-- Idempotente: ADD COLUMN IF NOT EXISTS — re-ejecutar la migración N veces no
+-- falla ni pisa el timestamp de las cuentas ya desactivadas.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;
+
+-- Rollback:
+--
+-- ALTER TABLE users DROP COLUMN IF EXISTS deactivated_at;
+--
+-- Limpio y sin condicionales (a diferencia de 002/003): la columna es nullable,
+-- sin constraint, sin default y sin FK entrante, así que nada más depende de
+-- ella. ADVERTENCIA: revertir REACTIVA a todos los usuarios desactivados (el
+-- estado "desactivada" vive solo en esta columna y se pierde con el DROP). Eso
+-- es exactamente el comportamiento pre-change y es aceptable en un rollback,
+-- pero hay que decirlo en voz alta: si el motivo de la desactivación era un
+-- incidente de seguridad, revertir esta migración le devuelve el acceso a esa
+-- cuenta.

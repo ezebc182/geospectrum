@@ -20,7 +20,7 @@ mismo patrón que test_auth_api.py.
 """
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import asyncpg
@@ -193,17 +193,32 @@ def _update_invitation(dsn: str, invitation_id, set_clause: str) -> None:
         conn.close()
 
 
+def _auth_service_mock() -> MagicMock:
+    """Fake de AuthService con `is_user_active` awaitable.
+
+    [user-management, tarea 1.15] `get_current_user()` hace ahora un
+    round-trip a la base por request (`await auth_service.is_user_active()`);
+    un MagicMock pelado devuelve un objeto no-awaitable y revienta con
+    TypeError. Default True: acá lo que se ejercita son las invitaciones, no
+    la desactivación — todas las sesiones de este archivo son de cuentas
+    activas.
+    """
+    fake = MagicMock()
+    fake.is_user_active = AsyncMock(return_value=True)
+    return fake
+
+
 def _login_as(user: CurrentUser, client: TestClient) -> None:
     """Simula una sesión válida del rol pedido: el cookie es opaco y el fake de
     `decode_access_token` es quien decide la identidad."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_access_token = MagicMock(return_value=user)
     app.state.auth_service = fake_auth_service
     client.cookies.set("session", "fake-session-jwt")
 
 
 def _logout(client: TestClient) -> None:
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
     client.cookies.clear()
 
 

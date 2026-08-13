@@ -56,6 +56,26 @@ async def get_current_user(
     cuando `totp_enabled=true`, ver Phase 3) JAMÁS debe resolver una
     identidad completa, incluso si (por bug o manipulación del cliente)
     terminara en la cookie `session` en lugar de `pending_2fa_session`.
+
+    [Tarea 1.10, user-management, design.md Decision 4] Round-trip a la base:
+    tras decodificar el JWT se consulta `auth_service.is_user_active()`
+    (`SELECT deactivated_at FROM users WHERE id = $1`) y se responde el MISMO
+    401 genérico si la cuenta está desactivada o su fila ya no existe.
+
+    Por qué un round-trip por request y no un claim del JWT: el estado de la
+    cuenta es MUTABLE y un claim quedaría stale hasta el re-login — con
+    `auth_token_expire_minutes = 1440`, una cuenta desactivada conservaría
+    acceso pleno hasta 24 horas. Un soft-delete que no invalida las sesiones
+    vivas no es un soft-delete, es un cartel. Es el mismo argumento por el que
+    `onboarding_completed_at` se lee de la base en cada `/auth/me` en vez de
+    viajar en el token (ver docstring de `MeResponse`), y el mismo costo:
+    un lookup por PK. De regalo cierra un agujero preexistente — hoy el JWT de
+    una cuenta borrada con `DELETE /account` sigue siendo válido hasta 24 h.
+
+    El 401 es GENÉRICO a propósito (no distingue "desactivada" de "token
+    vencido"): esta dependencia no es la superficie donde el dueño legítimo se
+    entera del motivo — eso ocurre en `POST /auth/login`, con la password ya
+    verificada.
     """
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token is None:
@@ -79,12 +99,20 @@ async def get_current_user(
         )
 
     try:
-        return auth_service.decode_access_token(token)
+        current_user = auth_service.decode_access_token(token)
     except (InvalidTokenError, TokenExpiredError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="not authenticated",
         ) from exc
+
+    if not await auth_service.is_user_active(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="not authenticated",
+        )
+
+    return current_user
 
 
 async def get_current_user_optional(request: Request) -> Optional[CurrentUser]:
@@ -115,6 +143,12 @@ async def get_current_user_optional(request: Request) -> Optional[CurrentUser]:
     Sólo se traga el 401 (sesión ausente/inválida/pre-auth): cualquier otro
     error se propaga. Un fallo de configuración del servidor NO debe
     disfrazarse silenciosamente de "usuario anónimo".
+
+    [user-management] El bloqueo de cuentas desactivadas se hereda GRATIS por
+    esta misma delegación: get_current_user() responde 401 y acá se traduce a
+    None, así que /report trata al desactivado como anónimo. NO agregar acá un
+    `Depends(_get_auth_service)` propio para "chequear también": sería
+    exactamente el bug de los 500 documentado dos párrafos arriba.
     """
     if request.cookies.get(SESSION_COOKIE_NAME) is None:
         return None

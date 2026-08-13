@@ -52,11 +52,28 @@ class _FakeAuthService:
     `self._tokens` para no romper los tests de Phase 3.5 (roles) ya
     existentes. `payloads` permite overridear ese comportamiento por token
     para los tests nuevos de pending_2fa.
+
+    `is_user_active()` (tarea 1.15, user-management): get_current_user() ahora
+    hace un round-trip a la base tras decodificar el JWT (design.md Decision
+    4), así que TODO fake de auth_service necesita el método. Por default
+    devuelve True — el comportamiento de una cuenta activa, que es el que
+    asumen todos los tests preexistentes de este archivo. `inactive_users`
+    permite marcar ids concretos como desactivados/inexistentes para los tests
+    nuevos, sin duplicar el armado de la app.
     """
 
-    def __init__(self, tokens: dict, payloads: dict | None = None) -> None:
+    def __init__(
+        self,
+        tokens: dict,
+        payloads: dict | None = None,
+        inactive_users: set | None = None,
+    ) -> None:
         self._tokens = tokens
         self._payloads = payloads or {}
+        self._inactive_users = {str(user_id) for user_id in (inactive_users or set())}
+
+    async def is_user_active(self, user_id) -> bool:
+        return str(user_id) not in self._inactive_users
 
     def decode_token_payload(self, token: str) -> dict:
         if token in self._payloads:
@@ -304,3 +321,82 @@ def test_get_current_user_allows_token_without_pending_2fa_claim():
     response = client.get("/protected")
 
     assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# user-management (tarea 1.15) — get_current_user() verifica contra la base
+# que la cuenta siga existiendo y activa, en CADA request autenticado.
+# ---------------------------------------------------------------------------
+
+
+def test_get_current_user_rejects_deactivated_account_with_401():
+    """[Requirement: Invalidación inmediata de sesiones ya emitidas /
+    Scenario: Sesión viva muere al desactivar la cuenta] El JWT es válido en
+    firma y no venció — lo único que cambió es el estado de la cuenta en la
+    base, y eso alcanza para el 401."""
+    fake_service = _FakeAuthService(
+        tokens={"valid-viewer-token": VIEWER_USER},
+        inactive_users={VIEWER_USER.id},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "valid-viewer-token")
+
+    response = client.get("/protected")
+
+    assert response.status_code == 401
+    # 401 GENÉRICO: no distingue "cuenta desactivada" de "token vencido".
+    assert "not authenticated" in response.json()["detail"]
+
+
+def test_get_current_user_rejects_token_of_deleted_user_with_401():
+    """[Scenario: JWT válido de una cuenta borrada también muere] Mismo
+    chequeo, otro caso: la fila ya no existe (DELETE /account) e is_user_active
+    devuelve False. Antes de este change ese JWT seguía siendo válido hasta
+    24 h — agujero preexistente que este requirement cierra de regalo."""
+    fake_service = _FakeAuthService(
+        tokens={"deleted-user-token": ADMIN_USER},
+        inactive_users={ADMIN_USER.id},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "deleted-user-token")
+
+    response = client.get("/protected")
+
+    assert response.status_code == 401
+
+
+def test_require_min_role_rejects_deactivated_account_with_401_not_403():
+    """El bloqueo por cuenta desactivada ocurre en get_current_user(), que
+    corre ANTES del chequeo de rol: un admin desactivado recibe 401 (no
+    autenticado), no 403 (rol insuficiente) — el rol ya ni se evalúa."""
+    fake_service = _FakeAuthService(
+        tokens={"valid-admin-token": ADMIN_USER},
+        inactive_users={ADMIN_USER.id},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "valid-admin-token")
+
+    response = client.get("/moderador-or-above")
+
+    assert response.status_code == 401
+
+
+def test_get_current_user_allows_active_account():
+    """No-regresión: una cuenta activa (is_user_active -> True) sigue
+    resolviendo normalmente. El chequeo nuevo no debe cambiar nada para el
+    99,9% de los requests."""
+    fake_service = _FakeAuthService(
+        tokens={"valid-viewer-token": VIEWER_USER},
+        inactive_users=set(),
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "valid-viewer-token")
+
+    response = client.get("/protected")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(VIEWER_USER.id)

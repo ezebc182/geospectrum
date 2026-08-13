@@ -350,18 +350,41 @@ def _fake_pool_for_google(
     """Construye un fake de asyncpg.Pool para resolve_or_create_google_user().
 
     conn.fetchrow() se invoca hasta 3 veces según la rama:
-      1. SELECT por google_id -> `google_id_row` (si no None, corta acá).
-      2. SELECT por email -> `email_row` (si no None, corta acá si aplica).
-      3. UPDATE (auto-link) o INSERT (nuevo) -> `final_row`.
+      1. SELECT por google_id -> `google_id_row`.
+      2a. Si matcheó: UPDATE de refresco de name/avatar_url -> `final_row`
+          (o el propio `google_id_row` si no se pasó `final_row`).
+      2b. Si no matcheó: SELECT por email -> `email_row`, y luego
+          UPDATE (auto-link) o INSERT (nuevo) -> `final_row`.
+
+    (user-management, tarea 1.9) La rama "ya vinculado" pasó de UN
+    `UPDATE ... RETURNING` a un `SELECT` + `UPDATE` separados, para poder
+    aplicar el guard de cuenta desactivada ENTRE la resolución y la escritura.
+    Por eso ahora consume dos fetchrow en vez de uno.
+
+    `deactivated_at` se inyecta con default None (cuenta ACTIVA) en las filas
+    resueltas que no lo traen: el guard nuevo lo lee y un dict sin la clave
+    reventaría con KeyError. Los tests que quieran simular una cuenta
+    desactivada lo pasan explícito — aunque la cobertura real de ese camino
+    vive en tests/unit/test_user_management.py, contra Postgres de verdad.
+
     conn.fetchval() se usa solo en la rama "nuevo usuario" (bootstrap COUNT),
     tomado de `final_row` indirectamente vía existing_count explícito.
     """
     conn = AsyncMock()
 
-    fetchrow_results = [google_id_row]
-    if google_id_row is None:
-        fetchrow_results.append(email_row)
-        fetchrow_results.append(final_row)
+    def _with_active_default(row):
+        if row is None or "deactivated_at" in row:
+            return row
+        return {**row, "deactivated_at": None}
+
+    google_id_row = _with_active_default(google_id_row)
+    email_row = _with_active_default(email_row)
+
+    if google_id_row is not None:
+        # SELECT por google_id + UPDATE de refresco de perfil.
+        fetchrow_results = [google_id_row, final_row if final_row is not None else google_id_row]
+    else:
+        fetchrow_results = [google_id_row, email_row, final_row]
     conn.fetchrow = AsyncMock(side_effect=fetchrow_results)
 
     transaction_cm = AsyncMock()
@@ -609,10 +632,15 @@ async def test_resolve_or_create_google_user_second_login_returns_same_row_witho
     assert result.role == UserRole.ADMIN
     assert result.name == "Persona Vinculada"
     assert result.avatar_url == "https://lh3.googleusercontent.com/a/avatar789"
-    # Un solo fetchrow (el UPDATE por google_id, que también retorna la fila)
-    # — no hubo SELECT por email ni INSERT, confirmando que no se duplica ni
-    # se re-vincula.
-    assert conn.fetchrow.await_count == 1
+    # DOS fetchrow y ni uno más: el SELECT por google_id (que resuelve al
+    # usuario) y el UPDATE que refresca name/avatar_url. No hubo SELECT por
+    # email ni INSERT, confirmando que no se duplica ni se re-vincula.
+    #
+    # Eran uno solo hasta user-management (tarea 1.9): la rama "ya vinculado"
+    # se partió en SELECT + UPDATE para poder rechazar una cuenta desactivada
+    # ANTES de escribirle la fila. El invariante que este test protege (no se
+    # toca la rama de email ni la de creación) no cambió.
+    assert conn.fetchrow.await_count == 2
 
 
 def test_verify_password_with_none_hash_returns_false_without_exception():

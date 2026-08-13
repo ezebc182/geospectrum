@@ -46,6 +46,24 @@ from src.main import app, oauth
 from src.models.user import UserPublic, UserRole
 
 
+def _auth_service_mock() -> MagicMock:
+    """Fake de AuthService con los defaults que exige `get_current_user()`.
+
+    [user-management, tarea 1.15] `get_current_user()` ahora hace
+    `await auth_service.is_user_active(id)` en cada request autenticado
+    (design.md Decision 4). Un `MagicMock()` pelado devuelve otro MagicMock
+    para ese atributo, que NO es awaitable: el endpoint explotaría con
+    `TypeError: object MagicMock can't be used in 'await' expression`.
+
+    Default `True` (cuenta activa) porque es el estado que asumen todos los
+    tests preexistentes de este archivo; los tests que necesitan simular una
+    cuenta desactivada lo sobreescriben con su propio `AsyncMock`.
+    """
+    fake = MagicMock()
+    fake.is_user_active = AsyncMock(return_value=True)
+    return fake
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -111,7 +129,7 @@ def test_google_login_returns_503_when_oauth_not_configured(client):
     """[design.md Decision 1] Sin credenciales de Google configuradas,
     GET /auth/google/login responde 503 en vez de intentar el redirect —
     verificación de tasks.md 3.14."""
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
     app.state.google_oauth_enabled = False
 
     response = client.get("/auth/google/login")
@@ -124,7 +142,7 @@ def test_google_callback_returns_503_when_oauth_not_configured(client):
     """Mismo criterio que /auth/google/login — el chequeo de
     google_oauth_enabled corre ANTES de cualquier intento de resolver
     `code`/`state` o de tocar AuthService — verificación de tasks.md 3.14."""
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
     app.state.google_oauth_enabled = False
 
     response = client.get("/auth/google/callback", params={"code": "x", "state": "y"})
@@ -143,7 +161,7 @@ def test_password_register_unaffected_by_google_oauth_disabled(client):
         email="nuevo@example.com",
         role=UserRole.VIEWER,
     )
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.create_user = AsyncMock(return_value=fake_user)
     app.state.auth_service = fake_auth_service
 
@@ -179,8 +197,10 @@ def test_password_login_unaffected_by_google_oauth_disabled(client):
     # dispararía la rama de login de 2 pasos (requires_2fa) en vez del login
     # de un solo paso que este test de no-regresión verifica.
     fake_user_in_db.totp_enabled = False
+    # deactivated_at explícito en None: ver _fake_user_in_db() más abajo.
+    fake_user_in_db.deactivated_at = None
 
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.create_access_token = MagicMock(return_value="fake-jwt")
@@ -210,7 +230,7 @@ def test_google_login_redirects_to_google_with_state_when_configured(client, mon
     responde 302 hacia Google con `state` en el query — [Requirement:
     Endpoints OAuth de Google / Scenario: GET /auth/google/login redirige a
     Google con los parámetros correctos]."""
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
     app.state.google_oauth_enabled = True
     monkeypatch.setattr(oauth, "google", _fake_google_client(), raising=False)
 
@@ -223,7 +243,7 @@ def test_google_login_redirects_to_google_with_state_when_configured(client, mon
 
 
 def _fake_auth_service_for_callback(resolved_user: UserPublic) -> MagicMock:
-    fake = MagicMock()
+    fake = _auth_service_mock()
     fake.resolve_or_create_google_user = AsyncMock(return_value=resolved_user)
     fake.create_access_token = MagicMock(return_value="fake-google-jwt")
     return fake
@@ -412,8 +432,10 @@ def test_linked_user_can_login_via_password_and_via_google_same_identity(client,
     # totp_enabled (account-settings, migración 005): ver comentario
     # equivalente en test_password_login_unaffected_by_google_oauth_disabled.
     fake_user_in_db.totp_enabled = False
+    # deactivated_at explícito en None: ver _fake_user_in_db() más abajo.
+    fake_user_in_db.deactivated_at = None
 
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.resolve_or_create_google_user = AsyncMock(
@@ -453,7 +475,7 @@ def test_google_callback_without_code_redirects_to_login_cancelled(client, monke
     /login?error=google_oauth_cancelled, sin Set-Cookie, sin invocar
     AuthService — [Requirement: Manejo de errores del flujo OAuth de
     Google / Scenario: Usuario cancela el consentimiento de Google]."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.resolve_or_create_google_user = AsyncMock()
     app.state.auth_service = fake_auth_service
     app.state.google_oauth_enabled = True
@@ -474,7 +496,7 @@ def test_google_callback_with_access_denied_redirects_without_500(client, monkey
     """5.9: ?error=access_denied -> redirect a
     /login?error=google_oauth_access_denied, sin 500 —
     [Scenario: Google devuelve un parámetro de error explícito]."""
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
     app.state.google_oauth_enabled = True
     monkeypatch.setattr(oauth, "google", _fake_google_client(), raising=False)
 
@@ -498,7 +520,7 @@ def test_google_callback_invalid_state_redirects_to_token_exchange_failed(client
     rechaza un state inválido o ausente]."""
     from authlib.integrations.base_client.errors import MismatchingStateError
 
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.resolve_or_create_google_user = AsyncMock()
     app.state.auth_service = fake_auth_service
     app.state.google_oauth_enabled = True
@@ -535,7 +557,7 @@ def test_google_callback_token_exchange_network_failure_redirects_without_500(cl
     [Scenario: El intercambio de token con Google falla]."""
     from authlib.integrations.base_client.errors import OAuthError
 
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.resolve_or_create_google_user = AsyncMock()
     app.state.auth_service = fake_auth_service
     app.state.google_oauth_enabled = True
@@ -570,7 +592,7 @@ def test_google_callback_missing_userinfo_redirects_to_invalid_id_token(client, 
     inválido/no parseable -> redirect a
     /login?error=google_oauth_invalid_id_token, sin invocar AuthService —
     [Scenario: El ID token de Google no puede validarse]."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.resolve_or_create_google_user = AsyncMock()
     app.state.auth_service = fake_auth_service
     app.state.google_oauth_enabled = True
@@ -626,6 +648,11 @@ def _fake_user_in_db(*, totp_enabled: bool, password_hash: str = "some-bcrypt-ha
     user.name = None
     user.avatar_url = None
     user.totp_enabled = totp_enabled
+    # deactivated_at (user-management, migración 012): explícito en None —
+    # un MagicMock sin este atributo devuelve un Mock truthy, y el guard de
+    # /auth/login (`user.deactivated_at is not None`) rechazaría con 403 a
+    # TODOS estos usuarios de prueba. Mismo motivo que totp_enabled arriba.
+    user.deactivated_at = None
     return user
 
 
@@ -639,7 +666,7 @@ def test_login_with_totp_enabled_returns_requires_2fa_without_session_cookie(cli
     Scenario: Login con password correcto pero sin segundo factor no otorga
     sesión completa]."""
     fake_user = _fake_user_in_db(totp_enabled=True)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.create_access_token = MagicMock(return_value="fake-pre-auth-jwt")
@@ -660,7 +687,7 @@ def test_me_with_pending_2fa_cookie_instead_of_session_returns_401(client):
     """3.13: GET /auth/me usando la cookie pending_2fa_session en vez de
     session -> 401 (verifica el rechazo de deps.py 3.1/3.2 a nivel de
     endpoint real, no solo unitario) — mismo Requirement que 3.12."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={
             "sub": "3f9a2b1c-1111-2222-3333-444455556680",
@@ -687,7 +714,7 @@ def test_login_verify_2fa_with_valid_totp_code_issues_session_cookie(client):
     [Requirement: Login con 2FA habilitado requiere segundo factor /
     Scenario: Login completo con password y código TOTP válido]."""
     fake_user = _fake_user_in_db(totp_enabled=True)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": fake_user.id, "pending_2fa": True, "typ": "pre_auth"}
     )
@@ -709,7 +736,7 @@ def test_login_verify_2fa_with_invalid_code_returns_401_without_session_cookie(c
     """3.15: código TOTP incorrecto/expirado -> 401, sin Set-Cookie session
     — [Scenario: Login rechazado con código TOTP incorrecto]."""
     fake_user = _fake_user_in_db(totp_enabled=True)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": fake_user.id, "pending_2fa": True, "typ": "pre_auth"}
     )
@@ -726,7 +753,7 @@ def test_login_verify_2fa_with_invalid_code_returns_401_without_session_cookie(c
 def test_login_verify_2fa_without_pending_cookie_returns_401(client):
     """Cookie pending_2fa_session ausente -> 401, sin invocar
     verify_totp_or_backup_code."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.verify_totp_or_backup_code = AsyncMock()
     app.state.auth_service = fake_auth_service
 
@@ -745,7 +772,7 @@ def test_login_verify_2fa_with_backup_code_issues_session_and_invalidates_code(c
     2) — acá se simula la segunda llamada devolviendo False, como lo haría
     el service real tras el consumo."""
     fake_user = _fake_user_in_db(totp_enabled=True)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": fake_user.id, "pending_2fa": True, "typ": "pre_auth"}
     )
@@ -796,7 +823,7 @@ async def test_login_verify_2fa_blocks_after_max_failed_attempts_even_with_corre
     rechazado con 401 SIN que verify_totp_or_backup_code llegue a evaluarlo
     -- el usuario debe reiniciar el login desde POST /auth/login."""
     fake_user = _fake_user_in_db(totp_enabled=True)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": fake_user.id, "pending_2fa": True, "typ": "pre_auth"}
     )
@@ -843,7 +870,7 @@ async def test_new_login_resets_totp_attempt_counter_for_next_login_verify(redis
     pre-auth token nuevo y resetea el contador (ver el reset() explícito en
     el endpoint /auth/login), sin necesidad de esperar el TTL."""
     fake_user = _fake_user_in_db(totp_enabled=True)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.decode_token_payload = MagicMock(
@@ -901,7 +928,7 @@ def test_setup_2fa_rejects_google_only_user(client):
     """3.17: [Requirement: Activación de 2FA TOTP restringida a usuarios con
     password propio / Scenario: Usuario 100% Google sin password es
     rechazado]."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={
             "sub": "3f9a2b1c-1111-2222-3333-444455556680",
@@ -925,7 +952,7 @@ def test_setup_2fa_rejects_google_only_user(client):
 def test_setup_2fa_without_session_returns_401(client):
     """3.18: sin cookie session válida -> 401 —
     [Scenario: Usuario no autenticado recibe 401]."""
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
 
     response = client.post("/auth/2fa/setup")
 
@@ -949,7 +976,7 @@ def test_setup_then_verify_2fa_flow_enables_totp(client):
     [Requirement: Verificación del código TOTP en el setup / Scenario:
     Código TOTP válido en el setup habilita 2FA]."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -975,7 +1002,7 @@ def test_setup_2fa_rejects_when_already_enabled(client):
     """Complementa 3.19/3.20: una segunda llamada de setup mientras
     totp_enabled=true ya (sin disable previo) -> 409, no expone backup codes
     nuevos — cubre la rama TotpAlreadyEnabledError del endpoint."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={
             "sub": "3f9a2b1c-1111-2222-3333-444455556680",
@@ -999,7 +1026,7 @@ def test_verify_2fa_setup_with_invalid_code_returns_400_and_does_not_enable(clie
     """[Requirement: Verificación del código TOTP en el setup / Scenario:
     Código TOTP inválido en el setup no habilita 2FA]."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1022,7 +1049,7 @@ def test_disable_2fa_with_full_session_succeeds(client):
     """3.21: [Requirement: Deshabilitación de 2FA / Scenario: Usuario
     autenticado deshabilita su 2FA exitosamente]."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1040,7 +1067,7 @@ def test_disable_2fa_with_full_session_succeeds(client):
 def test_disable_2fa_without_session_returns_401(client):
     """3.22: sin cookie session válida -> 401 —
     [Scenario: Usuario no autenticado recibe 401 al intentar deshabilitar 2FA]."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.disable_totp = AsyncMock()
     app.state.auth_service = fake_auth_service
 
@@ -1058,7 +1085,7 @@ def test_disable_2fa_without_session_returns_401(client):
 def test_get_account_profile_with_full_session_returns_profile(client):
     """3.23: perfil completo -> 200 con los tres valores; sin sesión -> 401."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1089,7 +1116,7 @@ def test_get_account_profile_with_full_session_returns_profile(client):
 
 
 def test_get_account_profile_without_session_returns_401(client):
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
 
     response = client.get("/account/profile")
 
@@ -1103,7 +1130,7 @@ def test_patch_account_profile_updates_and_ignores_role_and_email(client):
     intento de enviarlos es simplemente ignorado por Pydantic al no estar
     declarados en el modelo, ni siquiera llega a auth_service)."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1129,7 +1156,7 @@ def test_patch_account_profile_updates_and_ignores_role_and_email(client):
 
 
 def test_patch_account_profile_without_session_returns_401(client):
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.update_profile = AsyncMock()
     app.state.auth_service = fake_auth_service
 
@@ -1152,7 +1179,7 @@ def test_me_response_never_includes_extended_profile_fields(client):
     de /auth/me) no declara esos campos — la garantía es de shape, no de un
     chequeo ad-hoc."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1191,8 +1218,9 @@ def test_login_jwt_claims_never_include_extended_profile_fields(client):
     fake_user_for_email.name = None
     fake_user_for_email.avatar_url = None
     fake_user_for_email.totp_enabled = False
+    fake_user_for_email.deactivated_at = None
 
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_for_email)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.create_access_token = MagicMock(
@@ -1238,7 +1266,7 @@ def test_export_account_returns_json_without_sensitive_fields(client):
         security={"has_password": True, "totp_enabled": False, "linked_google_account": False},
         exported_at="2026-07-20T12:00:00Z",
     )
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1259,7 +1287,7 @@ def test_export_account_returns_json_without_sensitive_fields(client):
 
 
 def test_export_account_without_session_returns_401(client):
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.export_user_data = AsyncMock()
     app.state.auth_service = fake_auth_service
 
@@ -1276,7 +1304,7 @@ def test_export_account_only_invokes_export_for_the_authenticated_user(client):
     params/body — se verifica que export_user_data() se invoca exactamente
     con el id del usuario autenticado por esta sesión."""
     own_user_id = "3f9a2b1c-1111-2222-3333-444455556681"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": own_user_id, "email": "propio@example.com", "role": "viewer"}
     )
@@ -1317,7 +1345,7 @@ def test_delete_account_non_last_superadmin_succeeds_and_clears_session_cookie(c
     session — [Requirement: Eliminación de la propia cuenta / Scenario:
     Usuario no-superadmin-único elimina su propia cuenta exitosamente]."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1337,7 +1365,7 @@ def test_delete_account_last_superadmin_returns_409_with_explicit_message(client
     [Scenario: El último superadmin del sistema no puede eliminar su propia
     cuenta]."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "root@example.com", "role": "superadmin"}
     )
@@ -1358,7 +1386,7 @@ def test_delete_account_non_unique_superadmin_succeeds(client):
     [Scenario: Un superadmin que no es el único puede eliminar su propia
     cuenta]."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556680"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "root2@example.com", "role": "superadmin"}
     )
@@ -1374,7 +1402,7 @@ def test_delete_account_non_unique_superadmin_succeeds(client):
 
 def test_delete_account_without_session_returns_401(client):
     """3.32: sin cookie session válida -> 401, ninguna fila se elimina."""
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.delete_account = AsyncMock()
     app.state.auth_service = fake_auth_service
 
@@ -1403,7 +1431,7 @@ def test_login_without_totp_still_issues_full_session_in_one_step(client):
     request de POST /auth/login basta para obtener la cookie session
     completa, sin requires_2fa ni cookie pending_2fa_session."""
     fake_user_in_db = _fake_user_in_db(totp_enabled=False)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.create_access_token = MagicMock(return_value="fake-full-session-jwt")
@@ -1428,7 +1456,7 @@ def test_me_without_2fa_ever_configured_returns_current_user_normally(client):
     con el shape ya especificado por multi-user-auth (id/email/role), sin
     ningún campo ni comportamiento nuevo introducido por account-settings."""
     user_id = "3f9a2b1c-1111-2222-3333-444455556690"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1615,7 +1643,7 @@ def test_register_with_valid_invitation_returns_201_with_invited_role(client):
         email="invitada@example.com",
         role=UserRole.MODERADOR,
     )
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.create_user = AsyncMock(return_value=fake_user)
     app.state.auth_service = fake_auth_service
 
@@ -1644,7 +1672,7 @@ def test_register_bootstrap_on_empty_table_without_token_returns_201_superadmin(
         email="primero@example.com",
         role=UserRole.SUPERADMIN,
     )
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.create_user = AsyncMock(return_value=fake_user)
     app.state.auth_service = fake_auth_service
 
@@ -1666,7 +1694,7 @@ def test_register_never_returns_an_invitation_token_in_the_response(client):
         email="sin-eco@example.com",
         role=UserRole.VIEWER,
     )
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.create_user = AsyncMock(return_value=fake_user)
     app.state.auth_service = fake_auth_service
 
@@ -1700,8 +1728,10 @@ def test_password_login_of_existing_user_still_works_after_invitation_gate(clien
     fake_user_in_db.name = None
     fake_user_in_db.avatar_url = None
     fake_user_in_db.totp_enabled = False
+    # deactivated_at explícito en None: ver _fake_user_in_db() más abajo.
+    fake_user_in_db.deactivated_at = None
 
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.get_user_by_email = AsyncMock(return_value=fake_user_in_db)
     fake_auth_service.verify_password = MagicMock(return_value=True)
     fake_auth_service.create_access_token = MagicMock(return_value="fake-jwt")
@@ -1725,7 +1755,7 @@ def test_google_callback_without_invitation_redirects_to_login_without_cookie(cl
     Un `Depends()` que explotara fuera del try convertiría esto en un 500
     (lección documentada del proyecto) — este test es el que lo detectaría."""
     app.state.google_oauth_enabled = True
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.resolve_or_create_google_user = AsyncMock(
         side_effect=InvitationRequiredError("sin-invitacion@example.com")
     )
@@ -1796,7 +1826,7 @@ def test_me_includes_onboarding_completed_at_read_from_the_database(client):
     mutable no va en un token inmutable (Decision 6). El fake del payload del
     JWT no trae el campo justamente para probar que no se lee de ahí."""
     user_id = "3f9a2b1c-1111-2222-3333-4444555566ff"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1817,7 +1847,7 @@ def test_me_of_a_user_that_already_completed_onboarding_returns_the_timestamp(cl
     llega con timestamp y el frontend no monta el gate."""
     user_id = "3f9a2b1c-1111-2222-3333-44445555670a"
     completed_at = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1837,7 +1867,7 @@ def test_onboarding_complete_returns_204_and_is_idempotent(client):
     dos llamadas seguidas responden 204 (la idempotencia real, "no pisa el
     timestamp", está verificada contra la base en test_auth_service.py)."""
     user_id = "3f9a2b1c-1111-2222-3333-44445555670b"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )
@@ -1856,7 +1886,7 @@ def test_onboarding_complete_returns_204_and_is_idempotent(client):
 
 def test_onboarding_complete_without_session_returns_401(client):
     """[Scenario: Sin sesión no se puede marcar onboarding]."""
-    app.state.auth_service = MagicMock()
+    app.state.auth_service = _auth_service_mock()
     client.cookies.clear()
 
     response = client.post("/auth/me/onboarding-complete")
@@ -1868,7 +1898,7 @@ def test_onboarding_complete_is_allowed_for_any_role_including_viewer(client):
     """Sin restricción de rol: cada usuario completa SU onboarding (el
     endpoint usa get_current_user, no require_min_role)."""
     user_id = "3f9a2b1c-1111-2222-3333-44445555670c"
-    fake_auth_service = MagicMock()
+    fake_auth_service = _auth_service_mock()
     fake_auth_service.decode_token_payload = MagicMock(
         return_value={"sub": user_id, "email": "g@example.com", "role": "viewer"}
     )

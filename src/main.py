@@ -53,6 +53,7 @@ from src.models.user import (
     TotpSetupResponse,
     TotpVerifyRequest,
     UserCreate,
+    UserListItem,
     UserProfile,
     UserProfileUpdate,
     UserPublic,
@@ -68,7 +69,10 @@ from src.services.spectrogram_service import get_spectrogram_service, LIVE_CHANN
 from src.services.event_bus import RedisPubSubBus
 from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
+    AccountDeactivatedError,
     AuthService,
+    CannotDeactivateSelfError,
+    CannotManageHigherOrEqualRoleError,
     EmailAlreadyRegisteredError,
     InvalidInvitationError,
     InvalidTokenError,
@@ -81,6 +85,9 @@ from src.services.auth_service import (
     TooManyTotpAttemptsError,
     TotpAlreadyEnabledError,
     TotpNotAvailableForGoogleOnlyUserError,
+    UserAlreadyDeactivatedError,
+    UserNotDeactivatedError,
+    UserNotFoundError,
 )
 from src.api.deps import (
     SESSION_COOKIE_NAME,
@@ -1047,6 +1054,27 @@ async def login(
             content={"error": "invalid credentials"},
         )
 
+    # (user-management, tarea 1.11, design.md Decision 3) Cuenta desactivada.
+    #
+    # Ubicación CRÍTICA, no reordenar: va DESPUÉS del bloque de credenciales
+    # inválidas y ANTES del de 2FA.
+    #
+    # * Después del 401: el 403 explícito sólo lo ve quien probó su identidad
+    #   con la password correcta. Emitirlo apenas se encuentra al usuario
+    #   convertiría el endpoint en un oráculo de enumeración — cualquiera
+    #   mandando {email, password: "x"} podría distinguir "existe y está
+    #   desactivada" de "no existe". El docstring de arriba compromete
+    #   explícitamente un mensaje indistinguible; esto no lo rompe.
+    # * Antes del 2FA: si no, una cuenta desactivada con totp_enabled=true
+    #   recibiría la cookie `pending_2fa_session` — una sesión parcial emitida
+    #   a alguien que no tiene acceso.
+    if user.deactivated_at is not None:
+        requests_total.labels(endpoint="/auth/login", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "account deactivated"},
+        )
+
     # (account-settings, tarea 3.3, design.md Decision 1) Login de dos pasos
     # cuando totp_enabled=true: password correcto por sí solo NO otorga
     # sesión completa. Se emite un JWT de pre-auth de vida corta en una
@@ -1381,6 +1409,138 @@ async def mark_invitation_email_sent(
         )
 
     requests_total.labels(endpoint="/auth/invitations/{id}/mark-sent", status="204").inc()
+
+
+# =============================================================================
+# user-management — administración de cuentas (listado + desactivar/reactivar)
+#
+# Los 3 endpoints viven acá y no en un router propio (design.md Decision 8):
+# los 6 de /auth/invitations ya están en este módulo y partir los de usuarios
+# dejaría el dominio auth en dos lugares. Todos con require_min_role(ADMIN)
+# existente — deps.py NO se toca por permisos.
+#
+# Verbo POST y no DELETE a propósito: desactivar NO borra, y DELETE ya
+# significa otra cosa en este proyecto (DELETE /account = hard-delete propio).
+#
+# Los labels de métrica son LITERALES (`/auth/users/{id}/deactivate`), sin
+# interpolar el UUID, para no explotar la cardinalidad de Prometheus — mismo
+# criterio que /auth/invitations/{id}/resend.
+# =============================================================================
+
+
+@app.get("/auth/users", response_model=list[UserListItem], tags=["auth"])
+async def list_users(
+    _admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> list[UserListItem]:
+    """
+    Listado completo de usuarios para administración: TODOS (incluidos
+    superadmins y el propio actor), con rol, origen (google/password), fecha
+    de alta y `deactivated_at` (null = activa). `list[UserListItem]` no puede
+    contener password_hash ni totp_secret por construcción del tipo —
+    [Requirement: Listado de usuarios para administración].
+    """
+    users = await auth_service.list_users()
+    requests_total.labels(endpoint="/auth/users", status="200").inc()
+    return users
+
+
+@app.post(
+    "/auth/users/{user_id}/deactivate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["auth"],
+)
+async def deactivate_user(
+    user_id: UUID,
+    admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    Soft-delete: setea `deactivated_at = now()` sin borrar nada. Bloquea los
+    TRES caminos de acceso (login password, login Google y las sesiones ya
+    emitidas, que mueren en el request siguiente) —
+    [Requirement: Desactivación de cuenta (soft-delete)].
+
+    Matriz de errores (design.md § Interfaces / Contracts): 409 auto-gestión,
+    404 inexistente, 403 jerarquía, 409 ya desactivada. Los guards son
+    server-side: la UI deshabilitando botones NO es el mecanismo de seguridad.
+    """
+    try:
+        await auth_service.deactivate_user(admin, user_id)
+    except CannotDeactivateSelfError:
+        # 409 y no 403: un superadmin tiene todo el permiso del mundo y aun
+        # así no puede — es un conflicto de estado, no de autorización.
+        requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "cannot deactivate your own account"},
+        )
+    except UserNotFoundError:
+        requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "user not found"},
+        )
+    except CannotManageHigherOrEqualRoleError:
+        requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "cannot manage a user with an equal or higher role"},
+        )
+    except UserAlreadyDeactivatedError:
+        requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "user already deactivated"},
+        )
+
+    requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="204").inc()
+
+
+@app.post(
+    "/auth/users/{user_id}/reactivate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["auth"],
+)
+async def reactivate_user(
+    user_id: UUID,
+    admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    auth_service: AuthService = Depends(_get_auth_service),
+):
+    """
+    Vuelve `deactivated_at` a NULL, restaurando el acceso por ambos caminos de
+    login — [Requirement: Reactivación de cuenta]. Misma matriz de errores que
+    deactivate, con 409 cuando la cuenta ya estaba activa (simetría con el 409
+    de desactivar dos veces).
+    """
+    try:
+        await auth_service.reactivate_user(admin, user_id)
+    except CannotDeactivateSelfError:
+        requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "cannot manage your own account"},
+        )
+    except UserNotFoundError:
+        requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "user not found"},
+        )
+    except CannotManageHigherOrEqualRoleError:
+        requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "cannot manage a user with an equal or higher role"},
+        )
+    except UserNotDeactivatedError:
+        requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "user is not deactivated"},
+        )
+
+    requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="204").inc()
 
 
 # =============================================================================
@@ -1828,6 +1988,15 @@ async def google_callback(
         # como viewer — incidente real reportado el 2026-08-06.
         requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
         return _google_error_redirect("google_no_invitation")
+    except AccountDeactivatedError:
+        # (user-management, tarea 1.12, Decision 5) La cuenta existe pero está
+        # desactivada. El servicio levanta la excepción ANTES de cualquier
+        # UPDATE, así que ni el refresco de name/avatar ni el auto-link de
+        # google_id llegan a ocurrir. Código sin prefijo `google_` a propósito:
+        # la causa no es del flujo de Google sino de la cuenta, y el frontend
+        # reusa el MISMO código para el 403 del login por password.
+        requests_total.labels(endpoint="/auth/google/callback", status="302").inc()
+        return _google_error_redirect("account_deactivated")
 
     access_token = auth_service.create_access_token(user)
 

@@ -19,7 +19,7 @@ Convenciones de este archivo:
 
 ## Phase 1: Backend — migración, servicio, enforcement y endpoints (+ tests)
 
-- [ ] 1.1 Crear `deploy/sql/migrations/012_user_deactivation.sql`:
+- [x] 1.1 Crear `deploy/sql/migrations/012_user_deactivation.sql`:
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;` con header
       de contexto (formato de 001–011: por qué nullable, qué significa NULL) y el rollback
       documentado al pie (`DROP COLUMN IF EXISTS`, advirtiendo que revertir reactiva a
@@ -27,34 +27,34 @@ Convenciones de este archivo:
       **AC**: re-ejecutarla dos veces seguidas no falla; `tests/conftest.py::_migrated` la
       toma sola por glob alfabético.
 
-- [ ] 1.2 `src/models/user.py`: agregar `deactivated_at: Optional[datetime] = None` a
+- [x] 1.2 `src/models/user.py`: agregar `deactivated_at: Optional[datetime] = None` a
       `UserInDB` (con default, mismo criterio que `totp_enabled`) y el modelo nuevo
       `UserListItem` (id, email, role, name, avatar_url, has_google, has_password,
       created_at, deactivated_at) — design.md Decision 9. Docstring explicando por qué NO
       se reusa `UserPublic`.
       **AC**: `UserListItem` no tiene forma de expresar `password_hash` ni `totp_secret`.
 
-- [ ] 1.3 `src/services/auth_service.py`: definir las 6 excepciones de dominio
+- [x] 1.3 `src/services/auth_service.py`: definir las 6 excepciones de dominio
       (`AccountDeactivatedError`, `UserNotFoundError`, `CannotDeactivateSelfError`,
       `CannotManageHigherOrEqualRoleError`, `UserAlreadyDeactivatedError`,
       `UserNotDeactivatedError`), en el mismo bloque y estilo que las existentes.
 
-- [ ] 1.4 `src/services/auth_service.py`: agregar `deactivated_at` al `SELECT` de
+- [x] 1.4 `src/services/auth_service.py`: agregar `deactivated_at` al `SELECT` de
       `get_user_by_email()` y `get_user_by_id()` (el guard del login password lo lee de
       `UserInDB`).
       **AC**: los tests existentes de login siguen verdes (columna nueva, sin cambio de
       comportamiento para activos).
 
-- [ ] 1.5 `src/services/auth_service.py`: implementar `is_user_active(user_id) -> bool`
+- [x] 1.5 `src/services/auth_service.py`: implementar `is_user_active(user_id) -> bool`
       (`SELECT deactivated_at FROM users WHERE id = $1`; fila inexistente ⇒ False).
 
-- [ ] 1.6 `src/services/auth_service.py`: implementar `list_users() -> list[UserListItem]`
+- [x] 1.6 `src/services/auth_service.py`: implementar `list_users() -> list[UserListItem]`
       derivando `has_google`/`has_password` en la query (`google_id IS NOT NULL`,
       `password_hash IS NOT NULL`), orden `created_at DESC`.
       **AC**: [Requirement: Listado de usuarios para administración / Scenario: Un admin
       lista los usuarios].
 
-- [ ] 1.7 `src/services/auth_service.py`: implementar `deactivate_user(actor, target_id)`
+- [x] 1.7 `src/services/auth_service.py`: implementar `deactivate_user(actor, target_id)`
       con los 4 guards EN ORDEN (self → not found → jerarquía → ya desactivado), dentro de
       una transacción con `SELECT ... FOR UPDATE` sobre la fila objetivo para serializar
       dos desactivaciones concurrentes.
@@ -63,18 +63,18 @@ Convenciones de este archivo:
       [Scenario: Nadie puede desactivarse a sí mismo], [Scenario: Un admin no puede
       desactivar a otro admin ni a un superadmin].
 
-- [ ] 1.8 `src/services/auth_service.py`: implementar `reactivate_user(actor, target_id)`
+- [x] 1.8 `src/services/auth_service.py`: implementar `reactivate_user(actor, target_id)`
       (guards de existencia y jerarquía; 409 si ya está activa).
       **AC**: [Requirement: Reactivación de cuenta] y sus dos escenarios.
 
-- [ ] 1.9 `src/services/auth_service.py`: guard en `resolve_or_create_google_user()` —
+- [x] 1.9 `src/services/auth_service.py`: guard en `resolve_or_create_google_user()` —
       levantar `AccountDeactivatedError` DESPUÉS de resolver al usuario (por `google_id` o
       por email) y ANTES de cualquier `UPDATE` (refresco de name/avatar y auto-link de
       `google_id`).
       **AC**: [Scenario: Auto-link no se aplica a cuentas desactivadas] — `google_id`
       sigue en NULL tras el intento.
 
-- [ ] 1.10 `src/api/deps.py`: en `get_current_user()`, tras `decode_access_token()`,
+- [x] 1.10 `src/api/deps.py`: en `get_current_user()`, tras `decode_access_token()`,
       llamar a `auth_service.is_user_active(user.id)` y responder el 401 genérico
       existente ("not authenticated") si es False. NO tocar
       `get_current_user_optional()` — hereda el bloqueo por delegación, y agregarle un
@@ -84,7 +84,7 @@ Convenciones de este archivo:
       de una cuenta borrada también muere], [Scenario: Endpoint público con
       personalización trata al desactivado como anónimo].
 
-- [ ] 1.11 `src/main.py`: guard en `POST /auth/login` entre el bloque de credenciales
+- [x] 1.11 `src/main.py`: guard en `POST /auth/login` entre el bloque de credenciales
       inválidas y el de `totp_enabled` — 403 `{"error": "account deactivated"}` SOLO con
       password verificada; con password incorrecta, el 401 genérico intacto. Métrica
       `requests_total.labels(endpoint="/auth/login", status="403")`.
@@ -92,38 +92,38 @@ Convenciones de este archivo:
       Login con password incorrecta de cuenta desactivada no filtra estado], [Scenario:
       Cuenta desactivada con 2FA habilitado tampoco recibe pre-auth].
 
-- [ ] 1.12 `src/main.py`: capturar `AccountDeactivatedError` en `google_callback()` y
+- [x] 1.12 `src/main.py`: capturar `AccountDeactivatedError` en `google_callback()` y
       devolver `_google_error_redirect("account_deactivated")`, junto al `except
       InvitationRequiredError` existente.
       **AC**: [Scenario: Google login de cuenta desactivada] — 302, sin Set-Cookie.
 
-- [ ] 1.13 `src/main.py`: agregar `GET /auth/users` con
+- [x] 1.13 `src/main.py`: agregar `GET /auth/users` con
       `require_min_role(UserRole.ADMIN)` y `response_model=list[UserListItem]`, con
       métricas del patrón existente.
 
-- [ ] 1.14 `src/main.py`: agregar `POST /auth/users/{user_id}/deactivate` y
+- [x] 1.14 `src/main.py`: agregar `POST /auth/users/{user_id}/deactivate` y
       `POST /auth/users/{user_id}/reactivate` (204 en éxito), mapeando las excepciones a
       la matriz de status de design.md (404/403/409) con shape `{"error": ...}`. Labels de
       métrica literales (`/auth/users/{id}/deactivate`), sin interpolar el UUID.
       **AC**: matriz completa de `design.md` § Interfaces / Contracts.
 
-- [ ] 1.15 `tests/unit/test_deps.py`: extender los fakes de `auth_service` con
+- [x] 1.15 `tests/unit/test_deps.py`: extender los fakes de `auth_service` con
       `is_user_active` y agregar casos de cuenta desactivada / fila inexistente.
       **AC**: la suite existente de deps vuelve a verde (esta tarea es trabajo
       planificado, no un imprevisto: todo fake de auth_service necesita el método nuevo).
 
-- [ ] 1.16 `tests/unit/test_user_management.py` (nuevo, Postgres real vía `db_pool` de
+- [x] 1.16 `tests/unit/test_user_management.py` (nuevo, Postgres real vía `db_pool` de
       `tests/conftest.py`): guards de jerarquía y self, transiciones, doble desactivación,
       `is_user_active` con fila inexistente, y el contrato de no-lockout (imposible dejar
       el sistema sin superadmin activo).
 
-- [ ] 1.17 `tests/integration/test_users_api.py` (nuevo): los 3 endpoints con la matriz
+- [x] 1.17 `tests/integration/test_users_api.py` (nuevo): los 3 endpoints con la matriz
       completa de status; bloqueo de login password (403 vs 401 no-enumerante, y el caso
       2FA); sesión viva que muere en el request siguiente; `/report` tratando al
       desactivado como anónimo; callback de Google con `account_deactivated` sin
       Set-Cookie ni UPDATE.
 
-- [ ] 1.18 Correr la suite backend completa (`pytest`) + `ruff`/`black`/`mypy` según el
+- [x] 1.18 Correr la suite backend completa (`pytest`) + `ruff`/`black`/`mypy` según el
       pipeline del proyecto. Sin build de frontend en esta fase.
 
 ## Phase 2: Frontend — pestaña Usuarios, i18n y tests
