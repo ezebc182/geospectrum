@@ -157,7 +157,7 @@ Convenciones de este archivo:
       **AC**: [Scenario: Un admin abre la pestaña de usuarios], [Scenario: Deep-link a una
       pestaña desconocida].
 
-- [ ] 2.6 (OPCIONAL, sujeto a decisión del usuario — Open Question del design) Crear
+- [ ] 2.6 (CONFIRMADA por el usuario el 2026-08-13 — ya no es opcional; la Open Question del design queda CERRADA: sí se quiere el redirect) Crear
       `dashboard/app/(app)/admin/users/page.tsx` como redirect a
       `/admin/access?tab=users`, mismo patrón que las redirecciones de `/beta` y
       `/admin/invitations`.
