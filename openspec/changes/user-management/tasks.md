@@ -177,19 +177,49 @@ Convenciones de este archivo:
 
 ## Phase 3: Verificación y rollout
 
-- [ ] 3.1 Aplicar la migración 012 en local (Postgres del stack, puerto **5433**) y
+- [x] 3.1 Aplicar la migración 012 en local (Postgres del stack, puerto **5433**) y
       confirmar que `scripts/apply_migrations.py` la toma al arranque de la API sin errores
       ni downtime.
+      **VERIFICADO** (2026-08-14, container `timescaledb`, base/usuario `seismic`):
+      el runner la toma sola por glob alfabético ("Aplicando migración
+      012_user_deactivation.sql" → "Migraciones al día (13 archivos)"). Columna creada como
+      `timestamp with time zone` nullable, sin default. Idempotencia confirmada: segunda
+      corrida sin errores y sin pisar datos. Los 2 usuarios preexistentes quedaron con
+      `deactivated_at IS NULL` (activos) — cero backfill, nadie perdió acceso. Arranque de
+      la API con `RUN_MIGRATIONS_ON_STARTUP=true` (el camino exacto de Railway): log
+      "Migraciones aplicadas al arranque" + "Application startup complete", sin downtime.
 
 - [ ] 3.2 Verificación manual end-to-end en local, en la pantalla que usa el usuario
       (`/admin/access?tab=users`, no solo por API): desactivar una cuenta de prueba y
       comprobar los TRES bloqueos — (a) login password, (b) login Google, (c) sesión ya
       abierta en otra pestaña muere al siguiente request. Después reactivarla y verificar
       que ambos caminos de login vuelven a funcionar.
+      **PENDIENTE DEL USUARIO** — requiere navegador y consentimiento real de Google.
+      Adelantado por API el 2026-08-14 (10 OK / 0 FAIL), para que la verificación visual
+      no arranque de cero:
+      - (a) login password: cuenta desactivada con password CORRECTA → 403; con password
+        incorrecta → 401 (no filtra el estado, no enumera).
+      - (c) sesión ya emitida: el MISMO token que devolvía 200 en `/auth/me` pasa a 401 en
+        el request siguiente a la desactivación, sin esperar a que expire el JWT.
+      - `/report` (endpoint público con personalización) trata al desactivado como anónimo:
+        200, no 500.
+      - Reactivación: login password vuelve a 200 y una sesión nueva funciona.
+      FALTA verificar en pantalla: (b) el login con Google, el copy traducido del error, y
+      que la pestaña Usuarios se vea y opere bien.
 
-- [ ] 3.3 Verificar por API directa (curl, sin pasar por la UI) que los guards de
+- [x] 3.3 Verificar por API directa (curl, sin pasar por la UI) que los guards de
       jerarquía y auto-desactivación rechazan aunque los botones estén deshabilitados —
       la UI no es el mecanismo de seguridad.
+      **VERIFICADO** (2026-08-14, API local en :8099 contra Postgres real, con 4 usuarios
+      de prueba sembrados y borrados al terminar). **15 OK / 0 FAIL**: auto-desactivación
+      de admin y de superadmin → 409; admin contra otro admin y contra superadmin → 403;
+      inexistente → 404; admin sobre viewer → 204; doble desactivación → 409; reactivar →
+      204 y reactivar lo ya activo → 409; superadmin SÍ alcanza a un admin (204/204);
+      viewer no lista ni desactiva → 403; anónimo → 401; admin lista → 200.
+      NOTA para reproducirlo: la cookie `session` sale con flag `Secure`, así que contra
+      `http://127.0.0.1` curl (y el navegador) la descartan. Hay que extraer el token del
+      `Set-Cookie` y mandarlo con `-H "Cookie: session=..."`. No es un bug: en producción
+      viaja por HTTPS.
 
 - [ ] 3.4 Deploy: backend (Railway) primero, dashboard (Vercel) después — la columna y los
       endpoints deben existir antes de que la UI los llame.
