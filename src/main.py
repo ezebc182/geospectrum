@@ -1448,13 +1448,20 @@ async def list_users(
 @app.post(
     "/auth/users/{user_id}/deactivate",
     status_code=status.HTTP_204_NO_CONTENT,
+    # `response_model=None` es OBLIGATORIO acá: sin esto FastAPI infiere el
+    # response_model desde la anotación de retorno (Optional[JSONResponse]),
+    # concluye que la ruta tiene cuerpo y revienta al IMPORTAR el módulo con
+    # "Status code 204 must not have a response body". La anotación describe
+    # las ramas de error (que sí responden 403/404/409 con cuerpo); el 204 del
+    # camino feliz no tiene ninguno. Los tests lo detectan, mypy solo no.
+    response_model=None,
     tags=["auth"],
 )
 async def deactivate_user(
     user_id: UUID,
     admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
     auth_service: AuthService = Depends(_get_auth_service),
-):
+) -> Optional[JSONResponse]:
     """
     Soft-delete: setea `deactivated_at = now()` sin borrar nada. Bloquea los
     TRES caminos de acceso (login password, login Google y las sesiones ya
@@ -1495,18 +1502,25 @@ async def deactivate_user(
         )
 
     requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="204").inc()
+    # `return None` explícito y no caída por el borde: el tipo de retorno es
+    # Optional[JSONResponse] porque las ramas de error SÍ devuelven un cuerpo.
+    # En el camino feliz FastAPI emite el 204 sin cuerpo, que es lo correcto:
+    # un 204 con payload es una contradicción del protocolo.
+    return None
 
 
 @app.post(
     "/auth/users/{user_id}/reactivate",
     status_code=status.HTTP_204_NO_CONTENT,
+    # Ver el comentario simétrico en el decorador de deactivate_user().
+    response_model=None,
     tags=["auth"],
 )
 async def reactivate_user(
     user_id: UUID,
     admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
     auth_service: AuthService = Depends(_get_auth_service),
-):
+) -> Optional[JSONResponse]:
     """
     Vuelve `deactivated_at` a NULL, restaurando el acceso por ambos caminos de
     login — [Requirement: Reactivación de cuenta]. Misma matriz de errores que
@@ -1541,6 +1555,8 @@ async def reactivate_user(
         )
 
     requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="204").inc()
+    # Ver el comentario simétrico en deactivate_user().
+    return None
 
 
 # =============================================================================
