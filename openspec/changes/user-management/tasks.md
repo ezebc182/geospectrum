@@ -221,9 +221,37 @@ Convenciones de este archivo:
       `Set-Cookie` y mandarlo con `-H "Cookie: session=..."`. No es un bug: en producción
       viaja por HTTPS.
 
-- [ ] 3.4 Deploy: backend (Railway) primero, dashboard (Vercel) después — la columna y los
+- [x] 3.4 Deploy: backend (Railway) primero, dashboard (Vercel) después — la columna y los
       endpoints deben existir antes de que la UI los llame.
+      **HECHO** (2026-08-14) con una salvedad de proceso que conviene registrar: el orden
+      backend→dashboard NO es controlable con la configuración actual. Los DOS servicios
+      deployan automáticamente desde `main` (Railway servicio `api`, branch `main`; Vercel
+      `geospectrum-dashboard`, promueve a Production sólo desde `main`), y ambos commits
+      —backend `929f7b4` y frontend `9cc5a2e`— viven en la misma rama. Mergear a `main`
+      dispara los dos a la vez. Para respetar el orden habría que separar los commits en
+      dos merges. El usuario optó por el merge completo el 2026-08-14.
+      Merge fast-forward `e5c239a..356f692`, sin conflictos ni merge commit.
+      `RUN_MIGRATIONS_ON_STARTUP=true` ya estaba seteado en el servicio `api`, así que la
+      012 se aplicó sola al arrancar (mismo camino verificado en local en la 3.1).
+      Nota para futuros deploys: los pushes a ramas que no son `main` generan un Preview de
+      Vercel aislado; `geospectrum.org` no se toca. Sirve para QA sin exponer producción.
 
 - [ ] 3.5 Smoke en producción: listar usuarios como admin, desactivar y reactivar una
       cuenta de prueba, y confirmar que ningún usuario legítimo perdió acceso
       (`deactivated_at IS NULL` para todas las filas preexistentes).
+      **PARCIAL** (2026-08-14) — smokes automatizables verdes, el resto es del usuario.
+      Verificado sin sesión contra `https://api.geospectrum.org`:
+      - `/health` → 200.
+      - `/auth/users` → **401 y no 404**: el endpoint existe, el deploy llegó.
+      - `/auth/me` → **401 y no 500**: la prueba indirecta de que la migración 012 corrió.
+        Si `deactivated_at` no existiera, el `is_user_active()` de `get_current_user()`
+        (tarea 1.10) reventaría con "column does not exist" y esto sería 500. Es el
+        canario del deploy: 500 acá = migración no aplicada = rollback inmediato.
+      - `/report?area=chile` → 200: el endpoint público con personalización sigue vivo, sin
+        regresión del bug histórico de los 500.
+      - `https://geospectrum.org` → 200; `/admin/users` → 307 a `/login` (la ruta de la
+        tarea 2.6 existe y el middleware la protege).
+      FALTA (requiere sesión de admin y navegador): listar usuarios en
+      `/admin/access?tab=users`, desactivar y reactivar una cuenta de prueba real, y
+      confirmar por consulta directa a la base de producción que todas las filas
+      preexistentes tienen `deactivated_at IS NULL`.
