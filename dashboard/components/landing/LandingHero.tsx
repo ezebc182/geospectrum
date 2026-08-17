@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useFormatter, useNow, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { Activity, ArrowRight, Languages, Radio } from 'lucide-react';
 
@@ -125,6 +125,13 @@ interface LandingHeroProps {
 export function LandingHero({ onToggleLocale }: LandingHeroProps) {
   const t = useTranslations('landing');
   const format = useFormatter();
+  // "hace X minutos" de los últimos sismos: el `now` va explícito por la misma
+  // razón que en el Dashboard —sin él, servidor y cliente miden contra
+  // instantes distintos y el markup no coincide al hidratar—, y acá pesa más
+  // porque esta es la landing pública. 60s de intervalo: los relativos que se
+  // muestran son de minutos/horas, así que refrescar más seguido no cambiaría
+  // el texto.
+  const now = useNow({ updateInterval: 60000 });
   const heroRef = useRef<HTMLDivElement>(null);
   const [globeHeight, setGlobeHeight] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -220,10 +227,14 @@ export function LandingHero({ onToggleLocale }: LandingHeroProps) {
         buildSpotlightCard(
           evento,
           t('hero.depthShort'),
-          format.relativeTime(new Date(evento.hora_utc)),
+          format.relativeTime(new Date(evento.hora_utc), now),
         ),
     };
-  }, [spotlight, t, format]);
+    // `now` va en las deps porque el render del card lo CONSUME: sin él el memo
+    // se quedaría con el relativo del primer render y el "hace X" del globo
+    // nunca envejecería —la misma trampa de leer un valor cambiante sin
+    // declararlo que ya nos costó un efecto que corría una sola vez.
+  }, [spotlight, t, format, now]);
 
   return (
     <section ref={heroRef} className="relative min-h-dvh overflow-hidden">
@@ -341,7 +352,7 @@ export function LandingHero({ onToggleLocale }: LandingHeroProps) {
                   <dt className="sr-only">{t('hero.statsLast')}</dt>
                   <dd>
                     {t('hero.statsLast')}{' '}
-                    {format.relativeTime(new Date(stats.masReciente.hora_utc))}
+                    {format.relativeTime(new Date(stats.masReciente.hora_utc), now)}
                   </dd>
                 </div>
               </dl>
@@ -377,7 +388,7 @@ export function LandingHero({ onToggleLocale }: LandingHeroProps) {
                         {evento.lugar ?? `${evento.lat.toFixed(1)}, ${evento.lon.toFixed(1)}`}
                       </span>
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        {format.relativeTime(new Date(evento.hora_utc))}
+                        {format.relativeTime(new Date(evento.hora_utc), now)}
                       </span>
                     </li>
                   ))}

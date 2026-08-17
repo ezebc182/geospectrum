@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useFormatter, useNow, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
 import { getActiveArea } from '@/lib/areas';
@@ -31,6 +31,14 @@ export default function DashboardPage() {
   // formatTimeAgo casero de lib/utils (que hardcodea el español): así el
   // relativo sigue al locale activo sin duplicar lógica de unidades.
   const format = useFormatter();
+  // El "ahora" contra el que se mide el relativo es EXPLÍCITO, no el Date.now()
+  // implícito de relativeTime(): sin él, servidor y cliente resuelven un
+  // instante distinto y el markup no coincide al hidratar (de ahí el
+  // ENVIRONMENT_FALLBACK que avisaba next-intl). Además `updateInterval` hace
+  // que el cartel envejezca solo: con el Date.now() implícito el texto se
+  // congelaba, porque sólo se re-evaluaba si SWR devolvía un timestamp nuevo
+  // —y un dashboard que dice "hace 2 minutos" durante veinte miente.
+  const now = useNow({ updateInterval: 30000 });
   // Fusión de Dashboard + En Vivo (2026-08-05): antes eran dos páginas casi
   // iguales por debajo, con un mapa más pobre en /live (SeismicMapWithCities,
   // sin capas ni sync tabla→mapa). El control de cadencia de refresco de
@@ -155,7 +163,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Clock className="h-4 w-4" />
             <span className="font-data">
-              {t('updated', { ago: format.relativeTime(new Date(timestamp_utc_generacion)) })}
+              {t('updated', { ago: format.relativeTime(new Date(timestamp_utc_generacion), now) })}
             </span>
           </div>
           <select
