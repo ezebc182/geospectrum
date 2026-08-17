@@ -169,8 +169,14 @@ async def test_admin_cannot_invite_superadmin(service, db_pool, admin):
 
 
 async def test_superadmin_can_invite_superadmin(service, superadmin):
-    """El guard compara NIVELES, no prohíbe el rol: un superadmin sí puede
-    invitar a otro superadmin (mismo nivel, no superior)."""
+    """LA EXCEPCIÓN de la decisión 9, y sigue verde SIN UNA LÍNEA MODIFICADA
+    tras el endurecimiento a `>=`.
+
+    Un superadmin sí puede invitar a otro superadmin: es la única puerta que
+    queda para nombrar un segundo superadmin por la aplicación (el bootstrap
+    sólo dispara con la tabla `users` vacía y el cambio de rol está bloqueado
+    por el guard dedicado). Crear un par sí; degradar un par, nunca.
+    """
     invitation = await service.create_invitation(
         email="otro-super@example.com", role=UserRole.SUPERADMIN, invited_by=superadmin
     )
@@ -178,10 +184,36 @@ async def test_superadmin_can_invite_superadmin(service, superadmin):
     assert invitation.role is UserRole.SUPERADMIN
 
 
-@pytest.mark.parametrize("role", [UserRole.ADMIN, UserRole.MODERADOR, UserRole.VIEWER])
-async def test_admin_can_invite_own_level_and_below(service, admin, role):
-    # Prefijo "invitado-": sin él, el caso `admin` chocaría con la cuenta real
-    # del fixture `admin` (admin@example.com) y fallaría por email ya registrado.
+async def test_admin_cannot_invite_own_level(service, db_pool, admin):
+    """[Scenario: Un admin YA NO puede invitar a otro admin] — decisión 8, el
+    caso INVERTIDO.
+
+    Va desdoblado del parametrize de abajo a propósito: el caso límite "propio
+    nivel" es el ÚNICO que cambia de resultado respecto de producción, y
+    diluido entre otros dos roles que siguen dando 201 nadie lo lee. Este
+    rechazo es la evidencia de que el cambio de comportamiento es deliberado.
+
+    Cerraba el bypass: un admin al que se le prohíbe promover a alguien a
+    admin lograba lo mismo invitando una cuenta nueva con rol admin.
+    """
+    with pytest.raises(CannotInviteHigherRoleError):
+        await service.create_invitation(
+            email="invitado-admin@example.com", role=UserRole.ADMIN, invited_by=admin
+        )
+
+    async with db_pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM invitations")
+    assert count == 0
+
+
+@pytest.mark.parametrize("role", [UserRole.MODERADOR, UserRole.VIEWER])
+async def test_admin_can_still_invite_below_its_own_level(service, admin, role):
+    """[Scenario: Un admin sigue pudiendo invitar moderadores y viewers] —
+    no-regresión: son niveles ESTRICTAMENTE menores y no cambian.
+
+    Prefijo "invitado-": sin él chocaría con las cuentas reales de los
+    fixtures y fallaría por email ya registrado.
+    """
     invitation = await service.create_invitation(
         email=f"invitado-{role.value}@example.com", role=role, invited_by=admin
     )
@@ -241,11 +273,15 @@ async def test_create_invitation_allowed_again_after_previous_one_revoked(servic
     )
     await service.revoke_invitation(first.id)
 
+    # El rol de la segunda sólo tiene que ser DISTINTO del de la primera, para
+    # que el assert pruebe que se creó una invitación nueva y no se reusó la
+    # revocada. Era ADMIN y pasó a MODERADOR por la decisión 8: un admin ya no
+    # invita a su propio nivel, y este test no es sobre el guard de escalación.
     second = await service.create_invitation(
-        email="revocada-y-nueva@example.com", role=UserRole.ADMIN, invited_by=admin
+        email="revocada-y-nueva@example.com", role=UserRole.MODERADOR, invited_by=admin
     )
 
-    assert second.role is UserRole.ADMIN
+    assert second.role is UserRole.MODERADOR
 
 
 async def test_two_concurrent_creates_for_same_email_produce_exactly_one_pending(

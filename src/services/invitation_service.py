@@ -113,9 +113,19 @@ class InvitationAlreadyAcceptedError(Exception):
 
 
 class CannotInviteHigherRoleError(Exception):
-    """Guard de escalación: nadie invita a un rol de nivel superior al
-    propio (un admin no se fabrica un superadmin por interpósita
-    invitación) -> 403."""
+    """Guard de escalación al crear una invitación -> 403.
+
+    [role-management, decisión 9] La regla vigente es: nadie invita un rol de
+    nivel IGUAL O SUPERIOR al propio, EXCEPTO un superadmin invitando a otro
+    superadmin. Antes de este change la comparación era `>` estricta, o sea
+    que se permitía invitar al PROPIO nivel (un admin invitaba a otro admin);
+    ese `>` era la puerta por la que se rodeaba el guard de asignación de rol.
+
+    El nombre conserva el "Higher" por decisión explícita: renombrarlo a
+    `...HigherOrEqual...` sería más honesto pero es otro rename transversal
+    por un carácter, y el mensaje de la excepción no cambia. La verdad vive
+    acá y en el comentario de `create_invitation()`.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +234,10 @@ class InvitationService:
     ) -> InvitationWithToken:
         """Crea una invitación y retorna el token en claro — la ÚNICA vez.
 
-        Guard de escalación ANTES de tocar la base: nadie invita un rol de
-        nivel superior al propio (role_level, jerarquía existente).
+        Guard de escalación ANTES de tocar la base (una invitación rechazada
+        no deja ninguna fila): nadie invita un rol de nivel IGUAL O SUPERIOR
+        al propio, EXCEPTO un superadmin invitando a otro superadmin —
+        role-management, decisión 9. Ver el comentario largo del guard.
 
         Los chequeos de "email ya registrado" y "pendiente vigente duplicada"
         y el INSERT corren en UNA transacción serializada por un advisory
@@ -248,7 +260,34 @@ class InvitationService:
         # sea el mismo 409 acá y en el register.
         from src.services.auth_service import EmailAlreadyRegisteredError
 
-        if role_level(role) > role_level(invited_by.role):
+        # [role-management, decisión 9 del usuario] Guard de escalación: nadie
+        # invita un rol de nivel IGUAL O SUPERIOR al propio, EXCEPTO un
+        # superadmin invitando a otro superadmin.
+        #
+        # El `>=` alinea esta puerta con la del cambio de rol
+        # (`AuthService.change_user_role()`, guard 5): dejarlas con reglas
+        # distintas convertía la regla de escalación en una formalidad — un
+        # admin al que se le prohíbe promover a alguien a admin lograba el
+        # mismo resultado invitando una cuenta nueva con rol admin. Un control
+        # que se rodea cambiando de endpoint no es un control.
+        #
+        # LA EXCEPCIÓN superadmin→superadmin ES DELIBERADA Y NO SE "CORRIGE"
+        # por prolijidad. Sin ella nadie podría nombrar un segundo superadmin
+        # por ninguna vía de la aplicación: el bootstrap
+        # (`_determine_bootstrap_role()`) sólo dispara con la tabla `users`
+        # VACÍA, y el cambio de rol está bloqueado por el guard dedicado
+        # `CannotChangeSuperadminRoleError`. El único camino restante sería un
+        # `UPDATE` a mano contra producción.
+        #
+        # La asimetría con el cambio de rol es el punto: un superadmin PUEDE
+        # invitar a otro superadmin (crear un par) pero NO puede cambiarle el
+        # rol a otro superadmin (degradar un par). Crear sí, degradar nunca —
+        # eso mantiene intacto el contrato de no-lockout dejando una puerta
+        # legítima para el segundo superadmin.
+        invites_a_peer_superadmin = (
+            invited_by.role is UserRole.SUPERADMIN and role is UserRole.SUPERADMIN
+        )
+        if role_level(role) >= role_level(invited_by.role) and not invites_a_peer_superadmin:
             raise CannotInviteHigherRoleError(
                 f"{invited_by.role.value} cannot invite role {role.value}"
             )
