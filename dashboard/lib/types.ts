@@ -124,6 +124,18 @@ export const ROLE_LEVEL: Record<UserRole, number> = {
   viewer: 0,
 };
 
+/** Orden de PRESENTACIÓN de los roles en un selector, de mayor a menor
+ * privilegio. Es sólo orden de render: el filtro de qué roles puede otorgar
+ * cada actor es aparte (ver `assignableRoles` en UsersPanel, que usa `<`
+ * ESTRICTO sobre ROLE_LEVEL). */
+export const ROLE_ORDER: UserRole[] = ['superadmin', 'admin', 'moderador', 'viewer'];
+
+/** Body de `POST /auth/users/{user_id}/role`. El backend valida contra su
+ * propio enum: un rol inexistente es 422, no un guard. */
+export interface RoleChangePayload {
+  role: UserRole;
+}
+
 /** Shape de usuario devuelto por /auth/register, /auth/login y /auth/me.
  *
  * name/avatar_url (extensión google-oauth, migración 004): solo presentes

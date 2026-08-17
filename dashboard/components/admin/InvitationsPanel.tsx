@@ -139,12 +139,37 @@ export function InvitationsPanel() {
   const sessionLost =
     error instanceof ApiStatusError && (error.status === 401 || error.status === 403);
 
-  // Roles que el usuario actual puede otorgar: nivel <= al propio (espejo
-  // del guard de escalación del backend, que es el enforcement real).
-  const grantableRoles = React.useMemo(
-    () => (user ? ALL_ROLES.filter((r) => ROLE_LEVEL[r] <= ROLE_LEVEL[user.role]) : []),
-    [user],
-  );
+  // Roles que el usuario actual puede otorgar por INVITACIÓN, espejo del guard
+  // endurecido del backend (invitation_service, decisión 9 de role-management):
+  // nadie invita un rol de nivel IGUAL O SUPERIOR al propio, EXCEPTO un
+  // superadmin invitando a otro superadmin.
+  //
+  // Esa asimetría es DELIBERADA y no hay que "corregirla": un superadmin SÍ
+  // puede invitar a otro superadmin (crear un par, la única puerta legítima
+  // para nombrar un segundo superadmin sin un UPDATE a mano contra producción,
+  // porque el bootstrap sólo dispara con la tabla users vacía), pero NO puede
+  // cambiarle el rol a otro superadmin (guard dedicado del backend). Crear un
+  // par sí; degradar un par, nunca.
+  //
+  // Y por eso este filtro NO es el mismo que `assignableRoles` de UsersPanel,
+  // que es `<` estricto sin excepciones. El enforcement real es el backend.
+  const grantableRoles = React.useMemo(() => {
+    if (!user) {
+      return [];
+    }
+    return ALL_ROLES.filter(
+      (r) =>
+        ROLE_LEVEL[r] < ROLE_LEVEL[user.role] ||
+        (user.role === 'superadmin' && r === 'superadmin'),
+    );
+  }, [user]);
+
+  // El default del form tiene que pertenecer al conjunto ofrecido: si no, el
+  // submit mandaría un rol que el backend va a rechazar con 403 sin que el
+  // usuario haya elegido nada. Con el mínimo (`viewer`) siempre presente para
+  // cualquier actor con permiso de invitar (admin+), el fallback es defensivo,
+  // no un caso alcanzable hoy.
+  const effectiveRole = grantableRoles.includes(role) ? role : (grantableRoles[0] ?? null);
 
   /** Resuelve label/detalle/ok de un paso en el idioma ACTIVO. */
   function stepView(step: StepOutcome): { ok: boolean; label: string; detail: string } {
@@ -211,9 +236,17 @@ export function InvitationsPanel() {
     setSteps(null);
     setCreating(true);
 
+    if (effectiveRole === null) {
+      // Sin ningún rol otorgable no hay submit posible. No es alcanzable hoy
+      // (el mínimo para invitar es admin, que siempre conserva moderador y
+      // viewer), pero el componente no debe depender de esa coincidencia.
+      setCreating(false);
+      return;
+    }
+
     let invitation: InvitationWithToken;
     try {
-      invitation = await createInvitation(email, role, emailLocale);
+      invitation = await createInvitation(email, effectiveRole, emailLocale);
     } catch (err: unknown) {
       setSteps([{ kind: 'notCreated', errorKey: createErrorKey(err) }]);
       setCreating(false);
@@ -305,7 +338,8 @@ export function InvitationsPanel() {
                   las teclas — memoria del proyecto). */}
               <select
                 id="invitation-role"
-                value={role}
+                value={effectiveRole ?? ''}
+                disabled={effectiveRole === null}
                 onChange={(event) => setRole(event.target.value as UserRole)}
                 className="flex h-9 w-40 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -337,7 +371,7 @@ export function InvitationsPanel() {
                 ))}
               </select>
             </div>
-            <Button type="submit" className="min-h-9" disabled={creating}>
+            <Button type="submit" className="min-h-9" disabled={creating || effectiveRole === null}>
               {creating ? t('inviting') : t('invite')}
             </Button>
           </form>

@@ -468,6 +468,16 @@
         "self": "You cannot deactivate your own account.",
         "hierarchy": "You cannot manage an account with a role equal to or higher than yours."
       },
+      "roleLabel": "Role for {email}",
+      "roleDisabledReason": {
+        "self": "You cannot change the role of your own account.",
+        "hierarchy": "You cannot change the role of an account with a role equal to or higher than yours."
+      },
+      "roleDialogTitle": "Change this role?",
+      "roleDialogDescription": "You are about to change the role of <mono>{email}</mono> from <strong>{from}</strong> to <strong>{to}</strong>. The change takes effect immediately, even on sessions that are already open.",
+      "roleCancel": "Cancel",
+      "roleConfirm": "Change role",
+      "accessRevoked": "Your role changed and you no longer have permission to view this list. If you think this is a mistake, contact an administrator.",
       "deactivateDialogTitle": "Deactivate this account?",
       "deactivateDialogDescription": "<mono>{email}</mono> loses access immediately: they will not be able to sign in with a password or with Google, and any open session dies on the next request. No data is deleted — you can reactivate the account at any time.",
       "deactivateCancel": "Cancel",
@@ -478,7 +488,8 @@
         "notFound": "That account no longer exists. Refresh the list.",
         "conflict": "That account is already in that state. Refresh the list.",
         "deactivateGeneric": "Could not deactivate {email}. Try again in a few seconds.",
-        "reactivateGeneric": "Could not reactivate {email}. Try again in a few seconds."
+        "reactivateGeneric": "Could not reactivate {email}. Try again in a few seconds.",
+        "roleGeneric": "Could not change the role of {email}. Try again in a few seconds."
       }
     }
   },

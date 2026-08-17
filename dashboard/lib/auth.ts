@@ -491,6 +491,29 @@ export async function reactivateUser(userId: string): Promise<void> {
   }
 }
 
+/**
+ * Cambia el rol de una cuenta (204). Errores de la matriz del backend:
+ * 409 auto-gestión ("cannot change your own account role"), 404 inexistente,
+ * 403 jerarquía del TARGET, 403 superadmin intocable, 403 rol PEDIDO igual o
+ * superior al propio, 409 no-op ("user already has that role"), 422 rol
+ * inexistente en el body.
+ */
+export async function changeUserRole(userId: string, role: UserRole): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/role`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+
+  if (!response.ok) {
+    throw new ApiStatusError(
+      response.status,
+      await readErrorMessage(response, 'no se pudo cambiar el rol'),
+    );
+  }
+}
+
 /** Input del paso 2 — exactamente lo que devolvió `createInvitation()` /
  * `resendInvitation()`, con los nombres que espera la route de Next. */
 export interface SendInvitationEmailInput {

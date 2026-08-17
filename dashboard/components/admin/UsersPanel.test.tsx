@@ -33,6 +33,7 @@ vi.mock('@/lib/auth', async () => {
     listUsers: vi.fn(),
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
+    changeUserRole: vi.fn(),
   };
 });
 
@@ -41,18 +42,31 @@ vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => mockedUseAuth(),
 }));
 
-import { ApiStatusError, deactivateUser, listUsers, reactivateUser } from '@/lib/auth';
+import {
+  ApiStatusError,
+  changeUserRole,
+  deactivateUser,
+  listUsers,
+  reactivateUser,
+} from '@/lib/auth';
 
 import { UsersPanel } from './UsersPanel';
 
 const mockedListUsers = vi.mocked(listUsers);
 const mockedDeactivateUser = vi.mocked(deactivateUser);
 const mockedReactivateUser = vi.mocked(reactivateUser);
+const mockedChangeUserRole = vi.mocked(changeUserRole);
 
 const ADMIN_ACTOR: UserPublic = {
   id: 'actor-admin',
   email: 'admin@geospectrum.org',
   role: 'admin',
+};
+
+const SUPERADMIN_ACTOR: UserPublic = {
+  id: 'actor-superadmin',
+  email: 'boss@geospectrum.org',
+  role: 'superadmin',
 };
 
 function buildUser(overrides: Partial<UserListItem> = {}): UserListItem {
@@ -256,6 +270,209 @@ describe('UsersPanel — errores del backend', () => {
     expect(
       await screen.findByText('No se pudo cargar el listado. Verificá tu sesión e intentá de nuevo.'),
     ).toBeTruthy();
+  });
+});
+
+/** Devuelve las etiquetas visibles del `<select>` de rol de la única fila
+ * renderizada. Es lo que ve el admin, no lo que el memo calculó. */
+function roleOptionLabels(): string[] {
+  const select = screen.getByRole('combobox') as HTMLSelectElement;
+  return Array.from(select.options).map((option) => option.textContent ?? '');
+}
+
+describe('UsersPanel — opciones del selector de rol', () => {
+  it('un admin NO ve "admin" ni "superadmin" entre las opciones', async () => {
+    renderPanel([buildUser()]);
+    await screen.findByRole('combobox');
+
+    // El test que atrapa el copy-paste del `<=` de InvitationsPanel: con
+    // `<=` un admin vería "Administrador" acá y nada más fallaría.
+    expect(roleOptionLabels().sort()).toEqual(['Moderador', 'Observador']);
+  });
+
+  it('un superadmin ve admin, moderador y viewer, pero NO superadmin', async () => {
+    mockedUseAuth.mockReturnValue({ user: SUPERADMIN_ACTOR });
+    renderPanel([buildUser()]);
+    await screen.findByRole('combobox');
+
+    expect(roleOptionLabels().sort()).toEqual(['Administrador', 'Moderador', 'Observador']);
+  });
+
+  it('el rol actual se muestra aunque no sea asignable por el actor', async () => {
+    mockedUseAuth.mockReturnValue({ user: SUPERADMIN_ACTOR });
+    renderPanel([buildUser({ id: 'other-super', role: 'superadmin' })]);
+
+    const select = (await screen.findByRole('combobox')) as HTMLSelectElement;
+    // Un superadmin no puede otorgar "superadmin", pero tiene que LEER el rol
+    // real de la fila: el valor del control sigue siendo el dato del servidor.
+    expect(select.value).toBe('superadmin');
+    expect(roleOptionLabels()).toContain('Superadmin');
+  });
+});
+
+describe('UsersPanel — confirmación del cambio de rol', () => {
+  it('una PROMOCIÓN abre el diálogo y nombra email y ambos roles', async () => {
+    renderPanel([buildUser()]);
+
+    const select = (await screen.findByRole('combobox')) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'moderador' } });
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain('viewer@example.com');
+    expect(dialog.textContent).toContain('Observador');
+    expect(dialog.textContent).toContain('Moderador');
+    // El select nunca deja de mostrar el dato del servidor.
+    expect(select.value).toBe('viewer');
+  });
+
+  it('una DEGRADACIÓN también abre el diálogo (no tiene camino más corto)', async () => {
+    mockedUseAuth.mockReturnValue({ user: SUPERADMIN_ACTOR });
+    renderPanel([buildUser({ role: 'admin' })]);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'viewer' } });
+
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
+    expect(mockedChangeUserRole).not.toHaveBeenCalled();
+  });
+
+  it('cancelar NO llama a la API y el select vuelve al rol original', async () => {
+    renderPanel([buildUser()]);
+
+    const select = (await screen.findByRole('combobox')) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'moderador' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+    expect(mockedChangeUserRole).not.toHaveBeenCalled();
+    expect(select.value).toBe('viewer');
+  });
+
+  it('confirmar llama a changeUserRole con el userId y el rol elegidos', async () => {
+    mockedChangeUserRole.mockResolvedValue(undefined);
+    renderPanel([buildUser()]);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'moderador' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Cambiar rol' }));
+
+    await waitFor(() => {
+      expect(mockedChangeUserRole).toHaveBeenCalledWith('user-viewer', 'moderador');
+    });
+  });
+});
+
+describe('UsersPanel — selector de rol deshabilitado', () => {
+  it('deshabilita el selector de la propia cuenta, con la razón accesible', async () => {
+    renderPanel([buildUser({ id: ADMIN_ACTOR.id, email: ADMIN_ACTOR.email, role: 'admin' })]);
+
+    const select = (await screen.findByRole('combobox')) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(select.getAttribute('title')).toBe('No podés cambiar el rol de tu propia cuenta.');
+    const describedBy = select.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)?.textContent).toBe(
+      'No podés cambiar el rol de tu propia cuenta.',
+    );
+  });
+
+  it('deshabilita el selector por jerarquía, con la razón accesible', async () => {
+    renderPanel([buildUser({ id: 'other-admin', email: 'otro@example.com', role: 'admin' })]);
+
+    const select = (await screen.findByRole('combobox')) as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(select.getAttribute('title')).toBe(
+      'No podés cambiar el rol de una cuenta con un rol igual o superior al tuyo.',
+    );
+  });
+});
+
+describe('UsersPanel — errores del cambio de rol', () => {
+  async function confirmRoleChange() {
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'moderador' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Cambiar rol' }));
+  }
+
+  it('el 409 de auto-gestión cae en la clave `self`', async () => {
+    mockedChangeUserRole.mockRejectedValue(
+      new ApiStatusError(409, 'cannot change your own account role'),
+    );
+    renderPanel([buildUser()]);
+    await confirmRoleChange();
+
+    expect(await screen.findByText('No podés desactivar tu propia cuenta.')).toBeTruthy();
+  });
+
+  it('el 409 de "ya tiene ese rol" cae en la clave `conflict`, no en `self`', async () => {
+    mockedChangeUserRole.mockRejectedValue(new ApiStatusError(409, 'user already has that role'));
+    renderPanel([buildUser()]);
+    await confirmRoleChange();
+
+    expect(
+      await screen.findByText('Esa cuenta ya está en ese estado. Actualizá el listado.'),
+    ).toBeTruthy();
+  });
+
+  it('el 403 cae en la clave `hierarchy` y la lista sigue utilizable', async () => {
+    mockedChangeUserRole.mockRejectedValue(
+      new ApiStatusError(403, 'cannot assign a role equal to or higher than your own'),
+    );
+    renderPanel([buildUser()]);
+    await confirmRoleChange();
+
+    expect(
+      await screen.findByText('No podés gestionar una cuenta con un rol igual o superior al tuyo.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('list').textContent).toContain('viewer@example.com');
+  });
+
+  it('un fallo sin status cae al genérico de rol con el email interpolado', async () => {
+    mockedChangeUserRole.mockRejectedValue(new Error('network down'));
+    renderPanel([buildUser()]);
+    await confirmRoleChange();
+
+    expect(
+      await screen.findByText(
+        'No se pudo cambiar el rol de viewer@example.com. Intentá de nuevo en unos segundos.',
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe('UsersPanel — error de CARGA de la lista: 401 vs 403', () => {
+  function renderFailingList(error: unknown) {
+    mockedListUsers.mockRejectedValue(error);
+    render(
+      <SWRConfig
+        value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}
+      >
+        <NextIntlClientProvider locale="es-AR" messages={es} timeZone="UTC">
+          <UsersPanel />
+        </NextIntlClientProvider>
+      </SWRConfig>,
+    );
+  }
+
+  it('un 401 sigue mostrando `sessionLost`', async () => {
+    renderFailingList(new ApiStatusError(401, 'not authenticated'));
+
+    expect(
+      await screen.findByText('Tu sesión cambió o expiró — volvé a iniciar sesión.'),
+    ).toBeTruthy();
+  });
+
+  it('un 403 muestra `accessRevoked`, no `sessionLost`', async () => {
+    // Caso NORMAL con la revalidación de rol por request: te degradaron con la
+    // pestaña abierta. La sesión está perfecta; mandarlo a re-loguearse sería
+    // el consejo equivocado.
+    renderFailingList(new ApiStatusError(403, 'insufficient role'));
+
+    expect(
+      await screen.findByText(
+        'Tu rol cambió y ya no tenés permisos para ver esta lista. Si creés que es un error, contactá a un administrador.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Tu sesión cambió o expiró — volvé a iniciar sesión.')).toBeNull();
   });
 });
 

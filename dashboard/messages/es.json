@@ -468,6 +468,16 @@
         "self": "No podés desactivar tu propia cuenta.",
         "hierarchy": "No podés gestionar una cuenta con un rol igual o superior al tuyo."
       },
+      "roleLabel": "Rol de {email}",
+      "roleDisabledReason": {
+        "self": "No podés cambiar el rol de tu propia cuenta.",
+        "hierarchy": "No podés cambiar el rol de una cuenta con un rol igual o superior al tuyo."
+      },
+      "roleDialogTitle": "¿Cambiar el rol?",
+      "roleDialogDescription": "Vas a cambiar el rol de <mono>{email}</mono> de <strong>{from}</strong> a <strong>{to}</strong>. El cambio tiene efecto de inmediato, incluso en las sesiones que ya estén abiertas.",
+      "roleCancel": "Cancelar",
+      "roleConfirm": "Cambiar rol",
+      "accessRevoked": "Tu rol cambió y ya no tenés permisos para ver esta lista. Si creés que es un error, contactá a un administrador.",
       "deactivateDialogTitle": "¿Desactivar la cuenta?",
       "deactivateDialogDescription": "<mono>{email}</mono> pierde el acceso de inmediato: no va a poder entrar con password ni con Google, y la sesión que tenga abierta muere en el próximo request. No se borra ningún dato — la podés reactivar cuando quieras.",
       "deactivateCancel": "Cancelar",
@@ -478,7 +488,8 @@
         "notFound": "Esa cuenta ya no existe. Actualizá el listado.",
         "conflict": "Esa cuenta ya está en ese estado. Actualizá el listado.",
         "deactivateGeneric": "No se pudo desactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
-        "reactivateGeneric": "No se pudo reactivar la cuenta de {email}. Intentá de nuevo en unos segundos."
+        "reactivateGeneric": "No se pudo reactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
+        "roleGeneric": "No se pudo cambiar el rol de {email}. Intentá de nuevo en unos segundos."
       }
     }
   },

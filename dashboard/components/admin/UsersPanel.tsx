@@ -26,7 +26,13 @@ import useSWR from 'swr';
 import { Ban, CheckCircle2, KeyRound, RefreshCw, Users } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
 
-import { ApiStatusError, deactivateUser, listUsers, reactivateUser } from '@/lib/auth';
+import {
+  ApiStatusError,
+  changeUserRole,
+  deactivateUser,
+  listUsers,
+  reactivateUser,
+} from '@/lib/auth';
 import { useAuth } from '@/hooks/use-auth';
 import {
   AlertDialog,
@@ -43,10 +49,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ROLE_LEVEL } from '@/lib/types';
-import type { UserListItem, UserPublic } from '@/lib/types';
+import { ROLE_LEVEL, ROLE_ORDER } from '@/lib/types';
+import type { UserListItem, UserPublic, UserRole } from '@/lib/types';
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
+
+/** El backend distingue sus 409 sólo por el TEXTO del body ({"error": ...});
+ *  no hay código de error estable en el contrato. Ver design.md Decision 6:
+ *  introducirlo es un refactor transversal de la superficie de errores y tiene
+ *  que ser su propio change. Mientras tanto, el acoplamiento vive en UN lugar. */
+const SELF_CONFLICT_MARKER = 'own account';
 
 /** Claves de `admin.users.errors.*` — el status del backend se traduce a
  * una CLAVE, no a un texto (función pura de módulo). */
@@ -56,7 +68,8 @@ type ActionErrorKey =
   | 'notFound'
   | 'conflict'
   | 'deactivateGeneric'
-  | 'reactivateGeneric';
+  | 'reactivateGeneric'
+  | 'roleGeneric';
 
 /** Resultado fallido de una acción: kind + datos crudos. El texto se
  * resuelve al render con t(), así el cambio de idioma re-traduce lo ya
@@ -67,12 +80,18 @@ type ActionOutcome = { kind: 'failed'; errorKey: ActionErrorKey; email: string }
  * `null` = la acción está habilitada. */
 type DisabledReason = 'self' | 'hierarchy' | null;
 
+/** Cambio de rol elegido en el `<select>` y todavía NO aplicado: lo único que
+ * el gesto muta. El `<select>` sigue mostrando `user.role` hasta que el
+ * servidor confirme, así que cancelar no necesita revertir nada. */
+type PendingRoleChange = { userId: string; email: string; from: UserRole; to: UserRole };
+
 /**
  * Traduce el error del backend a la clave del mensaje accionable. La matriz
  * de design.md § Interfaces / Contracts: 403 jerarquía, 404 inexistente,
- * 409 self o estado ya alcanzado. Los dos 409 se distinguen por el mensaje
+ * 409 self o estado ya alcanzado. Los tres 409 se distinguen por el mensaje
  * del backend ("cannot deactivate your own account" / "cannot manage your
- * own account" vs "already deactivated" / "is not deactivated").
+ * own account" / "cannot change your own account role" vs "already
+ * deactivated" / "is not deactivated" / "user already has that role").
  */
 function actionErrorKey(err: unknown, fallback: ActionErrorKey): ActionErrorKey {
   if (err instanceof ApiStatusError) {
@@ -83,7 +102,7 @@ function actionErrorKey(err: unknown, fallback: ActionErrorKey): ActionErrorKey 
       return 'notFound';
     }
     if (err.status === 409) {
-      return err.message.includes('own account') ? 'self' : 'conflict';
+      return err.message.includes(SELF_CONFLICT_MARKER) ? 'self' : 'conflict';
     }
   }
   return fallback;
@@ -116,6 +135,7 @@ const DATE_OPTIONS = {
 
 export function UsersPanel() {
   const t = useTranslations('admin.users');
+  const tRoles = useTranslations('admin.roles');
   const { user } = useAuth();
   const isAdmin = user !== null && ADMIN_ROLES.includes(user.role);
 
@@ -131,11 +151,52 @@ export function UsersPanel() {
   // Id en vuelo: deshabilita SOLO la fila afectada, no todo el listado.
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
-  // Igual que en invitaciones: la cookie de sesión es única por browser, así
-  // que un 401/403 del listado suele ser "tu sesión cambió", no un fallo de
-  // la API. Un 403 acá también puede significar que TE desactivaron.
-  const sessionLost =
-    error instanceof ApiStatusError && (error.status === 401 || error.status === 403);
+  // Rol elegido y pendiente de confirmación. Es el ÚNICO estado que agrega el
+  // cambio de rol: el `<select>` nunca deja de mostrar el dato del servidor.
+  const [pendingChange, setPendingChange] = React.useState<PendingRoleChange | null>(null);
+
+  // 401 = no hay sesión válida (expiró, la cookie se borró, la cuenta se
+  // desactivó). 403 = la sesión ES válida pero ya no alcanza: te degradaron
+  // mientras tenías la pestaña abierta. Con la revalidación de rol por request
+  // (design.md Decision 2) el 403 dejó de ser hipotético y "sesión expirada"
+  // sería mentira: la sesión está perfecta, lo que cambió sos vos — y mandarlo
+  // a re-loguearse es un consejo que va a funcionar y no va a arreglar nada.
+  const sessionLost = error instanceof ApiStatusError && error.status === 401;
+  const accessRevoked = error instanceof ApiStatusError && error.status === 403;
+
+  /** Roles asignables por el actor: ESTRICTAMENTE menores al suyo (decisión 1,
+   *  y la regla que ROLE_LEVEL documenta en src/models/user.py desde
+   *  multi-user-auth). OJO: NO es el mismo filtro que grantableRoles de
+   *  InvitationsPanel, que tiene la excepción superadmin→superadmin de la
+   *  decisión 9 — invitar y asignar tienen reglas distintas a propósito.
+   *  Y la UI NO es el enforcement: el backend rechaza igual con 403 (guard 5);
+   *  no ofrecer lo imposible es UX. */
+  const assignableRoles = React.useMemo(
+    () => (user ? ROLE_ORDER.filter((r) => ROLE_LEVEL[r] < ROLE_LEVEL[user.role]) : []),
+    [user],
+  );
+
+  async function handleConfirmRoleChange() {
+    if (pendingChange === null) {
+      return;
+    }
+    const target = pendingChange;
+    setPendingChange(null);
+    setOutcome(null);
+    setBusyId(target.userId);
+    try {
+      await changeUserRole(target.userId, target.to);
+      await mutate();
+    } catch (err: unknown) {
+      setOutcome({
+        kind: 'failed',
+        errorKey: actionErrorKey(err, 'roleGeneric'),
+        email: target.email,
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function handleDeactivate(target: UserListItem) {
     setOutcome(null);
@@ -209,7 +270,7 @@ export function UsersPanel() {
 
         {error && (
           <p className="text-sm text-destructive">
-            {sessionLost ? t('sessionLost') : t('loadError')}
+            {sessionLost ? t('sessionLost') : accessRevoked ? t('accessRevoked') : t('loadError')}
           </p>
         )}
 
@@ -234,12 +295,60 @@ export function UsersPanel() {
                 disabledReason={user ? disabledReasonFor(listed, user) : 'hierarchy'}
                 isSelf={user?.id === listed.id}
                 busy={busyId === listed.id}
+                assignableRoles={assignableRoles}
                 onDeactivate={() => handleDeactivate(listed)}
                 onReactivate={() => handleReactivate(listed)}
+                onRoleSelected={(to) =>
+                  setPendingChange({
+                    userId: listed.id,
+                    email: listed.email,
+                    from: listed.role,
+                    to,
+                  })
+                }
               />
             ))}
           </ul>
         )}
+
+        {/* Confirmación en TODO cambio de rol, promoción Y degradación
+            (decisión 6 del usuario): es una acción sobre PERMISOS y con un
+            <select> los dos gestos son idénticos, así que una confirmación
+            condicional enseñaría que el mismo gesto a veces confirma y a
+            veces no. Vive en el panel y no en la fila porque el estado
+            pendiente es uno solo para toda la lista. */}
+        <AlertDialog
+          open={pendingChange !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              // Cancelar sólo limpia el pendiente: el <select> nunca dejó de
+              // mostrar el rol real, así que no hay nada que revertir.
+              setPendingChange(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('roleDialogTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingChange &&
+                  t.rich('roleDialogDescription', {
+                    email: pendingChange.email,
+                    from: tRoles(pendingChange.from),
+                    to: tRoles(pendingChange.to),
+                    mono: (chunks) => <span className="font-mono">{chunks}</span>,
+                    strong: (chunks) => <strong>{chunks}</strong>,
+                  })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('roleCancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmRoleChange}>
+                {t('roleConfirm')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
@@ -269,15 +378,19 @@ function UserRow({
   disabledReason,
   isSelf,
   busy,
+  assignableRoles,
   onDeactivate,
   onReactivate,
+  onRoleSelected,
 }: {
   user: UserListItem;
   disabledReason: DisabledReason;
   isSelf: boolean;
   busy: boolean;
+  assignableRoles: UserRole[];
   onDeactivate: () => void;
   onReactivate: () => void;
+  onRoleSelected: (role: UserRole) => void;
 }) {
   const t = useTranslations('admin.users');
   const tRoles = useTranslations('admin.roles');
@@ -292,6 +405,13 @@ function UserRow({
   const reasonId = `user-action-reason-${user.id}`;
   const reasonText = blocked ? t(`disabledReason.${disabledReason}`) : null;
 
+  // El selector de rol tiene su PROPIO motivo: "no podés desactivar tu propia
+  // cuenta" sería mentira sobre un control que no desactiva nada. Mismo
+  // contrato de a11y (title + sr-only + aria-describedby), otro texto.
+  const roleSelectId = `user-role-select-${user.id}`;
+  const roleReasonId = `user-role-reason-${user.id}`;
+  const roleReasonText = blocked ? t(`roleDisabledReason.${disabledReason}`) : null;
+
   return (
     <li className="flex flex-wrap items-center gap-3 py-3">
       <span className="min-w-0 flex-1 truncate font-mono text-sm">
@@ -299,7 +419,45 @@ function UserRow({
         {isSelf && <span className="ml-2 text-xs text-muted-foreground">({t('you')})</span>}
       </span>
 
-      <span className="text-xs text-muted-foreground">{tRoles(user.role)}</span>
+      {/* Select NATIVO a propósito, no Radix: no hay componente Select en
+          ui/ y el DropdownMenu de Radix pelea con los controles porque su
+          typeahead se come las teclas (precedente ya resuelto en
+          InvitationsPanel).
+
+          CONTROLADO sobre `user.role` — el dato del SERVIDOR — y el onChange
+          NO muta el valor: sólo abre la confirmación. Así el control no PUEDE
+          desincronizarse cuando el backend rechaza con 409 ni al cancelar.
+
+          El rol actual va siempre como <option>, aunque no sea asignable: un
+          superadmin viendo a un admin tiene que LEER "Administrador" aunque
+          admin no esté entre lo que puede otorgar. */}
+      <label htmlFor={roleSelectId} className="sr-only">
+        {t('roleLabel', { email: user.email })}
+      </label>
+      <select
+        id={roleSelectId}
+        value={user.role}
+        disabled={busy || blocked}
+        title={roleReasonText ?? undefined}
+        aria-describedby={roleReasonText ? roleReasonId : undefined}
+        onChange={(event) => onRoleSelected(event.target.value as UserRole)}
+        className="flex h-8 w-36 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {!assignableRoles.includes(user.role) && (
+          <option value={user.role}>{tRoles(user.role)}</option>
+        )}
+        {assignableRoles.map((r) => (
+          <option key={r} value={r}>
+            {tRoles(r)}
+          </option>
+        ))}
+      </select>
+
+      {roleReasonText && (
+        <span id={roleReasonId} className="sr-only">
+          {roleReasonText}
+        </span>
+      )}
 
       {/* Origen: los dos badges pueden convivir (cuenta con password que
           después se auto-linkeó con Google). */}
