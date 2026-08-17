@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
@@ -172,6 +173,29 @@ class UserAlreadyDeactivatedError(Exception):
 
 class UserNotDeactivatedError(Exception):
     """Se intentó reactivar una cuenta que ya estaba activa — 409 (simetría)."""
+
+
+# --- role-management — estado de autorización leído en el camino caliente --
+
+
+@dataclass(frozen=True)
+class UserAuthState:
+    """Estado de autorización de una cuenta, leído de la base en el camino
+    caliente (`get_current_user()`, un lookup por PK en CADA request).
+
+    `role` es `None` SI Y SÓLO SI la fila no existe en `users`. No hay default:
+    un `UserRole.VIEWER` de relleno sería un rol REAL inventado por el lector
+    para una cuenta que no existe, y el tipo tiene que ser incapaz de mentir.
+    El caso es inalcanzable en la práctica (`is_active=False` produce 401 antes
+    de que nadie mire el rol), pero `Optional[UserRole]` obliga a
+    `get_current_user()` a manejarlo explícitamente en vez de propagar un rol
+    fantasma.
+
+    `frozen=True` porque nadie tiene por qué mutar esto en el camino caliente.
+    """
+
+    is_active: bool
+    role: Optional[UserRole]
 
 
 # --- account-settings (fix post-verify) — rate-limiting de login-verify ----
@@ -1199,27 +1223,53 @@ class AuthService:
     # user-management (migración 012) — desactivación/reactivación de cuentas
     # -------------------------------------------------------------------
 
-    async def is_user_active(self, user_id: UUID) -> bool:
-        """¿La cuenta existe Y no está desactivada?
+    async def get_user_auth_state(self, user_id: UUID) -> UserAuthState:
+        """Estado de la cuenta MÁS su rol vigente, en UNA sola query.
 
-        Lo consulta `get_current_user()` (src/api/deps.py) en CADA request
-        autenticado — ver design.md Decision 4. Devuelve False tanto para una
-        cuenta desactivada como para una fila inexistente: los dos casos
-        producen el mismo 401 genérico, y el segundo cierra de regalo un
-        agujero preexistente (el JWT de una cuenta borrada con `DELETE
-        /account` seguía siendo válido hasta 24 h).
+        [role-management, design.md Decision 1] Lo consulta
+        `get_current_user()` (src/api/deps.py) en CADA request autenticado.
+        Reemplaza a `is_user_active()` en ese camino: es la MISMA query de
+        antes con una columna más (`role`), no una query nueva — el costo por
+        request no cambia, sigue siendo un lookup por PK.
 
-        Es un lookup por PK, el mismo costo que `get_onboarding_status()` ya
-        paga hoy en cada `/auth/me`.
+        Deliberadamente NO se usa `get_user_by_id()`: ese es un SELECT gordo
+        que arrastraría `password_hash` y `totp_secret` a memoria en cada
+        request autenticado para leer un enum. Es lo contrario de lo que hace
+        `list_users()`, que deriva `has_google`/`has_password` en la query
+        justamente para que los secretos ni salgan de la base.
+
+        Fila inexistente ⇒ `UserAuthState(is_active=False, role=None)`. Ver el
+        docstring de `UserAuthState` sobre por qué el rol es `Optional` y no
+        tiene default.
         """
         async with self._require_pool().acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT deactivated_at FROM users WHERE id = $1",
+                "SELECT role, deactivated_at FROM users WHERE id = $1",
                 user_id,
             )
         if row is None:
-            return False
-        return row["deactivated_at"] is None
+            return UserAuthState(is_active=False, role=None)
+        return UserAuthState(
+            is_active=row["deactivated_at"] is None,
+            role=UserRole(row["role"]),
+        )
+
+    async def is_user_active(self, user_id: UUID) -> bool:
+        """¿La cuenta existe Y no está desactivada?
+
+        Devuelve False tanto para una cuenta desactivada como para una fila
+        inexistente: los dos casos producen el mismo 401 genérico, y el segundo
+        cierra de regalo un agujero preexistente (el JWT de una cuenta borrada
+        con `DELETE /account` seguía siendo válido hasta 24 h).
+
+        [role-management] Reimplementado sobre `get_user_auth_state()`, con la
+        FIRMA INTACTA a propósito (decisión 7 del usuario): el método nuevo es
+        ADITIVO. Hay al menos tres fakes en la suite que DEFINEN este método
+        (`tests/unit/test_deps.py`, `tests/integration/test_auth_api.py`,
+        `tests/integration/test_invitations_api.py`); cambiarle la firma los
+        rompería a todos a la vez sin ganar nada.
+        """
+        return (await self.get_user_auth_state(user_id)).is_active
 
     async def list_users(self) -> list[UserListItem]:
         """[Requirement: Listado de usuarios para administración]

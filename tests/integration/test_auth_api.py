@@ -43,24 +43,45 @@ from fastapi.testclient import TestClient
 
 from src.config.settings import settings
 from src.main import app, oauth
-from src.models.user import UserPublic, UserRole
+from src.models.user import CurrentUser, UserPublic, UserRole
+from src.services.auth_service import UserAuthState
 
 
 def _auth_service_mock() -> MagicMock:
     """Fake de AuthService con los defaults que exige `get_current_user()`.
 
-    [user-management, tarea 1.15] `get_current_user()` ahora hace
-    `await auth_service.is_user_active(id)` en cada request autenticado
-    (design.md Decision 4). Un `MagicMock()` pelado devuelve otro MagicMock
-    para ese atributo, que NO es awaitable: el endpoint explotaría con
-    `TypeError: object MagicMock can't be used in 'await' expression`.
+    [user-management, tarea 1.15] `get_current_user()` hace un round-trip a la
+    base en cada request autenticado (design.md Decision 4). Un `MagicMock()`
+    pelado devuelve otro MagicMock para ese atributo, que NO es awaitable: el
+    endpoint explotaría con `TypeError: object MagicMock can't be used in
+    'await' expression`.
 
-    Default `True` (cuenta activa) porque es el estado que asumen todos los
-    tests preexistentes de este archivo; los tests que necesitan simular una
-    cuenta desactivada lo sobreescriben con su propio `AsyncMock`.
+    [role-management, tarea 2.6/2.8] Ese round-trip pasó a ser
+    `get_user_auth_state()`, que devuelve estado + ROL, y el rol de la BASE
+    sobrescribe al del token. Se define con un valor CONCRETO
+    (`UserAuthState`), NUNCA un MagicMock: un MagicMock no sólo reventaría el
+    await — haría que `require_min_role()` comparara basura.
+
+    El rol que devuelve ESPEJA el del `CurrentUser` que fabricó
+    `decode_access_token`, porque este archivo no ejercita divergencias entre
+    token y base: fabrica sesiones de un rol dado y espera ESE rol. Un valor
+    fijo acá promovería o degradaría en silencio a todas las sesiones del
+    archivo (con `SUPERADMIN` pasarían tests que deberían dar 403; con
+    `VIEWER`, fallarían los de admin). La divergencia deliberada se testea en
+    `tests/unit/test_deps.py` (tarea 2.7), que es su lugar.
+
+    `is_user_active` se conserva (firma intacta, decisión 7) aunque
+    `get_current_user()` ya no lo llame.
     """
     fake = MagicMock()
     fake.is_user_active = AsyncMock(return_value=True)
+
+    async def _auth_state(user_id) -> UserAuthState:
+        decoded = fake.decode_access_token.return_value
+        role = decoded.role if isinstance(decoded, CurrentUser) else UserRole.VIEWER
+        return UserAuthState(is_active=True, role=role)
+
+    fake.get_user_auth_state = _auth_state
     return fake
 
 

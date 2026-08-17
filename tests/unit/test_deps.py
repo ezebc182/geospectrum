@@ -16,6 +16,7 @@ from src.services.auth_service import (
     JWT_ALGORITHM,
     InvalidTokenError,
     TokenExpiredError,
+    UserAuthState,
 )
 
 SUPERADMIN_USER = CurrentUser(
@@ -60,6 +61,22 @@ class _FakeAuthService:
     asumen todos los tests preexistentes de este archivo. `inactive_users`
     permite marcar ids concretos como desactivados/inexistentes para los tests
     nuevos, sin duplicar el armado de la app.
+
+    `get_user_auth_state()` (tarea 2.6, role-management): get_current_user()
+    dejó de llamar a `is_user_active()` y ahora usa este método, que devuelve
+    estado + ROL en una sola query. `db_roles` permite que la base "diga" un
+    rol DISTINTO al del claim del JWT — que es exactamente el caso que este
+    change tiene que resolver. Sin override, el rol de la base coincide con el
+    del token, o sea el comportamiento de todos los tests preexistentes.
+
+    Los valores devueltos son CONCRETOS (`UserRole.VIEWER`, `True`/`False`),
+    NUNCA `MagicMock`: el precedente del proyecto es feo — en `user-management`
+    los `MagicMock` con atributos autogenerados rompieron 65 tests porque
+    `deactivated_at` daba truthy.
+
+    `is_user_active()` se conserva igual aunque get_current_user() ya no lo
+    llame: sigue siendo parte de la superficie del servicio (firma intacta por
+    decisión 7) y no hay razón para que el fake mienta sobre eso.
     """
 
     def __init__(
@@ -67,13 +84,33 @@ class _FakeAuthService:
         tokens: dict,
         payloads: dict | None = None,
         inactive_users: set | None = None,
+        db_roles: dict | None = None,
     ) -> None:
         self._tokens = tokens
         self._payloads = payloads or {}
         self._inactive_users = {str(user_id) for user_id in (inactive_users or set())}
+        self._db_roles = {str(user_id): role for user_id, role in (db_roles or {}).items()}
 
     async def is_user_active(self, user_id) -> bool:
         return str(user_id) not in self._inactive_users
+
+    async def get_user_auth_state(self, user_id) -> UserAuthState:
+        is_active = str(user_id) not in self._inactive_users
+        role = self._db_roles.get(str(user_id), self._role_from_token_claims(user_id))
+        return UserAuthState(is_active=is_active, role=role)
+
+    def _role_from_token_claims(self, user_id) -> UserRole | None:
+        """Sin override explícito, la base "dice" lo mismo que el token.
+
+        Devolver un rol fijo (VIEWER) acá rompería todos los tests
+        preexistentes de require_role/require_min_role, que asumen que el rol
+        del claim es el efectivo. La divergencia se pide EXPLÍCITAMENTE con
+        `db_roles`, que es el punto del change.
+        """
+        for user in self._tokens.values():
+            if isinstance(user, CurrentUser) and str(user.id) == str(user_id):
+                return user.role
+        return None
 
     def decode_token_payload(self, token: str) -> dict:
         if token in self._payloads:
@@ -400,3 +437,118 @@ def test_get_current_user_allows_active_account():
 
     assert response.status_code == 200
     assert response.json()["id"] == str(VIEWER_USER.id)
+
+
+# ---------------------------------------------------------------------------
+# role-management (tarea 2.7) — get_current_user() SOBRESCRIBE el rol con el
+# de la base. LOS TESTS QUE DECIDEN EL CHANGE.
+#
+# El assert es sobre el VALOR devuelto, no sobre "no tiró excepción": una
+# implementación que COMPARE el rol de la base contra el del claim y levante
+# 401 cuando difieren pasa cualquier test de "degradar y verificar rechazo",
+# deja el agujero abierto (require_min_role() autoriza leyendo
+# CurrentUser.role) y encima convierte una PROMOCIÓN en un deslogueo. Estos
+# dos tests son los únicos que la matan.
+# ---------------------------------------------------------------------------
+
+
+def test_get_current_user_returns_role_from_database_not_from_token():
+    """[Scenario: El `CurrentUser` devuelto lleva el rol de la base, no el del
+    token] Token con claim `role="admin"`, base con `viewer` ⇒ el CurrentUser
+    devuelto tiene `role == UserRole.VIEWER`.
+
+    Observable sin inspeccionar la implementación: `/protected` expone el rol
+    del usuario autenticado y reporta `viewer`."""
+    fake_service = _FakeAuthService(
+        tokens={"stale-admin-token": ADMIN_USER},
+        db_roles={ADMIN_USER.id: UserRole.VIEWER},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "stale-admin-token")
+
+    response = client.get("/protected")
+
+    # NO 401: la sesión es perfectamente válida, lo que cambió es el rol.
+    assert response.status_code == 200
+    assert response.json()["role"] == UserRole.VIEWER.value
+
+
+def test_demotion_is_effective_on_the_next_request():
+    """[Scenario: La degradación es efectiva en el request siguiente] Token
+    emitido con `role="admin"`, base degradada a `viewer` ⇒ 403 en un endpoint
+    `require_min_role(MODERADOR)`. 403 y NO 401: el 401 sería la firma de la
+    implementación "comparar y rechazar", que además deslogueó a alguien cuya
+    sesión está viva."""
+    fake_service = _FakeAuthService(
+        tokens={"stale-admin-token": ADMIN_USER},
+        db_roles={ADMIN_USER.id: UserRole.VIEWER},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "stale-admin-token")
+
+    response = client.get("/moderador-or-above")
+
+    assert response.status_code == 403
+    assert "insufficient role" in response.json()["detail"]
+
+
+def test_promotion_is_also_effective_on_the_next_request():
+    """[Scenario: La promoción también es efectiva en el request siguiente]
+    EL TEST QUE MATA LA VARIANTE "comparar y 401": token con `role="viewer"`,
+    base con `moderador` ⇒ el CurrentUser sale `moderador` y
+    require_min_role(MODERADOR) DEJA PASAR.
+
+    Una implementación que compare el rol de la base contra el del claim y
+    levante 401 cuando difieren devuelve 401 acá: convertiría una promoción en
+    un deslogueo, y el usuario promovido quedaría afuera hasta re-loguearse."""
+    fake_service = _FakeAuthService(
+        tokens={"stale-viewer-token": VIEWER_USER},
+        db_roles={VIEWER_USER.id: UserRole.MODERADOR},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "stale-viewer-token")
+
+    response = client.get("/moderador-or-above")
+
+    assert response.status_code == 200
+    assert response.json()["role"] == UserRole.MODERADOR.value
+
+
+def test_deactivated_account_is_401_even_when_the_database_role_is_higher():
+    """El orden importa: el estado de la cuenta se evalúa igual que antes y la
+    revalidación del rol NO lo debilita. Una cuenta desactivada da 401 aunque
+    su rol en la base sea superior al del token."""
+    fake_service = _FakeAuthService(
+        tokens={"valid-viewer-token": VIEWER_USER},
+        inactive_users={VIEWER_USER.id},
+        db_roles={VIEWER_USER.id: UserRole.SUPERADMIN},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "valid-viewer-token")
+
+    response = client.get("/protected")
+
+    assert response.status_code == 401
+    assert "not authenticated" in response.json()["detail"]
+
+
+def test_missing_row_produces_401_when_role_is_none():
+    """[Scenario: Una fila inexistente sigue produciendo 401] `role is None`
+    es el contrato de "la fila no existe" (ver el docstring de UserAuthState).
+    get_current_user() lo trata como 401, sin propagar un rol fantasma."""
+    fake_service = _FakeAuthService(
+        tokens={"deleted-user-token": ADMIN_USER},
+        inactive_users={ADMIN_USER.id},
+        db_roles={ADMIN_USER.id: None},
+    )
+    app = _build_app(fake_service)
+    client = TestClient(app)
+    client.cookies.set(SESSION_COOKIE_NAME, "deleted-user-token")
+
+    response = client.get("/protected")
+
+    assert response.status_code == 401

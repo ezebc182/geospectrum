@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 
 from src.main import app
 from src.models.user import CurrentUser, UserRole
+from src.services.auth_service import UserAuthState
 from src.services.invitation_service import InvitationService
 
 EXPIRE_DAYS = 7
@@ -194,17 +195,36 @@ def _update_invitation(dsn: str, invitation_id, set_clause: str) -> None:
 
 
 def _auth_service_mock() -> MagicMock:
-    """Fake de AuthService con `is_user_active` awaitable.
+    """Fake de AuthService con el round-trip de `get_current_user()` awaitable.
 
-    [user-management, tarea 1.15] `get_current_user()` hace ahora un
-    round-trip a la base por request (`await auth_service.is_user_active()`);
-    un MagicMock pelado devuelve un objeto no-awaitable y revienta con
-    TypeError. Default True: acá lo que se ejercita son las invitaciones, no
-    la desactivación — todas las sesiones de este archivo son de cuentas
-    activas.
+    [user-management, tarea 1.15] `get_current_user()` hace un round-trip a la
+    base por request; un MagicMock pelado devuelve un objeto no-awaitable y
+    revienta con TypeError. Todas las sesiones de este archivo son de cuentas
+    activas: acá lo que se ejercita son las invitaciones, no la desactivación.
+
+    [role-management, tarea 2.6/2.8] Ese round-trip pasó a ser
+    `get_user_auth_state()`, que devuelve estado + ROL, y el rol de la BASE
+    sobrescribe al del token. Se define con un valor CONCRETO
+    (`UserAuthState`), NUNCA un MagicMock — que además de reventar el await
+    haría que `require_min_role()` comparara basura.
+
+    El rol ESPEJA el del `CurrentUser` que fabricó `decode_access_token`
+    (ver `_login_as()`): este archivo testea los guards de jerarquía de
+    invitaciones, así que un rol fijo acá pisaría justo la variable que cada
+    test está tratando de controlar.
+
+    `is_user_active` se conserva (firma intacta, decisión 7) aunque
+    `get_current_user()` ya no lo llame.
     """
     fake = MagicMock()
     fake.is_user_active = AsyncMock(return_value=True)
+
+    async def _auth_state(user_id) -> UserAuthState:
+        decoded = fake.decode_access_token.return_value
+        role = decoded.role if isinstance(decoded, CurrentUser) else UserRole.VIEWER
+        return UserAuthState(is_active=True, role=role)
+
+    fake.get_user_auth_state = _auth_state
     return fake
 
 

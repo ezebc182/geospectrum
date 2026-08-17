@@ -58,9 +58,18 @@ async def get_current_user(
     terminara en la cookie `session` en lugar de `pending_2fa_session`.
 
     [Tarea 1.10, user-management, design.md Decision 4] Round-trip a la base:
-    tras decodificar el JWT se consulta `auth_service.is_user_active()`
-    (`SELECT deactivated_at FROM users WHERE id = $1`) y se responde el MISMO
-    401 genérico si la cuenta está desactivada o su fila ya no existe.
+    tras decodificar el JWT se consulta el estado de la cuenta y se responde el
+    MISMO 401 genérico si está desactivada o su fila ya no existe.
+
+    [role-management, design.md Decision 2] Ese round-trip ahora trae también
+    el ROL (`auth_service.get_user_auth_state()`,
+    `SELECT role, deactivated_at FROM users WHERE id = $1` — la misma query de
+    antes con una columna más, no una query nueva) y el `CurrentUser` que se
+    devuelve lleva el rol de la BASE, no el del token. Mismo argumento que el
+    del estado de la cuenta, un renglón más abajo: el rol es MUTABLE y un claim
+    quedaría stale hasta el re-login, así que degradar a un admin no le sacaba
+    NADA por hasta 24 horas. Ahora un cambio de rol es efectivo en el request
+    siguiente, en las dos direcciones.
 
     Por qué un round-trip por request y no un claim del JWT: el estado de la
     cuenta es MUTABLE y un claim quedaría stale hasta el re-login — con
@@ -106,13 +115,28 @@ async def get_current_user(
             detail="not authenticated",
         ) from exc
 
-    if not await auth_service.is_user_active(current_user.id):
+    state = await auth_service.get_user_auth_state(current_user.id)
+    if not state.is_active or state.role is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="not authenticated",
         )
 
-    return current_user
+    # SOBRESCRITURA del rol, no comparación contra el claim del JWT.
+    #
+    # require_min_role() (más abajo) autoriza leyendo `CurrentUser.role`, así
+    # que si acá se devolviera `current_user` tal cual (el objeto armado desde
+    # el token) el rol stale seguiría mandando y TODOS los tests que uno
+    # escribiría pasarían igual: el rol "se lee de la base", pero nadie lo usa.
+    #
+    # Comparar y levantar 401 cuando difieren es peor todavía: convierte una
+    # PROMOCIÓN en un deslogueo (el token dice viewer, la base dice moderador,
+    # no coinciden, afuera). La sobrescritura promueve y degrada en caliente,
+    # en el request siguiente y sin re-login, que es el criterio de éxito.
+    #
+    # model_copy() y no mutación in-place: devolver un objeto nuevo deja el
+    # "acá cambia la autoridad del rol" explícito en el diff.
+    return current_user.model_copy(update={"role": state.role})
 
 
 async def get_current_user_optional(request: Request) -> Optional[CurrentUser]:

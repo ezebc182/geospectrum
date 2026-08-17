@@ -341,6 +341,104 @@ async def test_is_user_active_true_again_after_reactivation(service, admin, view
 
 
 # ---------------------------------------------------------------------------
+# role-management (tarea 2.5) — get_user_auth_state(): estado + ROL en una
+# sola query, contra Postgres real.
+#
+# Los cuatro tests de is_user_active de arriba son ADEMÁS la no-regresión de
+# la reimplementación: ese método ahora delega en éste y sigue devolviendo
+# exactamente lo mismo en los cuatro casos.
+# ---------------------------------------------------------------------------
+
+
+async def test_get_user_auth_state_returns_active_and_the_real_role(service, viewer):
+    """[Requirement: El rol efectivo se revalida contra la base en cada
+    request] Cuenta activa: `is_active=True` y el rol que dice la fila."""
+    state = await service.get_user_auth_state(viewer.id)
+
+    assert state.is_active is True
+    assert state.role is UserRole.VIEWER
+
+
+@pytest.mark.parametrize(
+    "role",
+    [UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.MODERADOR, UserRole.VIEWER],
+)
+async def test_get_user_auth_state_reads_every_role_from_the_row(service, db_pool, role):
+    """El rol sale de la BASE, sin defaults ni traducciones: los cuatro
+    valores del enum viajan de ida y vuelta."""
+    user = await _make_user(db_pool, f"state-{role.value}@example.com", role)
+
+    state = await service.get_user_auth_state(user.id)
+
+    assert state.role is role
+
+
+async def test_get_user_auth_state_keeps_the_role_on_a_deactivated_account(service, admin, viewer):
+    """Una cuenta desactivada sigue teniendo rol: `is_active=False` pero el rol
+    IGUAL presente. `role=None` significa "la fila no existe" y NADA más — si
+    acá viniera None, el contrato del tipo estaría mintiendo."""
+    await service.deactivate_user(admin, viewer.id)
+
+    state = await service.get_user_auth_state(viewer.id)
+
+    assert state.is_active is False
+    assert state.role is UserRole.VIEWER
+
+
+async def test_get_user_auth_state_returns_false_and_none_for_a_nonexistent_row(service):
+    """[AC 2.2] Fila inexistente ⇒ `UserAuthState(is_active=False, role=None)`.
+    No es un error y no hay rol de relleno: un `UserRole.VIEWER` acá sería un
+    rol REAL inventado por el lector para una cuenta que no existe."""
+    state = await service.get_user_auth_state(uuid4())
+
+    assert state.is_active is False
+    assert state.role is None
+
+
+async def test_get_user_auth_state_is_frozen(service, viewer):
+    """`frozen=True`: nadie muta el estado de autorización en el camino
+    caliente."""
+    state = await service.get_user_auth_state(viewer.id)
+
+    with pytest.raises(Exception):
+        state.role = UserRole.SUPERADMIN  # type: ignore[misc]
+
+
+async def test_change_of_role_in_the_database_is_visible_immediately(service, db_pool, viewer):
+    """El lector NO cachea: un UPDATE del rol se ve en la lectura siguiente.
+    Es la base de que un cambio de rol sea efectivo en el request siguiente y
+    no a las 24 h de vida del token."""
+    assert (await service.get_user_auth_state(viewer.id)).role is UserRole.VIEWER
+
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET role = $2 WHERE id = $1", viewer.id, UserRole.MODERADOR.value
+        )
+
+    assert (await service.get_user_auth_state(viewer.id)).role is UserRole.MODERADOR
+
+
+async def test_is_user_active_agrees_with_get_user_auth_state(service, admin, viewer):
+    """No-regresión de la reimplementación: `is_user_active()` y el
+    `is_active` del método nuevo no pueden divergir, porque el primero delega
+    en el segundo. Se afirma en los tres estados posibles."""
+    missing_id = uuid4()
+
+    for user_id in (viewer.id, missing_id):
+        assert (
+            await service.is_user_active(user_id)
+            == (await service.get_user_auth_state(user_id)).is_active
+        )
+
+    await service.deactivate_user(admin, viewer.id)
+
+    assert (
+        await service.is_user_active(viewer.id)
+        == (await service.get_user_auth_state(viewer.id)).is_active
+    )
+
+
+# ---------------------------------------------------------------------------
 # list_users
 # ---------------------------------------------------------------------------
 
