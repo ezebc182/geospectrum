@@ -338,10 +338,23 @@ efecto.
 Cambio de comportamiento en un flujo que YA ESTÁ EN PRODUCCIÓN. **Commit propio y aislado**,
 con el mensaje diciéndolo explícitamente.
 
-- [ ] 4.1 **Antes de tocar código**: verificar contra la base de PRODUCCIÓN cuántos admins
+- [x] 4.1 **Antes de tocar código**: verificar contra la base de PRODUCCIÓN cuántos admins
       hay y si alguno depende del flujo "admin invita a otro admin". Query de una línea con
       `psql`. (En local, el `timescaledb` escucha en el **puerto 5433**.)
       **AC**: el resultado queda anotado en esta tarea antes de seguir.
+
+      RESUELTA el 2026-08-17 con autorización explícita del usuario para un SELECT de
+      sólo lectura (`railway ssh --service timescaledb`). El bloqueo de abajo ya no
+      aplica: el acceso lo habilitó el usuario, no el agente por su cuenta.
+
+      **Resultado: CERO admins en producción.** Los cuatro usuarios son 1 superadmin,
+      1 moderador y 2 viewers (uno desactivado) — ver el detalle en 6.8. Nadie depende
+      hoy del flujo "admin invita a otro admin", así que el rollout de la decisión 9 no
+      le rompe el alta a ningún usuario existente.
+
+      Nota operativa para futuras consultas: la base de prod NO tiene
+      `DATABASE_PUBLIC_URL` (no está expuesta a internet), así que `railway connect`
+      falla. La vía es `railway ssh --service timescaledb` y correr `psql` adentro.
 
       > **BLOQUEADA — requiere acceso a PRODUCCIÓN, que el agente no tiene ni
       > debe conseguir. Es del USUARIO.** Queda SIN marcar a propósito.
@@ -616,10 +629,27 @@ con el mensaje diciéndolo explícitamente.
       invitaciones, que un superadmin SÍ ve `superadmin` (decisión 9).
       **Esta tarea es del USUARIO** — requiere navegador y sesión real.
 
-- [ ] 6.8 **Antes del deploy**: mirar la tabla `users` de producción. En cuanto sale este
+- [x] 6.8 **Antes del deploy**: mirar la tabla `users` de producción. En cuanto sale este
       change, cualquier divergencia PREEXISTENTE entre el rol del JWT y el de la base (por
       algún `UPDATE` manual hecho en su momento) se vuelve efectiva de inmediato. Es
       exactamente lo que queremos, pero conviene no sorprenderse.
+
+      Verificado el 2026-08-17 (`railway ssh --service timescaledb`, SELECT de sólo
+      lectura). Cuatro usuarios, sin divergencias que sorprendan:
+
+      | email                   | rol        | estado       |
+      | ----------------------- | ---------- | ------------ |
+      | `eebarcoch@gmail.com`   | superadmin | activo       |
+      | `ceciliacoch@gmail.com` | moderador  | activo       |
+      | `jetamclain@gmail.com`  | viewer     | activo       |
+      | `eebarcoch+1@gmail.com` | viewer     | desactivado  |
+
+      Lo que se fue a buscar y NO está: ningún usuario de prueba con rol alto. El
+      `verify-phase3@example.com` que es superadmin en la base LOCAL no existe en
+      producción, así que la separación local/prod está limpia.
+
+      De paso queda demostrado el soft-delete de `user-management` en prod:
+      `eebarcoch+1` tiene `deactivated_at` seteado.
 
 - [ ] 6.9 Deploy. **Aprendizaje registrado del change anterior (`user-management`, tarea
       3.4): el orden backend→dashboard NO es controlable con la configuración actual.**
