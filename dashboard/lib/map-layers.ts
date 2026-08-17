@@ -26,9 +26,16 @@ const BASE_LAYER_DEFS = {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: '© Esri',
   },
+  // CARTO Positron, no el bw-mapnik de tiles.wmflabs.org: ese servicio se dio
+  // de baja (el host ni siquiera resuelve) y la capa quedaba en blanco, con
+  // los 3 tiles rotos y sólo las placas flotando sobre el vacío. Mismo caso
+  // que los overlays geológicos retirados el 2026-08-05, así que la URL nueva
+  // se verificó con curl antes de entrar acá. CARTO pide atribuirse además
+  // de OSM (término de uso), de ahí la atribución doble.
   greyscale: {
-    url: 'https://tiles.wmflabs.org/bw-mapnik/{z}/{x}/{y}.png',
-    attribution: '© OpenStreetMap contributors',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors © CARTO',
+    maxZoom: 20,
   },
   ocean: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
