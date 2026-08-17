@@ -175,6 +175,64 @@ class UserNotDeactivatedError(Exception):
     """Se intentó reactivar una cuenta que ya estaba activa — 409 (simetría)."""
 
 
+# --- role-management — guards propios del cambio de rol --------------------
+
+
+class CannotChangeSuperadminRoleError(Exception):
+    """El rol ACTUAL del objetivo es `superadmin`: nadie le cambia el rol — 403.
+
+    Guard DEDICADO y no emergente, a propósito (design.md Decision 3). Hoy
+    `CannotManageHigherOrEqualRoleError` ya rechaza a cualquier actor contra un
+    superadmin, pero SÓLO por aritmética: `role_level(SUPERADMIN) = 3` es el
+    máximo de `ROLE_LEVEL` (src/models/user.py), así que el `>=` se cumple
+    siempre. La regla "a un superadmin no se le cambia el rol" no está escrita
+    en ningún lado: es un teorema que depende de que nadie agregue nunca un
+    `OWNER: 4` a ese dict — y agregar una línea a un diccionario de constantes
+    es exactamente el tipo de refactor que se hace sin pensar. El día que
+    pasara, un `OWNER` podría degradar superadmins y NINGÚN test fallaría,
+    porque los que hay expresan la aritmética, no la regla.
+
+    Con esta excepción la invariante deja de depender de una propiedad
+    numérica accidental y pasa a ser código que se puede leer, testear y
+    romper ruidosamente.
+
+    Va ANTES del guard general de jerarquía en `change_user_role()` porque el
+    error tiene que nombrar la causa REAL: si un superadmin intenta cambiarle
+    el rol a otro superadmin, no es que "su jerarquía no alcance" (le alcanza
+    todo lo que existe), es que a un superadmin no se le cambia el rol.
+    """
+
+
+class CannotAssignHigherOrEqualRoleError(Exception):
+    """El rol SOLICITADO es de nivel igual o superior al del actor — 403.
+
+    Guard sobre el rol PEDIDO, distinto del de
+    `CannotManageHigherOrEqualRoleError`, que mira el rol ACTUAL del objetivo:
+    uno controla a quién se toca, el otro en qué se lo convierte. Los dos se
+    evalúan. Es la regla que `ROLE_LEVEL` documenta desde multi-user-auth
+    ("solo se asigna rol a niveles ESTRICTAMENTE menores") y que hasta este
+    change no tenía ningún enforcement, porque el rol de un usuario ya creado
+    era inmutable por API.
+    """
+
+
+class UserAlreadyHasRoleError(Exception):
+    """El objetivo ya tiene exactamente el rol solicitado — 409, no un 204.
+
+    Rechazo explícito y no un no-op silencioso, con el mismo criterio que
+    `UserAlreadyDeactivatedError` y que la revocación de una invitación ya
+    aceptada. Argumento propio de este endpoint: la UI confirma "vas a cambiar
+    el rol de X de viewer a moderador"; si entre que se abrió el diálogo y se
+    confirmó otro admin ya lo hizo, un 204 le estaría confirmando una acción
+    que no ocurrió. El 409 dice la verdad: el estado cambió abajo tuyo.
+
+    Se evalúa ÚLTIMO, después de los guards de autorización: si fuera antes,
+    un actor sin jerarquía podría distinguir "ese usuario ya es moderador" de
+    "no lo es" comparando 409 contra 403, y eso es un oráculo del estado del
+    objetivo.
+    """
+
+
 # --- role-management — estado de autorización leído en el camino caliente --
 
 
@@ -1393,4 +1451,59 @@ class AuthService:
                 await conn.execute(
                     "UPDATE users SET deactivated_at = NULL WHERE id = $1",
                     target_id,
+                )
+
+    async def change_user_role(
+        self, actor: CurrentUser, target_id: UUID, new_role: UserRole
+    ) -> None:
+        """[role-management] Cambia `users.role` del objetivo — 204 en el
+        endpoint, `None` acá.
+
+        Misma forma que `deactivate_user()`: `acquire` → `transaction` →
+        `_load_manageable_target()` (que trae la fila con `FOR UPDATE`) →
+        guards propios → UPDATE. El lock es lo que hace que el guard de no-op
+        se evalúe sobre el rol REAL: dos cambios concurrentes al mismo objetivo
+        se serializan y el segundo lee lo que escribió el primero.
+
+        Los SEIS guards, en este orden y NO reordenables (design.md Decision 4):
+
+        1. self → `CannotManageSelfError` (409)                 ┐ de
+        2. inexistente → `UserNotFoundError` (404)              ├ _load_manageable
+        3. nivel(target.role) >= nivel(actor) → `CannotManage-  ┘ _target()
+           HigherOrEqualRoleError` (403)
+        4. target.role == SUPERADMIN → `CannotChangeSuperadminRoleError` (403)
+        5. nivel(new_role) >= nivel(actor) → `CannotAssignHigherOrEqualRoleError` (403)
+        6. target.role == new_role → `UserAlreadyHasRoleError` (409)
+
+        El guard 5 NO se sube al principio aunque sea gratis y no necesite la
+        base: cambiaría la respuesta de un target INEXISTENTE de 404 a 403, y
+        con suficientes intentos la diferencia entre uno y otro se vuelve un
+        oráculo de existencia. Primero se resuelve TODO lo que depende del
+        objetivo, después lo que depende del rol pedido.
+
+        El UPDATE no toca NINGUNA otra columna: `deactivated_at`, `email`,
+        `password_hash`, `google_id` y el resto quedan intactos — por eso
+        cambiarle el rol a una cuenta desactivada es válido y la deja
+        desactivada.
+        """
+        async with self._require_pool().acquire() as conn:
+            async with conn.transaction():
+                row = await self._load_manageable_target(conn, actor, target_id)
+                target_role = UserRole(row["role"])
+
+                if target_role is UserRole.SUPERADMIN:
+                    # Guard 4, DEDICADO: ver el docstring de la excepción sobre
+                    # por qué no se deja emergente del guard 3.
+                    raise CannotChangeSuperadminRoleError(str(target_id))
+
+                if role_level(new_role) >= role_level(actor.role):
+                    raise CannotAssignHigherOrEqualRoleError(new_role.value)
+
+                if target_role is new_role:
+                    raise UserAlreadyHasRoleError(str(target_id))
+
+                await conn.execute(
+                    "UPDATE users SET role = $2 WHERE id = $1",
+                    target_id,
+                    new_role.value,
                 )

@@ -22,10 +22,13 @@ from src.models.user import CurrentUser, UserRole
 from src.services.auth_service import (
     AccountDeactivatedError,
     AuthService,
+    CannotAssignHigherOrEqualRoleError,
+    CannotChangeSuperadminRoleError,
     CannotManageHigherOrEqualRoleError,
     CannotManageSelfError,
     InvitationRequiredError,
     UserAlreadyDeactivatedError,
+    UserAlreadyHasRoleError,
     UserNotDeactivatedError,
     UserNotFoundError,
 )
@@ -436,6 +439,305 @@ async def test_is_user_active_agrees_with_get_user_auth_state(service, admin, vi
         await service.is_user_active(viewer.id)
         == (await service.get_user_auth_state(viewer.id)).is_active
     )
+
+
+# ---------------------------------------------------------------------------
+# role-management (tareas 3.5 y 3.6) — change_user_role(): los SEIS guards, su
+# ORDEN y la concurrencia, contra Postgres real.
+#
+# El orden se testea con casos que violan DOS guards a la vez: si sólo se
+# afirmara el status/la excepción de casos que violan uno solo, reordenarlos no
+# rompería nada y el oráculo de existencia (404 vs 403) se abriría en silencio.
+# ---------------------------------------------------------------------------
+
+
+async def _role_of(db_pool, user_id) -> UserRole:
+    return UserRole(await _column(db_pool, user_id, "role"))
+
+
+async def test_change_role_writes_the_role_and_leaves_the_rest_of_the_row_intact(
+    service, db_pool, admin, viewer
+):
+    """[Scenario: Un admin promueve a un viewer a moderador] El UPDATE toca UNA
+    columna: todo lo demás (incluido `deactivated_at`) queda como estaba."""
+    before = {
+        column: await _column(db_pool, viewer.id, column)
+        for column in (
+            "email",
+            "password_hash",
+            "google_id",
+            "created_at",
+            "deactivated_at",
+        )
+    }
+
+    await service.change_user_role(admin, viewer.id, UserRole.MODERADOR)
+
+    assert await _role_of(db_pool, viewer.id) is UserRole.MODERADOR
+    for column, value in before.items():
+        assert await _column(db_pool, viewer.id, column) == value
+
+
+async def test_superadmin_can_demote_an_admin(service, db_pool, superadmin, admin):
+    """[Scenario: Un superadmin degrada a un admin a viewer]"""
+    await service.change_user_role(superadmin, admin.id, UserRole.VIEWER)
+
+    assert await _role_of(db_pool, admin.id) is UserRole.VIEWER
+
+
+async def test_changing_the_role_of_a_deactivated_account_is_valid(service, db_pool, admin, viewer):
+    """[Scenario: Cambiar el rol de una cuenta desactivada es válido] El rol
+    cambia y la cuenta SIGUE desactivada, con su timestamp original."""
+    await service.deactivate_user(admin, viewer.id)
+    original = await _deactivated_at(db_pool, viewer.id)
+
+    await service.change_user_role(admin, viewer.id, UserRole.MODERADOR)
+
+    assert await _role_of(db_pool, viewer.id) is UserRole.MODERADOR
+    assert await _deactivated_at(db_pool, viewer.id) == original
+
+
+# --- Guard 1 (self) y su precedencia ---------------------------------------
+
+
+async def test_nobody_can_change_their_own_role_not_even_a_superadmin(service, db_pool, superadmin):
+    """[Scenario: Nadie puede cambiarse el rol a sí mismo] El rol más alto del
+    sistema: ningún guard de jerarquía lo frena y aun así no puede."""
+    with pytest.raises(CannotManageSelfError):
+        await service.change_user_role(superadmin, superadmin.id, UserRole.VIEWER)
+
+    assert await _role_of(db_pool, superadmin.id) is UserRole.SUPERADMIN
+
+
+async def test_self_guard_wins_over_the_requested_role_guard(service, db_pool, admin):
+    """[Scenario: El orden de los guards no se altera] Un admin pidiendo
+    `superadmin` para SÍ MISMO viola self (1) y jerarquía-sobre-rol-pedido (5)
+    a la vez. Gana el self: 409, no 403."""
+    with pytest.raises(CannotManageSelfError):
+        await service.change_user_role(admin, admin.id, UserRole.SUPERADMIN)
+
+    assert await _role_of(db_pool, admin.id) is UserRole.ADMIN
+
+
+# --- Guard 2 (404) y su precedencia sobre el rol pedido ---------------------
+
+
+async def test_change_role_of_an_unknown_user_raises_not_found(service, admin):
+    """[Scenario: Usuario inexistente]"""
+    with pytest.raises(UserNotFoundError):
+        await service.change_user_role(admin, uuid4(), UserRole.VIEWER)
+
+
+async def test_not_found_wins_over_the_requested_role_guard(service, admin):
+    """El guard 5 NO se subió al principio, y esto lo clava: un target
+    INEXISTENTE con un rol pedido que además viola la jerarquía sale 404, no
+    403. Si alguien "optimiza" validando el rol pedido antes de ir a la base,
+    la diferencia entre 403 y 404 se vuelve un oráculo de existencia y este
+    test muere."""
+    with pytest.raises(UserNotFoundError):
+        await service.change_user_role(admin, uuid4(), UserRole.SUPERADMIN)
+
+
+# --- Guard 3 (jerarquía sobre el rol ACTUAL del target) --------------------
+
+
+async def test_admin_cannot_change_the_role_of_another_admin(service, db_pool, admin):
+    """[Scenario: Un admin no puede cambiarle el rol a otro admin] Nivel IGUAL
+    también está prohibido."""
+    other_admin = await _make_user(db_pool, "otro-admin@example.com", UserRole.ADMIN)
+
+    with pytest.raises(CannotManageHigherOrEqualRoleError):
+        await service.change_user_role(admin, other_admin.id, UserRole.VIEWER)
+
+    assert await _role_of(db_pool, other_admin.id) is UserRole.ADMIN
+
+
+async def test_the_noop_409_does_not_leak_to_an_actor_without_permission(service, db_pool, admin):
+    """[Scenario: El 409 de no-op no se filtra a quien no tiene permiso] Otro
+    admin al que se le pide el rol que YA tiene: el guard 3 (403) corre antes
+    que el 6 (409), así que el actor ni se entera del estado del objetivo."""
+    other_admin = await _make_user(db_pool, "admin-noop@example.com", UserRole.ADMIN)
+
+    with pytest.raises(CannotManageHigherOrEqualRoleError):
+        await service.change_user_role(admin, other_admin.id, UserRole.ADMIN)
+
+
+# --- Guard 4 (superadmin intocable) — DEDICADO, no emergente ---------------
+
+
+async def test_a_superadmin_role_is_unreachable_by_every_actor(service, db_pool, superadmin):
+    """[Scenario: Un admin tampoco puede tocar a un superadmin] Barrido de los
+    cuatro roles contra un superadmin: nadie le cambia el rol."""
+    actors = [
+        await _make_user(db_pool, "rv@example.com", UserRole.VIEWER),
+        await _make_user(db_pool, "rm@example.com", UserRole.MODERADOR),
+        await _make_user(db_pool, "ra@example.com", UserRole.ADMIN),
+    ]
+
+    for actor in actors:
+        with pytest.raises(CannotManageHigherOrEqualRoleError):
+            await service.change_user_role(actor, superadmin.id, UserRole.VIEWER)
+
+    assert await _role_of(db_pool, superadmin.id) is UserRole.SUPERADMIN
+
+
+async def test_a_superadmin_cannot_demote_another_superadmin(service, db_pool, superadmin):
+    """[Scenario: Un superadmin no puede degradar a otro superadmin] Nivel
+    IGUAL: hoy lo frena el guard 3, que corre primero. El 403 es el mismo; cuál
+    guard lo produce se afirma en el test de abajo."""
+    other_superadmin = await _make_user(db_pool, "s3@example.com", UserRole.SUPERADMIN)
+
+    with pytest.raises(CannotManageHigherOrEqualRoleError):
+        await service.change_user_role(superadmin, other_superadmin.id, UserRole.ADMIN)
+
+    assert await _role_of(db_pool, other_superadmin.id) is UserRole.SUPERADMIN
+
+
+async def test_the_superadmin_rejection_comes_from_the_dedicated_guard(
+    service, db_pool, superadmin, monkeypatch
+):
+    """[Scenario: El rechazo viene del guard dedicado, no del general] EL test
+    de la Decision 3, y el assert es sobre el TIPO de excepción.
+
+    Para llegar al guard 4 hace falta un actor que PASE el guard 3, o sea de
+    nivel estrictamente mayor a superadmin — algo que hoy no existe en
+    `ROLE_LEVEL`. Se simula el futuro que la Decision 3 anticipa (alguien
+    agrega un `OWNER: 4` al dict) parcheando `role_level` en el módulo del
+    servicio para que el actor valga 4.
+
+    Sin el guard dedicado, ese día el actor de nivel 4 degradaría superadmins
+    SIN QUE FALLE NINGÚN TEST, porque los demás expresan la aritmética y no la
+    regla. Este es el único que muere.
+    """
+    import src.services.auth_service as auth_module
+
+    target = await _make_user(db_pool, "s4@example.com", UserRole.SUPERADMIN)
+    actor = CurrentUser(id=uuid4(), email="owner@example.com", role=UserRole.SUPERADMIN)
+
+    # Actor y target tienen el MISMO valor de enum, así que `role_level` no los
+    # puede distinguir por argumento. El orden de evaluación de
+    # `_load_manageable_target()` es `role_level(target) >= role_level(actor)`:
+    # primero el target, después el actor. Se emula la secuencia — 3 para el
+    # target, 4 para el actor — que es exactamente el mundo con un `OWNER: 4`.
+    calls: list[UserRole] = []
+
+    def _actor_outranks_superadmin(role: UserRole) -> int:
+        calls.append(role)
+        return 3 if len(calls) == 1 else 4
+
+    monkeypatch.setattr(auth_module, "role_level", _actor_outranks_superadmin)
+
+    with pytest.raises(CannotChangeSuperadminRoleError):
+        await service.change_user_role(actor, target.id, UserRole.ADMIN)
+
+    assert await _role_of(db_pool, target.id) is UserRole.SUPERADMIN
+
+
+# --- Guard 5 (jerarquía sobre el rol SOLICITADO) ---------------------------
+
+
+@pytest.mark.parametrize("requested", [UserRole.ADMIN, UserRole.SUPERADMIN])
+async def test_admin_cannot_assign_its_own_level_or_higher(
+    service, db_pool, admin, viewer, requested
+):
+    """[Scenario: Un admin no puede promover a nadie a admin] +
+    [Scenario: ... ni a superadmin]. El guard mira el rol PEDIDO, no el del
+    objetivo: el viewer es perfectamente gestionable."""
+    with pytest.raises(CannotAssignHigherOrEqualRoleError):
+        await service.change_user_role(admin, viewer.id, requested)
+
+    assert await _role_of(db_pool, viewer.id) is UserRole.VIEWER
+
+
+async def test_not_even_a_superadmin_can_create_another_superadmin_by_this_door(
+    service, db_pool, superadmin, viewer
+):
+    """[Scenario: Ni siquiera un superadmin puede crear otro superadmin por
+    esta vía] Nivel IGUAL al propio: 403, no un 204."""
+    with pytest.raises(CannotAssignHigherOrEqualRoleError):
+        await service.change_user_role(superadmin, viewer.id, UserRole.SUPERADMIN)
+
+    assert await _role_of(db_pool, viewer.id) is UserRole.VIEWER
+
+
+async def test_superadmin_can_assign_the_admin_role(service, db_pool, superadmin, viewer):
+    """[Scenario: Un superadmin sí puede asignar el rol admin]"""
+    await service.change_user_role(superadmin, viewer.id, UserRole.ADMIN)
+
+    assert await _role_of(db_pool, viewer.id) is UserRole.ADMIN
+
+
+# --- Guard 6 (no-op) --------------------------------------------------------
+
+
+async def test_assigning_the_role_the_user_already_has_is_a_conflict(
+    service, db_pool, superadmin, admin
+):
+    """[Scenario: Asignar el rol actual responde 409] Rechazo explícito, no un
+    204 engañoso."""
+    with pytest.raises(UserAlreadyHasRoleError):
+        await service.change_user_role(superadmin, admin.id, UserRole.ADMIN)
+
+    assert await _role_of(db_pool, admin.id) is UserRole.ADMIN
+
+
+# --- Concurrencia: el FOR UPDATE serializa ---------------------------------
+
+
+async def test_two_concurrent_role_changes_leave_exactly_one_winner(
+    service, db_pool, superadmin, admin, viewer
+):
+    """[Requirement: Atomicidad del cambio de rol frente a concurrencia] Dos
+    actores promueven al MISMO usuario al MISMO rol a la vez. El `FOR UPDATE`
+    serializa: la segunda transacción lee el rol que escribió la primera y sale
+    por el guard 6. Un mock de asyncpg jamás detectaría esto."""
+    results = await asyncio.gather(
+        service.change_user_role(admin, viewer.id, UserRole.MODERADOR),
+        service.change_user_role(superadmin, viewer.id, UserRole.MODERADOR),
+        return_exceptions=True,
+    )
+
+    failures = [r for r in results if isinstance(r, Exception)]
+    successes = [r for r in results if not isinstance(r, Exception)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert isinstance(failures[0], UserAlreadyHasRoleError)
+    assert await _role_of(db_pool, viewer.id) is UserRole.MODERADOR
+
+
+async def test_a_concurrent_change_does_not_skip_the_hierarchy_guard(
+    service, db_pool, superadmin, admin, viewer
+):
+    """[Scenario: Un cambio concurrente no salta el guard de jerarquía] El
+    superadmin promueve al viewer a admin mientras el admin intenta tocarlo.
+    El guard del admin se evalúa sobre el rol leído BAJO LOCK: o llega antes
+    (y gana) o llega después y ve `admin`, que es nivel igual al suyo ⇒ 403.
+    Nunca las dos cosas."""
+    results = await asyncio.gather(
+        service.change_user_role(superadmin, viewer.id, UserRole.ADMIN),
+        service.change_user_role(admin, viewer.id, UserRole.MODERADOR),
+        return_exceptions=True,
+    )
+
+    superadmin_result, admin_result = results
+    assert not isinstance(superadmin_result, Exception)
+    final_role = await _role_of(db_pool, viewer.id)
+    if isinstance(admin_result, Exception):
+        # El admin llegó SEGUNDO: leyó `admin` bajo lock — el rol que acababa
+        # de escribir el superadmin, no el `viewer` previo a la transacción — y
+        # su guard 3 disparó. El estado final es el del superadmin.
+        assert isinstance(admin_result, CannotManageHigherOrEqualRoleError)
+        assert final_role is UserRole.ADMIN
+    else:
+        # El admin llegó PRIMERO (viewer → moderador, su guard 3 pasó porque
+        # moderador < admin) y el superadmin escribió `admin` encima. Final
+        # consistente con ese orden, sin lectura sucia en el medio.
+        assert final_role is UserRole.ADMIN
+    # En las dos ramas el estado final es el mismo porque el superadmin siempre
+    # gana la última escritura: lo que el test verifica es que el guard del
+    # admin se evaluó sobre el rol LEÍDO BAJO LOCK, nunca sobre uno stale — si
+    # se evaluara antes de la transacción, el admin vería `viewer` siempre y
+    # nunca saldría por CannotManageHigherOrEqualRoleError.
 
 
 # ---------------------------------------------------------------------------

@@ -248,6 +248,24 @@ class UserProfileUpdate(BaseModel):
     locale: Optional[Locale] = None
 
 
+class RoleChangeRequest(BaseModel):
+    """Body de POST /auth/users/{user_id}/role (role-management).
+
+    Modelo propio y NO `UserProfileUpdate`: ese excluye `role` a propósito y
+    lo documenta — el rol es una decisión de ADMINISTRACIÓN sobre OTRO
+    usuario, no un campo del perfil propio. Reusarlo acá le abriría la puerta
+    a que alguien "aproveche" el shape y termine aceptando `role` en
+    `PATCH /account/profile`, que es exactamente lo que ese tipo previene por
+    construcción.
+
+    Pydantic valida contra el enum `UserRole`: un rol inexistente ("root") es
+    un 422 antes de llegar al servicio, no un guard de dominio —
+    [Scenario: Un rol inexistente se rechaza con 422].
+    """
+
+    role: UserRole
+
+
 class TotpSetupResponse(BaseModel):
     """Respuesta de POST /auth/2fa/setup.
 

@@ -40,11 +40,16 @@ from src.services.auth_service import AuthService
 
 PASSWORD = "Sismo2026!"
 
-# Los 3 endpoints nuevos, para las tandas parametrizadas de 401/403.
+# Los endpoints de administración de cuentas, para las tandas parametrizadas
+# de 401/403. El de rol se manda SIN body a propósito: la dependencia de
+# autenticación/autorización se resuelve ANTES de validar el payload, así que
+# el 401/403 tiene que salir igual — si alguna vez saliera 422, sería la señal
+# de que el guard dejó de correr primero.
 PROTECTED_ENDPOINTS = [
     ("get", "/auth/users"),
     ("post", f"/auth/users/{uuid4()}/deactivate"),
     ("post", f"/auth/users/{uuid4()}/reactivate"),
+    ("post", f"/auth/users/{uuid4()}/role"),
 ]
 
 
@@ -393,6 +398,299 @@ def test_reactivate_applies_the_hierarchy_guard_too(client, seeded, _migrated):
 
     assert response.status_code == 403
     assert _fetch_user_column(_migrated, target.id, "deactivated_at") is not None
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/users/{id}/role — matriz de status COMPLETA, por API directa
+#
+# (role-management, tareas 3.8 y 3.9) Todo por HTTP crudo, nunca "el botón
+# estaba deshabilitado": el enforcement es server-side y se prueba sin la UI.
+# El AuthService es el REAL contra Postgres real, igual que el resto del
+# archivo — sólo se fabrica la identidad de la sesión.
+# ---------------------------------------------------------------------------
+
+
+def _change_role(client: TestClient, target_id, role: UserRole):
+    return client.post(f"/auth/users/{target_id}/role", json={"role": role.value})
+
+
+def test_admin_promotes_a_viewer_to_moderador(client, seeded, _migrated):
+    """[Scenario: Un admin promueve a un viewer a moderador] El assert que
+    importa es contra la BASE, no contra el 204."""
+    target = seeded[UserRole.VIEWER]
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.MODERADOR)
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert _fetch_user_column(_migrated, target.id, "role") == "moderador"
+
+
+def test_superadmin_demotes_an_admin_to_viewer(client, seeded, _migrated):
+    """[Scenario: Un superadmin degrada a un admin a viewer]"""
+    target = seeded[UserRole.ADMIN]
+    _login_as(seeded[UserRole.SUPERADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.VIEWER)
+
+    assert response.status_code == 204
+    assert _fetch_user_column(_migrated, target.id, "role") == "viewer"
+
+
+def test_changing_the_role_of_a_deactivated_account_keeps_it_deactivated(client, seeded, _migrated):
+    """[Scenario: Cambiar el rol de una cuenta desactivada es válido] El rol
+    cambia y `deactivated_at` conserva su timestamp original."""
+    target = seeded[UserRole.VIEWER]
+    _set_user_column(_migrated, target.id, "deactivated_at", "now()")
+    original = _fetch_user_column(_migrated, target.id, "deactivated_at")
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.MODERADOR)
+
+    assert response.status_code == 204
+    assert _fetch_user_column(_migrated, target.id, "role") == "moderador"
+    assert _fetch_user_column(_migrated, target.id, "deactivated_at") == original
+
+
+@pytest.mark.parametrize("requested", [UserRole.ADMIN, UserRole.SUPERADMIN])
+def test_admin_cannot_assign_its_own_level_or_higher(client, seeded, _migrated, requested):
+    """[Scenario: Un admin no puede promover a nadie a admin] +
+    [Scenario: ... ni a superadmin] — guard 5, sobre el rol PEDIDO."""
+    target = seeded[UserRole.VIEWER]
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, target.id, requested)
+
+    assert response.status_code == 403
+    assert _fetch_user_column(_migrated, target.id, "role") == "viewer"
+
+
+def test_not_even_a_superadmin_creates_another_superadmin_by_this_door(client, seeded, _migrated):
+    """[Scenario: Ni siquiera un superadmin puede crear otro superadmin por
+    esta vía] Nivel IGUAL al propio: 403."""
+    target = seeded[UserRole.VIEWER]
+    _login_as(seeded[UserRole.SUPERADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.SUPERADMIN)
+
+    assert response.status_code == 403
+    assert _fetch_user_column(_migrated, target.id, "role") == "viewer"
+
+
+def test_superadmin_can_assign_the_admin_role(client, seeded, _migrated):
+    """[Scenario: Un superadmin sí puede asignar el rol admin]"""
+    target = seeded[UserRole.VIEWER]
+    _login_as(seeded[UserRole.SUPERADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.ADMIN)
+
+    assert response.status_code == 204
+    assert _fetch_user_column(_migrated, target.id, "role") == "admin"
+
+
+def _insert_user(dsn: str, email: str, role: UserRole):
+    """Fila extra fuera del `seeded` (que tiene UNA por rol), para los casos
+    que necesitan DOS usuarios del mismo rol."""
+    import psycopg2
+
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (email, role) VALUES (%s, %s) RETURNING id",
+                (email, role.value),
+            )
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("actor_role", [UserRole.ADMIN, UserRole.SUPERADMIN])
+def test_nobody_changes_the_role_of_a_superadmin(client, seeded, _migrated, actor_role):
+    """[Scenario: Un admin tampoco puede tocar a un superadmin] +
+    [Scenario: Un superadmin no puede degradar a otro superadmin].
+
+    El objetivo es un superadmin DISTINTO del actor a propósito: apuntar al
+    propio devolvería 409 por el guard de self y no probaría nada sobre la
+    intocabilidad del rol.
+    """
+    target_id = _insert_user(_migrated, "otro-superadmin@example.com", UserRole.SUPERADMIN)
+    _login_as(seeded[actor_role], client)
+
+    response = _change_role(client, target_id, UserRole.VIEWER)
+
+    assert response.status_code == 403
+    assert _fetch_user_column(_migrated, target_id, "role") == "superadmin"
+
+
+def test_admin_cannot_change_the_role_of_another_admin(client, seeded, _migrated):
+    """[Scenario: Un admin no puede cambiarle el rol a otro admin] Guard 3,
+    sobre el rol ACTUAL del objetivo: nivel IGUAL también está prohibido."""
+    other_admin_id = _insert_user(_migrated, "otro-admin@example.com", UserRole.ADMIN)
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, other_admin_id, UserRole.VIEWER)
+
+    assert response.status_code == 403
+    assert _fetch_user_column(_migrated, other_admin_id, "role") == "admin"
+
+
+def test_changing_your_own_role_returns_409(client, seeded, _migrated):
+    """[Scenario: Nadie puede cambiarse el rol a sí mismo] Con un SUPERADMIN,
+    el rol más alto: ningún guard de jerarquía lo frena y aun así no puede."""
+    actor = seeded[UserRole.SUPERADMIN]
+    _login_as(actor, client)
+
+    response = _change_role(client, actor.id, UserRole.VIEWER)
+
+    assert response.status_code == 409
+    assert _fetch_user_column(_migrated, actor.id, "role") == "superadmin"
+
+
+def test_self_guard_wins_over_the_requested_role_guard(client, seeded, _migrated):
+    """[Scenario: El orden de los guards no se altera] Un admin pidiendo
+    `superadmin` para sí mismo viola self (409) y rol-pedido (403) a la vez:
+    gana el self."""
+    actor = seeded[UserRole.ADMIN]
+    _login_as(actor, client)
+
+    response = _change_role(client, actor.id, UserRole.SUPERADMIN)
+
+    assert response.status_code == 409
+    assert _fetch_user_column(_migrated, actor.id, "role") == "admin"
+
+
+def test_assigning_the_role_the_user_already_has_returns_409(client, seeded, _migrated):
+    """[Scenario: Asignar el rol actual responde 409] No-op explícito, no un
+    204 engañoso."""
+    target = seeded[UserRole.MODERADOR]
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.MODERADOR)
+
+    assert response.status_code == 409
+    assert _fetch_user_column(_migrated, target.id, "role") == "moderador"
+
+
+def test_change_role_of_an_unknown_user_returns_404(client, seeded):
+    """[Scenario: Usuario inexistente]"""
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, uuid4(), UserRole.VIEWER)
+
+    assert response.status_code == 404
+
+
+def test_not_found_wins_over_the_requested_role_guard(client, seeded):
+    """El guard del rol pedido NO se evalúa antes de ir a la base: un target
+    inexistente con un rol pedido inválido por jerarquía sale 404, no 403. La
+    diferencia entre uno y otro no puede volverse un oráculo de existencia."""
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, uuid4(), UserRole.SUPERADMIN)
+
+    assert response.status_code == 404
+
+
+def test_an_invented_role_is_rejected_with_422(client, seeded, _migrated):
+    """[Scenario: Un rol inexistente se rechaza con 422] Lo rechaza Pydantic
+    contra el enum, antes de llegar al servicio: no es un guard de dominio."""
+    target = seeded[UserRole.VIEWER]
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = client.post(f"/auth/users/{target.id}/role", json={"role": "root"})
+
+    assert response.status_code == 422
+    assert _fetch_user_column(_migrated, target.id, "role") == "viewer"
+
+
+# ---------------------------------------------------------------------------
+# Bodies LITERALES (tarea 3.9) — el frontend discrimina los 409 por el TEXTO
+# ---------------------------------------------------------------------------
+
+
+def test_the_self_conflict_body_contains_the_marker_the_frontend_matches(client, seeded):
+    """EL test de contrato del change. `UsersPanel.tsx` distingue el 409 de
+    auto-gestión del de no-op con `err.message.includes('own account')`, así
+    que el TEXTO del body es contrato de facto.
+
+    El design proponía "cannot change your own role", que NO contiene esa
+    subcadena y habría caído en la clave i18n equivocada ('conflict' en vez de
+    'self') sin romper un solo test. Este assert es el que hace ruido en el
+    backend si alguien reescribe el mensaje.
+    """
+    actor = seeded[UserRole.SUPERADMIN]
+    _login_as(actor, client)
+
+    response = _change_role(client, actor.id, UserRole.VIEWER)
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "cannot change your own account role"}
+    assert "own account" in response.json()["error"]
+
+
+def test_the_noop_conflict_body_does_not_contain_the_self_marker(client, seeded):
+    """El otro 409 tiene que caer del lado contrario del mismo match: si
+    contuviera "own account", el frontend mostraría el copy de auto-gestión
+    para un conflicto que no lo es."""
+    target = seeded[UserRole.MODERADOR]
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, target.id, UserRole.MODERADOR)
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "user already has that role"}
+    assert "own account" not in response.json()["error"]
+
+
+def test_the_not_found_body_is_literal(client, seeded):
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, uuid4(), UserRole.VIEWER)
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "user not found"}
+
+
+def test_the_hierarchy_body_is_literal(client, seeded, _migrated):
+    """Guard 3 (rol ACTUAL del objetivo) — el mismo texto que ya usan
+    deactivate/reactivate, porque es la misma regla."""
+    other_admin_id = _insert_user(_migrated, "admin-body@example.com", UserRole.ADMIN)
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, other_admin_id, UserRole.VIEWER)
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "cannot manage a user with an equal or higher role"}
+
+
+def test_the_superadmin_body_is_literal(client, seeded):
+    """El body del guard dedicado nombra la causa REAL ("a un superadmin no se
+    le cambia el rol"), no "tu jerarquía no alcanza"."""
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, seeded[UserRole.SUPERADMIN].id, UserRole.VIEWER)
+
+    assert response.status_code == 403
+    # OJO: hoy el que dispara para un actor admin es el guard 3 (jerarquía),
+    # que corre ANTES del dedicado — el body es el de jerarquía. El body del
+    # guard dedicado se verifica en el test unitario, que es donde se puede
+    # llegar a él (ver test_the_superadmin_rejection_comes_from_the_dedicated_guard).
+    assert response.json() == {"error": "cannot manage a user with an equal or higher role"}
+
+
+def test_the_assign_higher_role_body_is_literal(client, seeded):
+    """Guard 5, el que NO existía antes de este change: el body tiene que
+    distinguirse del de jerarquía-sobre-el-objetivo, porque son reglas
+    distintas (a quién tocás vs. en qué lo convertís)."""
+    _login_as(seeded[UserRole.ADMIN], client)
+
+    response = _change_role(client, seeded[UserRole.VIEWER].id, UserRole.ADMIN)
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "cannot assign a role equal to or higher than your own"}
 
 
 # ---------------------------------------------------------------------------

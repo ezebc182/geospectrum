@@ -52,6 +52,7 @@ from src.models.user import (
     MeResponse,
     TotpSetupResponse,
     TotpVerifyRequest,
+    RoleChangeRequest,
     UserCreate,
     UserListItem,
     UserProfile,
@@ -71,6 +72,8 @@ from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
     AccountDeactivatedError,
     AuthService,
+    CannotAssignHigherOrEqualRoleError,
+    CannotChangeSuperadminRoleError,
     CannotManageHigherOrEqualRoleError,
     CannotManageSelfError,
     EmailAlreadyRegisteredError,
@@ -86,6 +89,7 @@ from src.services.auth_service import (
     TotpAlreadyEnabledError,
     TotpNotAvailableForGoogleOnlyUserError,
     UserAlreadyDeactivatedError,
+    UserAlreadyHasRoleError,
     UserNotDeactivatedError,
     UserNotFoundError,
 )
@@ -1555,6 +1559,84 @@ async def reactivate_user(
         )
 
     requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="204").inc()
+    # Ver el comentario simétrico en deactivate_user().
+    return None
+
+
+@app.post(
+    "/auth/users/{user_id}/role",
+    status_code=status.HTTP_204_NO_CONTENT,
+    # Ver el comentario del decorador de deactivate_user(): sin
+    # `response_model=None` FastAPI infiere el response_model desde
+    # Optional[JSONResponse], concluye que un 204 tiene cuerpo y revienta al
+    # IMPORTAR el módulo. mypy no lo ve; el primer test que levanta la app, sí.
+    response_model=None,
+    tags=["auth"],
+)
+async def change_user_role(
+    user_id: UUID,
+    payload: RoleChangeRequest,
+    admin: CurrentUser = Depends(require_min_role(UserRole.ADMIN)),
+    auth_service: AuthService = Depends(_get_auth_service),
+) -> Optional[JSONResponse]:
+    """
+    Cambia el rol de OTRO usuario — [Requirement: Cambio de rol de un usuario
+    existente]. 204 sin cuerpo, simétrico con deactivate/reactivate.
+
+    Matriz de errores (specs/auth/spec.md § Matriz de status): 409 auto-cambio,
+    404 inexistente, 403 jerarquía sobre el rol ACTUAL del objetivo, 403
+    objetivo superadmin (guard dedicado), 403 jerarquía sobre el rol PEDIDO,
+    409 no-op. Un `role` fuera del enum lo rechaza Pydantic con 422 antes de
+    llegar acá.
+
+    Los guards son server-side: el `<select>` deshabilitado de la UI no es el
+    mecanismo de seguridad — [Scenario: El guard es server-side, no de UI].
+    """
+    try:
+        await auth_service.change_user_role(admin, user_id, payload.role)
+    except CannotManageSelfError:
+        requests_total.labels(endpoint="/auth/users/{id}/role", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            # El texto contiene "own account" a propósito: es la subcadena por
+            # la que el frontend (UsersPanel.tsx) distingue este 409 del de
+            # no-op. Contrato de facto — hay un test de integración que clava
+            # el body literal para que reescribirlo reviente acá y no en una
+            # traducción silenciosamente equivocada en producción.
+            content={"error": "cannot change your own account role"},
+        )
+    except UserNotFoundError:
+        requests_total.labels(endpoint="/auth/users/{id}/role", status="404").inc()
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "user not found"},
+        )
+    except CannotManageHigherOrEqualRoleError:
+        requests_total.labels(endpoint="/auth/users/{id}/role", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "cannot manage a user with an equal or higher role"},
+        )
+    except CannotChangeSuperadminRoleError:
+        requests_total.labels(endpoint="/auth/users/{id}/role", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "cannot change the role of a superadmin"},
+        )
+    except CannotAssignHigherOrEqualRoleError:
+        requests_total.labels(endpoint="/auth/users/{id}/role", status="403").inc()
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "cannot assign a role equal to or higher than your own"},
+        )
+    except UserAlreadyHasRoleError:
+        requests_total.labels(endpoint="/auth/users/{id}/role", status="409").inc()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error": "user already has that role"},
+        )
+
+    requests_total.labels(endpoint="/auth/users/{id}/role", status="204").inc()
     # Ver el comentario simétrico en deactivate_user().
     return None
 
