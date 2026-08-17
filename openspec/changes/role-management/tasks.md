@@ -668,11 +668,28 @@ con el mensaje diciéndolo explícitamente.
       Nota: los pushes a ramas que no son `main` generan un Preview de Vercel aislado;
       `geospectrum.org` no se toca. Sirve para QA sin exponer producción.
 
-- [ ] 6.10 Smoke en producción: `POST /auth/users/{uuid}/role` sin sesión ⇒ **401 y no 404**
+- [x] 6.10 Smoke en producción: `POST /auth/users/{uuid}/role` sin sesión ⇒ **401 y no 404**
       (el endpoint existe, el deploy llegó); `/auth/me` ⇒ 401 y no 500 (el canario de que
       `get_user_auth_state()` no reventó contra el esquema real); `/report?area=chile` ⇒ 200
       (sin regresión del bug histórico de los 500 en el endpoint público con
       personalización, que atraviesa `get_current_user_optional()`).
+
+      Los tres verdes el 2026-08-17 contra `api.geospectrum.org`:
+
+      | smoke                                      | esperado     | obtenido               |
+      | ------------------------------------------ | ------------ | ---------------------- |
+      | `POST /auth/users/{uuid-de-ceros}/role`     | 401, no 404  | **401** `not authenticated` |
+      | `GET /auth/me`                             | 401, no 500  | **401** `not authenticated` |
+      | `GET /report?area=chile`                   | 200          | **200**, 109 KB, 1.6 s |
+
+      El POST se corrió con un UUID de ceros justamente para no tocar ningún usuario
+      real: lo que se mide es que el guard rechace ANTES de ir a la base. Que devuelva
+      401 y no 404 prueba eso — con 404 el servidor estaría filtrando a un anónimo qué
+      usuarios existen.
+
+      El body `{"detail": ...}` (y no `{"error": ...}`) confirma de paso que el rechazo
+      sale del guard en `Depends()` y no de un handler, que es la distinción de formatos
+      ya documentada en el proyecto.
 
 - [ ] 6.11 Verificación en producción con sesión de admin (**del USUARIO**): promover una
       cuenta de prueba de viewer a moderador y confirmar acceso inmediato **sin re-login**;
