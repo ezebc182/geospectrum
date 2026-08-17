@@ -71,8 +71,8 @@ from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
     AccountDeactivatedError,
     AuthService,
-    CannotDeactivateSelfError,
     CannotManageHigherOrEqualRoleError,
+    CannotManageSelfError,
     EmailAlreadyRegisteredError,
     InvalidInvitationError,
     InvalidTokenError,
@@ -1474,7 +1474,7 @@ async def deactivate_user(
     """
     try:
         await auth_service.deactivate_user(admin, user_id)
-    except CannotDeactivateSelfError:
+    except CannotManageSelfError:
         # 409 y no 403: un superadmin tiene todo el permiso del mundo y aun
         # así no puede — es un conflicto de estado, no de autorización.
         requests_total.labels(endpoint="/auth/users/{id}/deactivate", status="409").inc()
@@ -1529,7 +1529,7 @@ async def reactivate_user(
     """
     try:
         await auth_service.reactivate_user(admin, user_id)
-    except CannotDeactivateSelfError:
+    except CannotManageSelfError:
         requests_total.labels(endpoint="/auth/users/{id}/reactivate", status="409").inc()
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,

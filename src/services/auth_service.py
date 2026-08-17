@@ -129,13 +129,24 @@ class UserNotFoundError(Exception):
     """No existe ninguna fila en `users` con el id objetivo — 404."""
 
 
-class CannotDeactivateSelfError(Exception):
-    """Un actor intentó desactivarse a sí mismo — 409, no 403.
+class CannotManageSelfError(Exception):
+    """Un actor intentó gestionarse a sí mismo (desactivar / reactivar /
+    cambiar de rol) — 409, no 403.
 
     409 y no 403 a propósito: no es una falta de permisos. Un superadmin tiene
     TODO el permiso del mundo y aun así no puede hacerlo — es un conflicto con
-    el estado (te estarías dejando afuera del sistema), no una autorización
-    faltante.
+    el estado (te estarías dejando afuera del sistema, o cambiándote tus
+    propios permisos), no una autorización faltante.
+
+    Aplica también a la REACTIVACIÓN, aunque ahí sea inalcanzable en la
+    práctica (un actor autenticado tiene su cuenta activa por definición): se
+    valida igual por simetría, para no depender de una invariante que vive en
+    otra capa.
+
+    [role-management] Renombrada desde `CannotDeactivateSelfError`: con un
+    tercer caller que ni desactiva ni reactiva, el nombre viejo obligaba a
+    leer `_load_manageable_target()` para entender que no había ninguna
+    desactivación involucrada.
     """
 
 
@@ -1262,7 +1273,7 @@ class AuthService:
 
         Orden de los guards (design.md Decision 6, NO reordenar):
 
-        1. self → `CannotDeactivateSelfError`. Va PRIMERO, antes del 404,
+        1. self → `CannotManageSelfError`. Va PRIMERO, antes del 404,
            porque un actor autenticado siempre existe: si el id coincide con
            el suyo, la causa real es "te estás gestionando a vos mismo", no
            "no existe".
@@ -1274,7 +1285,7 @@ class AuthService:
         porque es lo único que difiere entre ambas operaciones.
         """
         if target_id == actor.id:
-            raise CannotDeactivateSelfError(str(target_id))
+            raise CannotManageSelfError(str(target_id))
 
         row = await conn.fetchrow(
             "SELECT id, role, deactivated_at FROM users WHERE id = $1 FOR UPDATE",
@@ -1319,10 +1330,9 @@ class AuthService:
         ambos caminos de login. 409 si la cuenta ya estaba activa (simetría
         con el 409 de desactivar dos veces).
 
-        Aplica los mismos guards que `deactivate_user()`, incluido el de self:
-        por Decision 4 un actor autenticado tiene su cuenta activa, así que
-        auto-reactivarse es inalcanzable en la práctica — pero se valida igual
-        por simetría, para no depender de una invariante que vive en otra capa.
+        Aplica los mismos guards que `deactivate_user()`, incluido el de self
+        (`CannotManageSelfError`, cuyo docstring explica por qué se valida acá
+        aunque sea inalcanzable en la práctica).
         """
         async with self._require_pool().acquire() as conn:
             async with conn.transaction():

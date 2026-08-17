@@ -22,8 +22,8 @@ from src.models.user import CurrentUser, UserRole
 from src.services.auth_service import (
     AccountDeactivatedError,
     AuthService,
-    CannotDeactivateSelfError,
     CannotManageHigherOrEqualRoleError,
+    CannotManageSelfError,
     InvitationRequiredError,
     UserAlreadyDeactivatedError,
     UserNotDeactivatedError,
@@ -167,7 +167,7 @@ async def test_nobody_can_deactivate_themselves_not_even_a_superadmin(service, d
     """[Scenario: Nadie puede desactivarse a sí mismo] El superadmin es el rol
     más alto: ningún guard de jerarquía lo frena, y aun así el guard de self
     lo rechaza. La cuenta sigue activa."""
-    with pytest.raises(CannotDeactivateSelfError):
+    with pytest.raises(CannotManageSelfError):
         await service.deactivate_user(superadmin, superadmin.id)
 
     assert await _deactivated_at(db_pool, superadmin.id) is None
@@ -177,7 +177,7 @@ async def test_self_guard_runs_before_the_not_found_guard(service, admin):
     """El orden importa (design.md Decision 6): un actor autenticado SIEMPRE
     existe, así que si el id coincide con el suyo la causa real es "te estás
     desactivando a vos mismo", nunca "no existe"."""
-    with pytest.raises(CannotDeactivateSelfError):
+    with pytest.raises(CannotManageSelfError):
         await service.deactivate_user(admin, admin.id)
 
 
@@ -258,7 +258,7 @@ async def test_a_superadmin_is_unreachable_by_every_actor(service, db_pool, supe
         with pytest.raises(CannotManageHigherOrEqualRoleError):
             await service.deactivate_user(actor, superadmin.id)
 
-    with pytest.raises(CannotDeactivateSelfError):
+    with pytest.raises(CannotManageSelfError):
         await service.deactivate_user(superadmin, superadmin.id)
 
     assert await _deactivated_at(db_pool, superadmin.id) is None
@@ -276,7 +276,7 @@ async def test_the_only_superadmin_survives_a_full_deactivation_sweep(service, d
     for victim in victims:
         await service.deactivate_user(superadmin, victim.id)
 
-    with pytest.raises(CannotDeactivateSelfError):
+    with pytest.raises(CannotManageSelfError):
         await service.deactivate_user(superadmin, superadmin.id)
 
     async with db_pool.acquire() as conn:
