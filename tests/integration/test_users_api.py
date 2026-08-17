@@ -544,6 +544,54 @@ def test_a_deactivated_admin_can_no_longer_manage_users(client, seeded, _migrate
     assert _fetch_user_column(_migrated, seeded[UserRole.VIEWER].id, "deactivated_at") is None
 
 
+def test_demotion_in_the_database_is_effective_without_relogin(client, seeded, _migrated):
+    """[role-management, design.md Decision 2] El JWT sigue diciendo `admin`:
+    firma válida, sin vencer, la MISMA cookie del request anterior. Lo único
+    que cambió es la columna `role` de la fila.
+
+    Este test es el que muere si `get_current_user()` vuelve a confiar en el
+    claim del token (`return current_user` en vez de la sobrescritura con el
+    rol de la base). Los fakes de test_auth_api.py y test_invitations_api.py
+    ESPEJAN el rol desde `decode_access_token`, así que allá token y base no
+    pueden discrepar y la sobrescritura es un no-op indetectable: acá el
+    AuthService es el REAL contra Postgres real y la divergencia es explícita.
+    """
+    actor = seeded[UserRole.ADMIN]
+    _login_as(actor, client)
+    assert client.get("/auth/users").status_code == 200
+
+    _set_user_column(_migrated, actor.id, "role", UserRole.VIEWER.value)
+
+    response = client.get("/auth/users")
+
+    # 403 de require_min_role(ADMIN), que devuelve `detail` crudo — no pasa por
+    # el envelope {"error": ...} de los handlers de /auth/users*.
+    assert response.status_code == 403
+    assert response.json() == {"detail": "insufficient role"}
+
+
+def test_promotion_in_the_database_is_effective_without_relogin(client, seeded, _migrated):
+    """Imagen especular del anterior: el token dice `viewer` y la base dice
+    `admin` ⇒ 200, no 401.
+
+    Mata la variante "comparar el claim contra la base y rechazar cuando
+    difieren", que a nivel unitario también haría pasar al test de degradación
+    pero convertiría toda PROMOCIÓN en un deslogueo. La sobrescritura tiene que
+    andar en las DOS direcciones y sin re-login.
+    """
+    actor = seeded[UserRole.VIEWER]
+    _login_as(actor, client)
+    assert client.get("/auth/users").status_code == 403
+
+    _set_user_column(_migrated, actor.id, "role", UserRole.ADMIN.value)
+
+    response = client.get("/auth/users")
+
+    assert response.status_code == 200
+    by_email = {item["email"]: item for item in response.json()}
+    assert by_email[actor.email]["role"] == "admin"
+
+
 def test_report_treats_a_deactivated_user_as_anonymous(client, seeded, _migrated):
     """[Scenario: Endpoint público con personalización trata al desactivado
     como anónimo] `/report` usa get_current_user_optional, que hereda el
