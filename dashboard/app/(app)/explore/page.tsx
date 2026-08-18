@@ -44,6 +44,17 @@ export default function ExplorePage() {
   const [error, setError] = useState<SearchError | null>(null);
   const [view, setView] = useState<'map' | 'list'>('map');
 
+  // Evento elegido desde la lista. A diferencia del Dashboard —donde mapa y
+  // tabla conviven en pantalla— acá las dos vistas son excluyentes, así que
+  // seleccionar sin cambiar de vista no mostraría nada: el clic en una fila
+  // salta al mapa y lo centra en ese evento (ver handleRowClick).
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  const handleRowClick = (id: string) => {
+    setSelectedEventId(id);
+    setView('map');
+  };
+
   const handleSearch = async () => {
     setIsSearching(true);
     setError(null);
@@ -226,6 +237,7 @@ export default function ExplorePage() {
                   eventos={eventos}
                   className="h-[calc(100vh-22rem)] min-h-[420px]"
                   showCities={true}
+                  selectedEventId={selectedEventId}
                 />
               ) : (
                 <div className="border-2 border-dashed border-border bg-muted rounded-lg p-12 text-center">
@@ -246,6 +258,8 @@ export default function ExplorePage() {
                 <EventsTable
                   eventos={eventos}
                   className="h-[calc(100vh-22rem)] min-h-[420px]"
+                  onRowClick={handleRowClick}
+                  selectedEventId={selectedEventId}
                 />
               ) : (
                 <div className="border-2 border-dashed border-border bg-muted rounded-lg p-12 text-center">
