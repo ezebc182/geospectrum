@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useFormatter } from 'next-intl';
+import {
+  scaleFromHistory,
+  sliceToWidth,
+  updateScale,
+  type SpectrogramScale,
+} from '@/lib/spectrogram-scale';
 
 interface LiveSpectrogramCanvasProps {
   channel: string; // ej. "IU.MAJO.00.BHZ"
@@ -21,15 +27,17 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
 // Minutos de historial a pedir al montar, antes de conectar el WebSocket en
-// vivo. Cubre el caso más común (usuario recarga la página) sin pedir horas
-// de datos que tardarían en pintar.
-const HISTORY_MINUTES = 5;
+// vivo. A 1px por columna y una columna cada ~4-8s, llenar un canvas de
+// ~400px necesita ~30-55 minutos de datos: con 5 minutos (el valor anterior)
+// el canvas quedaba en negro con una tira de ~40px a la derecha y parecía
+// que la app arrancaba de cero en cada apertura.
+const HISTORY_MINUTES = 60;
 
 // El piso de ruido en dB varía mucho por estación (ver min/max reales medidos:
-// IU.MAJO iba de -34.8 a 56.4, UW.LON de -16.3 a 38.4). Umbrales fijos dejaban
-// casi todo en el mismo color oscuro. Se normaliza por columna, igual criterio
-// que matplotlib en el modo estático (percentiles 5-95), con un colormap
-// continuo tipo viridis en vez de 4 bloques planos.
+// IU.MAJO iba de -34.8 a 56.4, UW.LON de -16.3 a 38.4); umbrales fijos dejaban
+// casi todo del mismo color. La escala se calcula global sobre el historial y
+// deriva lenta (ver lib/spectrogram-scale.ts) — normalizar por columna hacía
+// que el ruido de fondo brillara igual que un sismo.
 const VIRIDIS_STOPS: [number, string][] = [
   [0.0, '#440154'],
   [0.25, '#3b528b'],
@@ -62,14 +70,6 @@ function lerpColor(hexA: string, hexB: string, t: number): string {
   return `rgb(${r},${g},${bl})`;
 }
 
-function percentile(sorted: number[], p: number): number {
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-}
-
 /**
  * Espectrograma en vivo real: consume columnas nuevas por WebSocket
  * (backend -> Redis -> src/services/seedlink_ingestor.py) y las pinta
@@ -97,19 +97,20 @@ export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 40
     let ws: WebSocket;
     let closedByUs = false;
     let cancelled = false;
+    // Escala compartida entre historial y vivo. Vive en el closure del efecto
+    // (no en un ref del componente) para que un cambio de canal la resetee.
+    let scale: SpectrogramScale | null = null;
 
     const drawColumn = (col: SpecColumn) => {
       // Corre todo el contenido 1px a la izquierda (efecto "cinta que avanza")
       const img = ctx.getImageData(1, 0, width - 1, height);
       ctx.putImageData(img, 0, 0);
 
-      // Normaliza por percentiles de ESTA columna (igual criterio que
-      // matplotlib en el modo estático) — el piso de ruido varía mucho por
-      // estación, así que un umbral fijo en dB deja todo del mismo color.
-      const sorted = [...col.power_db].sort((a, b) => a - b);
-      const vmin = percentile(sorted, 0.05);
-      const vmax = percentile(sorted, 0.95);
-      const range = vmax - vmin || 1;
+      // Sin historial (base caída o canal recién estrenado) la primera
+      // columna en vivo inicializa la escala; de ahí en más solo deriva.
+      scale = scale === null ? scaleFromHistory([col.power_db]) : updateScale(scale, col.power_db);
+      if (scale === null) return;
+      const range = scale.vmax - scale.vmin || 1;
 
       // Pinta la columna nueva en el borde derecho: cada bin de frecuencia
       // ocupa una franja vertical proporcional, grave abajo / agudo arriba.
@@ -117,7 +118,7 @@ export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 40
       for (let i = 0; i < n; i++) {
         const y = height - Math.round(((i + 1) / n) * height);
         const rowHeight = Math.max(1, Math.ceil(height / n));
-        const t = (col.power_db[i] - vmin) / range;
+        const t = (col.power_db[i] - scale.vmin) / range;
         ctx.fillStyle = viridis(t);
         ctx.fillRect(width - 1, y, 1, rowHeight);
       }
@@ -151,7 +152,13 @@ export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 40
         const res = await fetch(`${API_BASE}/spectrograms/${channel}/history?minutes=${HISTORY_MINUTES}`);
         const data: { columns: SpecColumn[] } = await res.json();
         if (cancelled) return;
-        for (const col of data.columns) {
+        // A 1px por columna, las que exceden el ancho saldrían del canvas
+        // apenas pintadas. La escala se inicializa con TODO el recorte antes
+        // de dibujar: si no, las primeras columnas se pintan contra una
+        // escala a medio construir.
+        const columns = sliceToWidth(data.columns, width);
+        scale = scaleFromHistory(columns.map((c) => c.power_db));
+        for (const col of columns) {
           drawColumn(col);
           setLastUpdate(col.endtime);
         }
