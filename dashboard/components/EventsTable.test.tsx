@@ -129,6 +129,62 @@ describe('EventsTable — filtros (filterable)', () => {
     expect(screen.getByText('Tokio, Japón')).toBeTruthy();
   });
 
+  it('reporta al padre los eventos que sobreviven al filtro', () => {
+    // Sin esto el filtro sólo afectaba a la tabla: el mapa del Dashboard
+    // seguía dibujando los marcadores de TODOS los eventos y el contador
+    // "X de Y en el área del mapa" contaba sobre el total sin filtrar.
+    const onFilteredEventsChange = vi.fn();
+    renderTable(
+      <EventsTable
+        eventos={eventos}
+        filterable
+        onFilteredEventsChange={onFilteredEventsChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Buscar por zona'), {
+      target: { value: 'chile' },
+    });
+
+    const ultimos = onFilteredEventsChange.mock.calls.at(-1)?.[0] as SeismicEvent[];
+    expect(ultimos.map((e) => e.id)).toEqual(['a', 'c']);
+  });
+
+  it('reporta la lista completa antes de que el usuario filtre', () => {
+    // El padre arranca mostrando todo; si el primer aviso llegara vacío, el
+    // mapa parpadearía sin marcadores en cada carga.
+    const onFilteredEventsChange = vi.fn();
+    renderTable(
+      <EventsTable
+        eventos={eventos}
+        filterable
+        onFilteredEventsChange={onFilteredEventsChange}
+      />
+    );
+
+    const primeros = onFilteredEventsChange.mock.calls[0]?.[0] as SeismicEvent[];
+    expect(primeros.map((e) => e.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('reporta una lista vacía cuando el filtro no deja pasar nada', () => {
+    // Caso que distingue "sin filtrar" de "filtrado a cero": el mapa tiene que
+    // quedar sin marcadores, no volver a mostrarlos todos.
+    const onFilteredEventsChange = vi.fn();
+    renderTable(
+      <EventsTable
+        eventos={eventos}
+        filterable
+        onFilteredEventsChange={onFilteredEventsChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Buscar por zona'), {
+      target: { value: 'antartida' },
+    });
+
+    expect(onFilteredEventsChange.mock.calls.at(-1)?.[0]).toEqual([]);
+  });
+
   it('limpia los filtros al cambiar de área', () => {
     renderTable(<EventsTable eventos={eventos} filterable />);
 

@@ -631,6 +631,14 @@ export function AdvancedSeismicMap({
   }, [showPlates, mapInstance]);
 
   // Centrar/resaltar el evento seleccionado externamente (sincronización tabla→mapa, Decisión 3).
+  //
+  // Depende de `mapInstance` y de `eventos` además de `selectedEventId`, y no
+  // sólo de este último: `eventMarkersRef` es un ref y poblarlo no dispara
+  // renders. En el Explorador la lista y el mapa son vistas excluyentes, así
+  // que al saltar de una a otra el mapa se monta con `selectedEventId` YA
+  // puesto: el efecto corría una vez con el ref todavía vacío, salía por el
+  // `!marker` y no volvía a intentarlo nunca. Con `mapInstance` en las deps
+  // vuelve a correr cuando el mapa existe y los marcadores ya están creados.
   useEffect(() => {
     if (!leafletMapRef.current || !selectedEventId) return;
     const marker = eventMarkersRef.current.get(selectedEventId);
@@ -639,7 +647,7 @@ export function AdvancedSeismicMap({
     const latLng = marker.getLatLng();
     leafletMapRef.current.panTo(latLng);
     marker.openPopup();
-  }, [selectedEventId]);
+  }, [selectedEventId, mapInstance, eventos]);
 
   // Contador "N of M events in map area" (Decisión 4 de design.md).
   useEffect(() => {
