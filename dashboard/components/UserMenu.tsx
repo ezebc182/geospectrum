@@ -65,7 +65,11 @@ function UserAvatar({ user, className }: { user: UserPublic; className?: string 
 /** User menu del header superior: avatar/nombre + toggle de tema + logout. */
 export function UserMenu() {
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
+  // `resolvedTheme` y no `theme`: con `enableSystem` el segundo vale 'system'
+  // hasta que el usuario elige explícitamente, así que comparar contra 'dark'
+  // daba false con la pantalla ya oscura. El primer clic pedía el tema que ya
+  // estaba puesto y no pasaba nada visible.
+  const { resolvedTheme, setTheme } = useTheme();
   const { user, logout } = useAuth();
   const t = useTranslations('nav');
   const [mounted, setMounted] = useState(false);
@@ -125,15 +129,19 @@ export function UserMenu() {
           <Settings />
           <span>{t('userMenu.accountSettings')}</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+        <DropdownMenuItem onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>
           {!mounted ? (
             <div className="h-4 w-4" />
-          ) : theme === 'dark' ? (
+          ) : resolvedTheme === 'dark' ? (
             <Sun className="text-severity-moderate" />
           ) : (
             <Moon />
           )}
-          <span>{mounted && theme === 'dark' ? t('userMenu.lightMode') : t('userMenu.darkMode')}</span>
+          <span>
+            {mounted && resolvedTheme === 'dark'
+              ? t('userMenu.lightMode')
+              : t('userMenu.darkMode')}
+          </span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout} variant="destructive">

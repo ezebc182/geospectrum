@@ -136,6 +136,55 @@ describe('areaViewBounds — áreas que cruzan el antimeridiano', () => {
     ]);
   });
 
+  it('encuadra el Anillo de Fuego sobre el Pacífico, no sobre media vuelta al planeta', () => {
+    // La herradura real del dataset: 9 rectángulos que rodean el Pacífico.
+    //
+    // Es el caso que ningún test cubría: los demás usan DOS partes (Kamchatka,
+    // Nueva Zelanda), y acá el "lado occidental" no es un pedacito cortado en
+    // -180 sino América entera hasta Chile (-66). Se fija que el desenrollado
+    // siga eligiendo el arco correcto con muchas partes de cada lado.
+    const ringOfFire: AreaGeometry = {
+      type: 'MultiPolygon',
+      coordinates: [
+        [-82, -66, -56, -3],
+        [-107, -77, 6.5, 22],
+        [-160, -122, 40, 62],
+        [165, 180, 47, 60],
+        [-180, -160, 47, 60],
+        [128, 165, 30, 56],
+        [117, 147, 4.5, 30],
+        [94, 156, -11.5, 6.5],
+        [163, 180, -48, -14],
+      ].map(([minlon, maxlon, minlat, maxlat]) =>
+        (rect(minlon, maxlon, minlat, maxlat) as { coordinates: [number, number][][] })
+          .coordinates
+      ),
+    };
+
+    const bounds = areaViewBounds(ringOfFire, {
+      minlat: -56,
+      maxlat: 62,
+      minlon: -180,
+      maxlon: 180,
+    });
+
+    expect(bounds).not.toBeNull();
+    const [[southLat, westLon], [northLat, eastLon]] = bounds!;
+
+    expect(southLat).toBe(-56);
+    expect(northLat).toBe(62);
+
+    // El hueco mayor es el Atlántico (-66..94 = 160° vacíos): el arco que
+    // contiene la herradura mide los 200° restantes, y ése es el mínimo
+    // posible para un rectángulo. No hay encuadre más ajustado.
+    expect(eastLon - westLon).toBeCloseTo(200);
+
+    // Arranca en Indonesia (94) y avanza hacia el este cruzando el Pacífico
+    // hasta Chile (-66 desenrollado = 294), dejando el Pacífico en el centro.
+    expect(westLon).toBeCloseTo(94);
+    expect(eastLon).toBeCloseTo(294);
+  });
+
   it('deja el área global como el mundo entero', () => {
     // -180..180 en un solo polígono ES el planeta: acá encuadrar todo es lo
     // correcto, no un bug. Distinguirlo del caso Kamchatka importa.
