@@ -10,6 +10,7 @@ import { useFormatter, useTranslations } from 'next-intl';
 import type { SeismicCity } from '@/lib/seismic-cities';
 import { Activity, AlertCircle, RefreshCw } from 'lucide-react';
 import { seismicAPI } from '@/lib/api';
+import { SPECTROGRAM_FREQ_TICKS, freqTickOffset } from '@/lib/spectrogram-axis';
 
 interface SpectrogramViewRealProps {
   city: SeismicCity;
@@ -136,10 +137,13 @@ export function SpectrogramViewReal({
       )}
 
       {spectrogramImage && !isLoading && !error && (
+        /* `object-fill` y no `object-cover`: cover RECORTA la imagen para
+           llenar el contenedor, y con la imagen recortada las marcas del eje
+           de frecuencia no pueden alinearse ni estando bien calculadas. */
         <img
           src={`data:image/png;base64,${spectrogramImage}`}
           alt={t('imageAlt', { city: city.name })}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-fill"
         />
       )}
 
@@ -169,13 +173,28 @@ export function SpectrogramViewReal({
         </div>
       )}
 
-      {/* Ejes de referencia */}
-      <div className="absolute right-0 top-0 bottom-0 w-10 flex flex-col justify-between text-[9px] text-gray-400 py-1 pointer-events-none">
-        <span className="px-1">20Hz</span>
-        <span className="px-1">10Hz</span>
-        <span className="px-1">5Hz</span>
-        <span className="px-1">1Hz</span>
-        <span className="px-1">0.1Hz</span>
+      {/* Ejes de referencia.
+
+          Las marcas se posicionan por cálculo y no con `justify-between`: el
+          eje que dibuja el backend es LINEAL de 0.1 a 20 Hz
+          (spectrogram_service.py usa set_ylim sin set_yscale('log')), así que
+          repartir las etiquetas a distancia uniforme las corría hasta 25
+          puntos porcentuales — 5 Hz se anunciaba a mitad de altura cuando en
+          realidad cae a tres cuartos.
+
+          Por lo mismo las marcas son equiespaciadas en FRECUENCIA y no la
+          escala 20/10/5/1/0.1 de antes: en un eje lineal 1 Hz y 0.1 Hz caen
+          al 95% y al 100%, encimadas e ilegibles. */}
+      <div className="absolute right-0 top-0 bottom-0 w-10 text-[9px] text-gray-400 pointer-events-none">
+        {SPECTROGRAM_FREQ_TICKS.map((hz) => (
+          <span
+            key={hz}
+            className="absolute right-0 px-1 -translate-y-1/2"
+            style={{ top: `${freqTickOffset(hz)}%` }}
+          >
+            {hz}Hz
+          </span>
+        ))}
       </div>
 
       <div className="absolute bottom-0 left-0 right-12 h-4 flex justify-between items-center text-[9px] text-gray-400 px-2 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
