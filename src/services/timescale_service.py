@@ -85,6 +85,23 @@ class TimescaleColumnWriter:
                 "timescale_service: fallo escribiendo lote de %d columnas", len(rows), exc_info=True
             )
 
+    async def fetch_active_channels(self, minutes: int) -> list[str]:
+        """Canales con al menos una columna en los últimos `minutes` minutos.
+
+        Es la fuente de verdad de "qué está transmitiendo AHORA": el catálogo
+        estático dice qué canales están suscriptos, no cuáles producen datos.
+        """
+        async with self._pool.acquire() as conn:
+            records = await conn.fetch(
+                """
+                SELECT DISTINCT channel
+                FROM spectrogram_columns
+                WHERE endtime >= now() - ($1 || ' minutes')::interval
+                """,
+                str(minutes),
+            )
+        return [r["channel"] for r in records]
+
     async def fetch_history(self, channel: str, minutes: int) -> list[dict[str, Any]]:
         async with self._pool.acquire() as conn:
             records = await conn.fetch(

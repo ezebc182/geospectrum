@@ -66,7 +66,11 @@ from src.services.emsc_service import fetch_emsc_events
 from src.services.emsc_detail_service import EMSCDetailService
 from src.services.merge_service import merge_all_sources
 from src.services.report_service import build_report, count_by_source, CANONICAL_SOURCES
-from src.services.spectrogram_service import get_spectrogram_service, LIVE_CHANNELS_BY_CITY
+from src.services.spectrogram_service import (
+    get_spectrogram_service,
+    filter_live_catalog,
+    LIVE_CHANNELS_BY_CITY,
+)
 from src.services.event_bus import RedisPubSubBus
 from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
@@ -2117,6 +2121,11 @@ async def google_callback(
 # Spectrograms — WebSocket en vivo (SeedLink -> Redis -> aquí)
 # =============================================================================
 
+# Ventana para considerar un canal "transmitiendo": el ingestor escribe una
+# columna cada ~8s por canal, así que 10 minutos tolera cortes breves de la
+# estación sin ofrecer como Vivo algo que lleva horas muerto.
+LIVE_FRESHNESS_MINUTES = 10
+
 
 @app.websocket("/ws/spectrogram/{channel}")
 async def ws_spectrogram(websocket: WebSocket, channel: str) -> None:
@@ -2143,11 +2152,24 @@ async def get_live_channels() -> list[dict]:
     Ciudades con streaming en vivo disponible (SeedLink), con su canal SEED
     completo. El frontend usa esto para decidir en qué tarjetas mostrar el
     toggle Vivo/24h — solo aparece donde hay cobertura real.
+
+    El catálogo estático dice qué canales están suscriptos; que un canal
+    produzca datos es otra cosa (estación caída, ingestor muerto). Por eso
+    se filtra contra las columnas frescas de TimescaleDB. Sin base (local
+    sin TIMESCALEDB_HOST, o consulta fallida) se devuelve el catálogo
+    completo: mejor ofrecer de más que esconder canales vivos.
     """
-    return [
-        {"city_id": city_id, "channel": channel}
-        for city_id, channel in LIVE_CHANNELS_BY_CITY.items()
-    ]
+    active: Optional[set] = None
+    if column_writer is not None:
+        try:
+            active = set(await column_writer.fetch_active_channels(LIVE_FRESHNESS_MINUTES))
+        except Exception:
+            logger.warning(
+                "live-channels: fallo consultando canales activos, "
+                "se devuelve el catálogo completo",
+                exc_info=True,
+            )
+    return filter_live_catalog(LIVE_CHANNELS_BY_CITY, active)
 
 
 @app.get("/spectrograms/{channel}/history", tags=["spectrograms"])

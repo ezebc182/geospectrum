@@ -8,7 +8,7 @@ import base64
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import logging
 
 import numpy as np
@@ -112,6 +112,24 @@ LIVE_CHANNELS_BY_CITY = {
     "auckland": "NZ.HIZ.10.HHZ",
     "christchurch": "NZ.KHZ.10.HHZ",
 }
+
+
+def filter_live_catalog(
+    catalog: Dict[str, str], active_channels: Optional[set]
+) -> List[Dict[str, str]]:
+    """Filtra el catálogo de ciudades a las que tienen streaming REAL.
+
+    `active_channels` son los canales con columnas frescas en TimescaleDB.
+    `None` significa "no se pudo consultar" (base no configurada o caída):
+    en ese caso se devuelve el catálogo completo — mejor ofrecer de más que
+    esconder canales que sí transmiten. Un set vacío en cambio es una
+    respuesta real ("nada fresco") y filtra todo.
+    """
+    return [
+        {"city_id": city_id, "channel": channel}
+        for city_id, channel in catalog.items()
+        if active_channels is None or channel in active_channels
+    ]
 
 
 class SpectrogramService:
