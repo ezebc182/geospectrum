@@ -65,6 +65,9 @@ class SeedLinkIngestor:
         self._last_column_emit: dict[str, datetime] = {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._client = None
+        # Excepción que terminó el hilo de run(), si terminó por error. El
+        # proceso principal la consulta para decidir su código de salida.
+        self.failure: Optional[BaseException] = None
 
     def _on_data(self, trace: Trace) -> None:
         """Callback de ObsPy — corre en el hilo bloqueante de client.run()."""
@@ -128,24 +131,38 @@ class SeedLinkIngestor:
         Bloqueante. channels: lista de (network, station, channel), ej.
         [("IU", "MAJO", "BHZ"), ("II", "ERM", "BHZ")].
         Debe llamarse desde un hilo dedicado (ver __main__).
+
+        Cualquier excepción se loguea acá y se guarda en `self.failure` antes de
+        propagarse: al correr en un hilo, el traceback no llega solo al proceso
+        principal y el arranque fallido queda invisible.
         """
-        self._loop = asyncio.new_event_loop()
-        threading.Thread(target=self._loop.run_forever, daemon=True).start()
+        try:
+            self._loop = asyncio.new_event_loop()
+            threading.Thread(target=self._loop.run_forever, daemon=True).start()
 
-        if self.column_writer is not None:
-            # El pool de asyncpg debe nacer en el mismo loop donde después se
-            # usa (add_column corre vía run_coroutine_threadsafe en self._loop);
-            # conectarlo en el loop de _main() revienta con "attached to a
-            # different loop" en cada flush.
-            asyncio.run_coroutine_threadsafe(self.column_writer.connect(), self._loop).result()
+            if self.column_writer is not None:
+                # El pool de asyncpg debe nacer en el mismo loop donde después se
+                # usa (add_column corre vía run_coroutine_threadsafe en self._loop);
+                # conectarlo en el loop de _main() revienta con "attached to a
+                # different loop" en cada flush.
+                asyncio.run_coroutine_threadsafe(
+                    self.column_writer.connect(), self._loop
+                ).result()
 
-        self._client = create_client(self.server, on_data=self._on_data)
-        for net, sta, cha in channels:
-            self._client.select_stream(net, sta, cha)
-            logger.info("seedlink_ingestor: suscripto a %s.%s.%s", net, sta, cha)
+            self._client = create_client(self.server, on_data=self._on_data)
+            for net, sta, cha in channels:
+                self._client.select_stream(net, sta, cha)
+                logger.info("seedlink_ingestor: suscripto a %s.%s.%s", net, sta, cha)
 
-        logger.info("seedlink_ingestor: conectando a %s ...", self.server)
-        self._client.run()  # bloquea para siempre
+            logger.info("seedlink_ingestor: conectando a %s ...", self.server)
+            self._client.run()  # bloquea para siempre
+        except BaseException as exc:
+            # `BaseException` y no `Exception`: un KeyboardInterrupt o un
+            # SystemExit dentro del hilo también tienen que quedar registrados,
+            # o el proceso vuelve a salir con 0 como si todo hubiera ido bien.
+            self.failure = exc
+            logger.exception("seedlink_ingestor: el ingestor terminó con error")
+            raise
 
 
 def _default_channels() -> list[tuple[str, str, str]]:
@@ -220,5 +237,13 @@ if __name__ == "__main__":
             if column_writer is not None and ingestor._loop is not None:
                 # close() debe correr en el mismo loop donde vive el pool.
                 asyncio.run_coroutine_threadsafe(column_writer.close(), ingestor._loop).result()
+
+        # El hilo es daemon y `run()` bloquea para siempre mientras todo va
+        # bien: que hayamos salido del while significa que terminó, y eso
+        # siempre es un fallo. Sin este raise el proceso salía con 0 y Railway
+        # marcaba el deploy como SUCCESS sobre un ingestor que no ingesta nada.
+        raise RuntimeError(
+            "seedlink_ingestor: el hilo de ingesta terminó — el proceso no puede continuar"
+        ) from ingestor.failure
 
     asyncio.run(_main())

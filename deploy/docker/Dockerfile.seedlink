@@ -11,6 +11,12 @@
 
 FROM python:3.11-slim AS base
 
+# Sin esto Python bufferiza stdout cuando no escribe a una TTY —o sea, siempre
+# dentro de un contenedor— y los logs se pierden si el proceso muere antes de
+# llenar el buffer. La API no lo sufre porque uvicorn hace flush por request;
+# este proceso puede morir en el arranque sin emitir una sola línea.
+ENV PYTHONUNBUFFERED=1
+
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app && \
     chown appuser:appuser /app
