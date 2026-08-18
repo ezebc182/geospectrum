@@ -39,15 +39,26 @@ export function SpectrogramViewReal({
   const [metadata, setMetadata] = useState<any>(null);
   const [retryCount, setRetryCount] = useState(0);
 
-  const fetchSpectrogram = async () => {
+  /**
+   * `background` distingue el refresco periódico de la primera carga: en el
+   * refresco NO se toca `isLoading` ni se limpia la imagen, así la tarjeta
+   * sigue mostrando el espectrograma anterior hasta que llega el nuevo.
+   *
+   * Antes cada ciclo hacía `setIsLoading(true)` y la imagen desaparecía
+   * durante todo el fetch: con 12 tarjetas refrescando cada 30s, siempre había
+   * varias en blanco y la grilla parpadeaba sin parar.
+   */
+  const fetchSpectrogram = async ({ background = false } = {}) => {
     if (!useRealData) {
       // Fallback a datos simulados
       setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    if (!background) {
+      setIsLoading(true);
+      setError(null);
+    }
 
     try {
       const result = await seismicAPI.getSpectrogram(
@@ -62,19 +73,27 @@ export function SpectrogramViewReal({
         setSpectrogramImage(result.image);
         setMetadata(result.metadata);
         setError(null);
-      } else {
+      } else if (!background) {
         // El backend cayó a datos sintéticos (sin estación FDSN real cercana).
         // No mostramos ruido simulado como si fuera señal real: se marca como error.
+        //
+        // En un refresco de fondo NO se borra lo que ya está en pantalla: un
+        // fallo puntual del backend no invalida el espectrograma anterior, que
+        // sigue siendo dato real de los últimos minutos.
         setError('noNearbyStation');
         setSpectrogramImage(null);
         setMetadata(null);
       }
     } catch (err) {
       console.error(`Error fetching spectrogram for ${city.name}:`, err);
-      setError('connectionError');
-      setSpectrogramImage(null);
+      if (!background) {
+        setError('connectionError');
+        setSpectrogramImage(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (!background) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -84,7 +103,7 @@ export function SpectrogramViewReal({
     // El backend cachea cada espectrograma real por ~45s (spectrogram_cache_ttl_seconds),
     // así que refrescar cada 30s trae imagen nueva sin recalcular FFT en cada ciclo.
     const interval = setInterval(() => {
-      fetchSpectrogram();
+      fetchSpectrogram({ background: true });
     }, 30 * 1000);
 
     return () => clearInterval(interval);
