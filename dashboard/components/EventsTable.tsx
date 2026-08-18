@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { SeismicEvent } from '@/lib/types';
@@ -39,6 +39,13 @@ interface EventsTableProps {
    * no cambiar el aspecto de los usos que no la pidieron.
    */
   filterable?: boolean;
+  /**
+   * Invocado con los eventos que sobreviven al filtro, para que el padre pueda
+   * mostrar lo mismo en otras vistas (el mapa del Dashboard). Sin esto el
+   * filtro sólo afectaba a la tabla y los marcadores seguían mostrando todo.
+   * Default: undefined.
+   */
+  onFilteredEventsChange?: (eventos: SeismicEvent[]) => void;
 }
 
 /** Columnas opcionales: Tiempo/Magnitud/Ubicación son siempre visibles (lo
@@ -75,6 +82,7 @@ export function EventsTable({
   onRowClick,
   selectedEventId,
   filterable = false,
+  onFilteredEventsChange,
 }: EventsTableProps) {
   const t = useTranslations('events');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -112,6 +120,18 @@ export function EventsTable({
     () => (filterable ? filterEvents(eventos, filters) : eventos),
     [filterable, eventos, filters]
   );
+
+  // La callback se guarda en un ref para que el efecto dependa sólo de
+  // `filteredEvents`: si dependiera de la función, un padre que la define
+  // inline (lo normal) haría correr el efecto en cada render.
+  const onFilteredEventsChangeRef = useRef(onFilteredEventsChange);
+  useEffect(() => {
+    onFilteredEventsChangeRef.current = onFilteredEventsChange;
+  }, [onFilteredEventsChange]);
+
+  useEffect(() => {
+    onFilteredEventsChangeRef.current?.(filteredEvents);
+  }, [filteredEvents]);
 
   const sources = useMemo(
     () => (filterable ? availableSources(eventos) : []),

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { reportFetcher } from '@/lib/api';
+import type { SeismicEvent } from '@/lib/types';
 import { getActiveArea } from '@/lib/areas';
 import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { KPICard } from '@/components/KPICard';
@@ -82,6 +83,14 @@ export default function DashboardPage() {
     setVisibleCounts({ visible, total });
   }, []);
 
+  // Los eventos que sobreviven al filtro de la tabla, para que el mapa muestre
+  // lo mismo. Antes tabla y mapa recibían la lista cruda por separado: filtrar
+  // por magnitud dejaba la tabla en 12 eventos y el mapa seguía con los 672
+  // marcadores, y el contador "X de Y" contaba sobre el total sin filtrar.
+  // Arranca en null (no en []) para distinguir "la tabla todavía no reportó"
+  // de "el filtro no dejó pasar nada".
+  const [filteredEventos, setFilteredEventos] = useState<SeismicEvent[] | null>(null);
+
   // Panel de eventos flotante, no un Sheet/Dialog: un overlay modal bloquea
   // la interacción con el mapa que queda detrás, y la idea es justamente
   // poder seguir manipulando el mapa con el panel abierto. Abierto por
@@ -151,6 +160,10 @@ export default function DashboardPage() {
     data_source_errors,
     region_monitorizada,
   } = data;
+
+  // `?? eventos` y no `?? []`: mientras la tabla no haya reportado (o cuando
+  // no es filtrable) el mapa muestra todo, que es el comportamiento de antes.
+  const eventosParaElMapa = filteredEventos ?? eventos;
 
   return (
     <AreaRefreshIndicator isRefreshing={isRefreshingArea} className="space-y-8">
@@ -259,7 +272,7 @@ export default function DashboardPage() {
             </Badge>
           </div>
           <AdvancedSeismicMap
-            eventos={eventos}
+            eventos={eventosParaElMapa}
             region={region_monitorizada}
             areaGeometry={activeArea?.area.geometry ?? null}
             className="h-[calc(100vh-20rem)] min-h-[500px]"
@@ -315,6 +328,7 @@ export default function DashboardPage() {
                 filterable
                 onRowClick={setSelectedEventId}
                 selectedEventId={selectedEventId}
+                onFilteredEventsChange={setFilteredEventos}
               />
             </div>
           </div>
