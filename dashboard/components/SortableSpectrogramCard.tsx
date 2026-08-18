@@ -71,12 +71,18 @@ export function SortableSpectrogramCard({ city, liveChannel, onRemove }: Sortabl
         <X className="h-3 w-3" />
       </button>
 
-      {/* Indicador de nivel de riesgo */}
+      {/* Nivel de riesgo sísmico de la ZONA (clasificación estática del
+          catálogo, no estado de la señal): punto de color + texto apagado,
+          para que no se lea como una alarma en vivo. */}
       <div
-        className="absolute bottom-2 right-2 px-2 py-1 rounded text-[10px] font-bold text-white z-10"
-        style={{ backgroundColor: getRiskColor(city.riskLevel) }}
+        className="absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/50 text-[9px] font-semibold text-gray-300 z-10"
+        title={t('riskTooltip')}
       >
-        {city.riskLevel.toUpperCase()}
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ backgroundColor: getRiskColor(city.riskLevel) }}
+        />
+        {t(`riskLabel.${city.riskLevel}`)}
       </div>
     </div>
   );

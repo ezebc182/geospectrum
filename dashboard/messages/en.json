@@ -273,7 +273,13 @@
       "viewHistory": "View 24h history",
       "liveBadge": "Live",
       "dragToReorder": "Drag to reorder",
-      "removeCity": "Remove city"
+      "removeCity": "Remove city",
+      "riskTooltip": "Seismic risk of the area (fixed classification, not current status)",
+      "riskLabel": {
+        "extreme": "Extreme",
+        "high": "High",
+        "moderate": "Moderate"
+      }
     },
     "spectrogramsPage": {
       "title": "Seismic Spectrograms",
