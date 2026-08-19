@@ -99,7 +99,10 @@ LIVE_CHANNELS_BY_CITY = {
     "portauprince": "CU.SDDR.00.BHZ",
     # Norteamérica
     "losangeles": "CI.USC..BHZ",
-    "sandiego": "AZ.SIO5..BHZ",
+    # Barrett (46 km de San Diego): la red AZ entera no existe en
+    # rtserve.earthscope.org — AZ.SIO5 nunca transmitió ni una columna.
+    # Verificado 2026-08-19 con INFO + get_waveforms contra el servidor real.
+    "sandiego": "CI.BAR..BHZ",
     "sanfrancisco": "BK.MCCM.00.BHZ",
     "portland": "UO.PF27..HHZ",
     "seattle": "UW.LON..HHZ",
