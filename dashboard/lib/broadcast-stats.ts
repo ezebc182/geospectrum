@@ -42,3 +42,27 @@ export function computeBroadcastStats(eventos: SeismicEvent[], now: Date): Broad
 
   return { last24h, todayM5, todayM6 };
 }
+
+/** Los `n` eventos más recientes, del más nuevo al más viejo (feed lateral). */
+export function latestEvents(eventos: SeismicEvent[], n: number): SeismicEvent[] {
+  return [...eventos].sort((a, b) => b.hora_utc.localeCompare(a.hora_utc)).slice(0, n);
+}
+
+/**
+ * ¿El evento es lo bastante nuevo para resaltarlo como "recién llegado"?
+ * Se mide contra la hora del sismo (no contra cuándo lo trajo el fetch):
+ * simple y estable entre refrescos, que es lo que un HUD necesita.
+ */
+export function isFreshEvent(evento: SeismicEvent, now: Date, minutes: number = 15): boolean {
+  const t = new Date(evento.hora_utc).getTime();
+  return now.getTime() - t <= minutes * 60 * 1000 && t <= now.getTime();
+}
+
+/** "12:33:17 UTC" a partir del ISO del evento — el feed sísmico habla en UTC. */
+export function formatUtcClock(horaUtc: string): string {
+  const d = new Date(horaUtc);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss} UTC`;
+}

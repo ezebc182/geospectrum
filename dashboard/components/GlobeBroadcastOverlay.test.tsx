@@ -77,6 +77,31 @@ describe('GlobeBroadcastOverlay', () => {
     expect(screen.getByText('1')).toBeTruthy();
   });
 
+  it('muestra el feed lateral con el evento más nuevo primero', async () => {
+    const ahora = Date.now();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({
+        id: 'viejo',
+        lugar: 'Viejo, Chile',
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: 'Nuevo, Japón',
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => expect(screen.getByText('Nuevo, Japón')).toBeTruthy());
+    const filas = screen.getAllByRole('listitem');
+    expect(filas[0].textContent).toContain('Nuevo, Japón');
+    expect(filas[1].textContent).toContain('Viejo, Chile');
+    // El de hace 5 min lleva el punto de "recién llegado"; el de 3 horas no.
+    expect(filas[0].querySelector('[title="Evento reciente"]')).toBeTruthy();
+    expect(filas[1].querySelector('[title="Evento reciente"]')).toBeNull();
+  });
+
   it('cierra con Escape y con el botón de salir', async () => {
     searchEventsMock.mockResolvedValue([]);
     const onClose = renderOverlay();
