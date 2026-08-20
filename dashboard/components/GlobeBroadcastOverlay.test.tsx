@@ -198,3 +198,103 @@ describe('GlobeBroadcastOverlay', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('cartelera (billboard)', () => {
+  const NUEVE_CANALES = [
+    { city_id: 'tokyo', channel: 'JP.JYT..BHZ' },
+    { city_id: 'seattle', channel: 'UW.LON..HHZ' },
+    { city_id: 'lima', channel: 'II.NNA.00.BHZ' },
+    { city_id: 'osaka', channel: 'JP.JWT..BHZ' },
+    { city_id: 'taipei', channel: 'IU.TATO.00.BHZ' },
+    { city_id: 'guam', channel: 'IU.GUMO.00.BHZ' },
+    { city_id: 'quito', channel: 'EC.PULU..HHZ' },
+    { city_id: 'santiago', channel: 'C1.MT18..BHZ' },
+    { city_id: 'anchorage', channel: 'AK.RC01..BHZ' },
+  ];
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('el stack recorta la selección al tope: sin scroll, todo visible', async () => {
+    // El usuario seleccionó 9 estaciones: antes desbordaban ocultas bajo el
+    // overflow-hidden del panel. Ahora el stack muestra las primeras 8 y el
+    // muro completo vive en la cartelera.
+    window.localStorage.setItem(
+      'globe.broadcast.spectros.v1',
+      JSON.stringify(NUEVE_CANALES.map((c) => c.channel))
+    );
+    searchEventsMock.mockResolvedValue([]);
+    getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    renderOverlay();
+
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+    const stack = screen.getByTestId('spectro-strips');
+    expect(within(stack).getByText('Tokyo')).toBeTruthy();
+    expect(within(stack).queryByText('Anchorage')).toBeNull();
+  });
+
+  it('el botón cartelera abre el muro con TODAS las estaciones vivas', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
+    const muro = screen.getByTestId('billboard-wall');
+    // El muro no recorta: las 9, incluida la que el stack dejó afuera.
+    expect(within(muro).getByText('Anchorage')).toBeTruthy();
+    expect(within(muro).getByText('Tokyo')).toBeTruthy();
+  });
+
+  it('rota manualmente entre muro y analíticas', async () => {
+    const ahora = Date.now();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'a', lugar: 'X, Chile', hora_utc: new Date(ahora - 10 * 60_000).toISOString() }),
+    ]);
+    getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
+    expect(screen.getByTestId('billboard-wall').classList.contains('hidden')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente panel' }));
+    // El muro queda MONTADO pero oculto: desmontar ~74 tiras (1 WS + 1 fetch
+    // cada una) en cada rotación era una tormenta de reconexiones.
+    expect(screen.getByTestId('billboard-wall').classList.contains('hidden')).toBe(true);
+    expect(screen.getByTestId('billboard-analytics')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Panel anterior' }));
+    expect(screen.getByTestId('billboard-wall').classList.contains('hidden')).toBe(false);
+  });
+
+  it('prev desde el primer slide da la vuelta al último (índice negativo)', async () => {
+    const ahora = Date.now();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'a', lugar: 'X, Chile', hora_utc: new Date(ahora - 10 * 60_000).toISOString() }),
+    ]);
+    getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Panel anterior' }));
+    expect(screen.getByTestId('billboard-analytics')).toBeTruthy();
+  });
+
+  it('Escape con la cartelera abierta cierra la cartelera, no la transmisión', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    const onClose = renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('billboard-wall')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

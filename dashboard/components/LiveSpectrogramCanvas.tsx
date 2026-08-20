@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFormatter } from 'next-intl';
 import {
+  historyMinutesForWidth,
   scaleFromHistory,
   sliceToWidth,
   updateScale,
@@ -30,12 +31,10 @@ interface SpecColumn {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
-// Minutos de historial a pedir al montar, antes de conectar el WebSocket en
-// vivo. A 1px por columna y una columna cada ~4-8s, llenar un canvas de
-// ~400px necesita ~30-55 minutos de datos: con 5 minutos (el valor anterior)
-// el canvas quedaba en negro con una tira de ~40px a la derecha y parecía
-// que la app arrancaba de cero en cada apertura.
-const HISTORY_MINUTES = 60;
+// El historial a pedir al montar (antes de conectar el WebSocket) se
+// dimensiona al ancho del canvas — ver historyMinutesForWidth: pedir 60 min
+// fijos para una tira de 240px tiraba 3/4 del payload, y con ~74 tiras
+// montadas en el muro de la cartelera eso se multiplica.
 
 // El piso de ruido en dB varía mucho por estación (ver min/max reales medidos:
 // IU.MAJO iba de -34.8 a 56.4, UW.LON de -16.3 a 38.4); umbrales fijos dejaban
@@ -159,7 +158,9 @@ export function LiveSpectrogramCanvas({
 
     const loadHistoryThenConnect = async () => {
       try {
-        const res = await fetch(`${API_BASE}/spectrograms/${channel}/history?minutes=${HISTORY_MINUTES}`);
+        const res = await fetch(
+          `${API_BASE}/spectrograms/${channel}/history?minutes=${historyMinutesForWidth(width)}`
+        );
         const data: { columns: SpecColumn[] } = await res.json();
         if (cancelled) return;
         // A 1px por columna, las que exceden el ancho saldrían del canvas

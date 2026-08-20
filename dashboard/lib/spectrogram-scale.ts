@@ -72,3 +72,12 @@ export function sliceToWidth<T>(columns: T[], width: number): T[] {
   if (columns.length <= width) return columns;
   return columns.slice(columns.length - width);
 }
+
+// Peor caso observado: una columna cada ~8 s, pintada a 1 px. Pedir más
+// historial del que entra en el canvas es payload tirado — y con ~74 tiras
+// montadas en el muro de la cartelera, se multiplica.
+const WORST_SECONDS_PER_COLUMN = 8;
+
+export function historyMinutesForWidth(width: number): number {
+  return Math.max(1, Math.ceil((width * WORST_SECONDS_PER_COLUMN) / 60));
+}

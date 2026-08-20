@@ -4,6 +4,7 @@ import {
   scaleFromHistory,
   updateScale,
   sliceToWidth,
+  historyMinutesForWidth,
 } from './spectrogram-scale';
 
 describe('percentile', () => {
@@ -84,5 +85,19 @@ describe('sliceToWidth', () => {
 
   it('recorta quedándose con las ÚLTIMAS columnas (las más recientes)', () => {
     expect(sliceToWidth([1, 2, 3, 4, 5], 3)).toEqual([3, 4, 5]);
+  });
+});
+
+describe('historyMinutesForWidth', () => {
+  it('pide los minutos que el ancho del canvas puede mostrar', () => {
+    // Peor caso: una columna cada 8s, 1px por columna. Un canvas de 400px
+    // muestra ~54 min; pedir 60 fijos para una tira de 240px tiraba 3/4
+    // del payload (importa con ~74 tiras montadas en el muro).
+    expect(historyMinutesForWidth(400)).toBe(54);
+    expect(historyMinutesForWidth(240)).toBe(32);
+  });
+
+  it('nunca pide menos de 1 minuto', () => {
+    expect(historyMinutesForWidth(4)).toBe(1);
   });
 });

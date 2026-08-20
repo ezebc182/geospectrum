@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import { X, Radio, Settings2 } from 'lucide-react';
+import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 
 import { seismicAPI } from '@/lib/api';
@@ -63,6 +63,14 @@ const TOP_REGIONS = 6;
 const SPOTLIGHT_INTERVAL_MS = 8_000;
 const SPOTLIGHT_FIRST_DELAY_MS = 2_500;
 const SPOTLIGHT_POOL_SIZE = 10;
+
+// Cartelera: capa maximizada con fondo difuso que rota entre "slides" como
+// una pantalla publicitaria (pedido del usuario, 2026-08-20). El muro
+// muestra TODAS las estaciones vivas — acá vive la vista SpectroNet; el
+// stack lateral queda corto y sin scroll.
+const BILLBOARD_SLIDES = ['wall', 'analytics'] as const;
+type BillboardSlide = (typeof BILLBOARD_SLIDES)[number];
+const BILLBOARD_INTERVAL_MS = 30_000;
 
 const broadcastFetcher = (): Promise<SeismicEvent[]> =>
   seismicAPI.searchEvents({ windowMinutes: WINDOW_MINUTES, minMag: MIN_MAG });
@@ -175,11 +183,48 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
       spectroSelection === null
         ? all.slice(0, SPECTRO_STRIPS)
         : all.filter((c) => spectroSelection.includes(c.channel));
-    return chosen.map((c) => ({
+    // Tope SIEMPRE, también sobre la selección del usuario: el panel no
+    // scrollea y una selección larga desbordaba oculta bajo overflow-hidden.
+    // El muro de la cartelera es el lugar donde se ve todo.
+    return chosen.slice(0, SPECTRO_STRIPS).map((c) => ({
       channel: c.channel,
       name: CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id,
     }));
   }, [liveChannels, spectroSelection]);
+
+  // El muro no recorta: todas las estaciones que live-channels garantiza
+  // transmitiendo, una tira por ciudad.
+  const wallStrips = useMemo(
+    () =>
+      (liveChannels ?? []).map((c) => ({
+        channel: c.channel,
+        name: CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id,
+      })),
+    [liveChannels]
+  );
+
+  const [billboard, setBillboard] = useState(false);
+  const [slideIndex, setSlideIndex] = useState(0);
+  // Epoch de navegación MANUAL: prev/next lo suben para re-armar el timer
+  // (cambiar a mano y que a los 2s rote solo se siente como un glitch).
+  // Con slideIndex en las deps el timer también se re-armaba en cada tick
+  // automático — mismo resultado observable, intención confusa.
+  const [navEpoch, setNavEpoch] = useState(0);
+  const slide: BillboardSlide =
+    BILLBOARD_SLIDES[((slideIndex % BILLBOARD_SLIDES.length) + BILLBOARD_SLIDES.length) % BILLBOARD_SLIDES.length];
+  const openBillboard = () => {
+    setSlideIndex(0);
+    setBillboard(true);
+  };
+  const navigateSlide = (delta: number) => {
+    setSlideIndex((i) => i + delta);
+    setNavEpoch((e) => e + 1);
+  };
+  useEffect(() => {
+    if (!billboard) return;
+    const timer = setInterval(() => setSlideIndex((i) => i + 1), BILLBOARD_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [billboard, navEpoch]);
 
   const isSpectroShown = (channel: string) =>
     spectroSelection === null
@@ -211,11 +256,17 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // Escape sale por capas: primero la cartelera, después la transmisión.
+      if (billboard) {
+        setBillboard(false);
+      } else {
+        onClose();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, billboard]);
 
   // Countdown sincronizado con el ciclo de SWR: se rearma con cada tanda de
   // datos. Es informativo (el refresco real lo maneja SWR), por eso clava en
@@ -502,6 +553,14 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             {t('nextUpdate', { seconds: secondsLeft })}
           </span>
           <button
+            onClick={openBillboard}
+            aria-label={t('billboardMode')}
+            title={t('billboardMode')}
+            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+          <button
             onClick={() => setShowConfig((v) => !v)}
             aria-label={t('configurePanels')}
             title={t('configurePanels')}
@@ -573,6 +632,115 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
           )}
         </div>
       </div>
+
+      {/* Cartelera: capa maximizada sobre el globo con fondo difuso, rota
+          sola entre el muro (todas las estaciones vivas) y las analíticas
+          en grande — pantalla publicitaria para dejar de fondo en el
+          stream. Sin scroll: el muro entra porque la grilla envuelve. */}
+      {billboard && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-background/70 backdrop-blur-xl">
+          <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
+            <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-foreground">
+              {slide === 'wall' ? t('billboardWallTitle') : t('panelAnalytics')}
+            </h2>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigateSlide(-1)}
+                aria-label={t('billboardPrev')}
+                title={t('billboardPrev')}
+                className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => navigateSlide(1)}
+                aria-label={t('billboardNext')}
+                title={t('billboardNext')}
+                className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setBillboard(false)}
+                aria-label={t('billboardClose')}
+                title={t('billboardClose')}
+                className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* El muro queda MONTADO (oculto) mientras rota otro slide: cada
+              tira es 1 WebSocket + 1 fetch de historial, y desmontar/montar
+              ~74 en cada rotación era una tormenta de reconexiones. */}
+          <div
+            data-testid="billboard-wall"
+            className={`flex-1 flex-wrap content-start justify-center gap-1.5 overflow-hidden p-3 ${
+              slide === 'wall' ? 'flex' : 'hidden'
+            }`}
+          >
+            {wallStrips.map((s) => (
+              <LiveSpectrogramCanvas
+                key={s.channel}
+                channel={s.channel}
+                label={s.name}
+                width={SPECTRO_WIDTH}
+                height={SPECTRO_HEIGHT}
+                variant="strip"
+              />
+            ))}
+          </div>
+
+          {slide === 'analytics' && (
+            <div
+              data-testid="billboard-analytics"
+              className="mx-auto grid w-full max-w-4xl flex-1 content-center gap-8 overflow-hidden p-8 md:grid-cols-2"
+            >
+              <section>
+                <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('topRegions')}
+                </h3>
+                <ul className="space-y-3">
+                  {regiones.map((r) => (
+                    <li key={r.region.toUpperCase()} className="flex items-center gap-3">
+                      <span className="w-36 truncate text-base text-foreground">{r.region}</span>
+                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-muted/40">
+                        <div
+                          className="h-full rounded-full bg-seismic-600"
+                          style={{ width: `${(r.count / maxRegion) * 100}%` }}
+                        />
+                      </div>
+                      <span className="w-10 text-right font-data text-base text-muted-foreground">
+                        {r.count}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <section>
+                <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('hourlyActivity')}
+                </h3>
+                <div className="flex h-40 items-end gap-0.5" role="img" aria-label={t('hourlyActivity')}>
+                  {horas.map((h, i) => (
+                    <div
+                      key={i}
+                      title={`${h.count}`}
+                      className={`flex-1 rounded-t-sm ${h.hasM5 ? 'bg-severity-high' : 'bg-seismic-600'}`}
+                      style={{ height: `${Math.max(h.count > 0 ? 8 : 2, (h.count / maxHora) * 100)}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="mt-2 flex justify-between font-data text-xs text-muted-foreground">
+                  <span>-24 h</span>
+                  <span>{t('now')}</span>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Ticker tipo noticiero: frases generadas de los datos, en loop
           continuo. El contenido va duplicado para que el corte del loop
