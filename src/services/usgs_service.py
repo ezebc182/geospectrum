@@ -14,12 +14,16 @@ from src.config.settings import settings
 from src.observability.metrics import source_fetch_duration_seconds, source_errors_total
 
 
-async def fetch_usgs_events(window_minutes: int) -> Tuple[List[SeismicEvent], Optional[str]]:
+async def fetch_usgs_events(
+    window_minutes: int, min_magnitude: Optional[float] = None
+) -> Tuple[List[SeismicEvent], Optional[str]]:
     """
     Consulta USGS ComCat API y retorna eventos normalizados.
 
     Args:
         window_minutes: Ventana temporal de consulta (hacia atrás desde ahora)
+        min_magnitude: Piso de magnitud a pedir a la fuente. None usa
+            settings.source_min_magnitude (piso bajo anti micro-sismos).
 
     Returns:
         (lista_eventos, error_string)
@@ -27,12 +31,13 @@ async def fetch_usgs_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
     """
     end_utc = datetime.now(timezone.utc)
     start_utc = end_utc - timedelta(minutes=window_minutes)
+    piso = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
     params = {
         "format": "geojson",
         "starttime": start_utc.strftime("%Y-%m-%dT%H:%M:%S"),
         "endtime": end_utc.strftime("%Y-%m-%dT%H:%M:%S"),
-        "minmagnitude": str(settings.min_mag_alert),
+        "minmagnitude": str(piso),
         # Sin bbox: la ingesta es GLOBAL y el recorte geográfico ocurre al leer,
         # en build_report() vía point_in_area(). Filtrar acá ataba el catálogo a
         # los Andes y dejaba en cero cualquier área fuera de Sudamérica.

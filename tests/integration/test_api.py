@@ -288,14 +288,14 @@ def test_cache_serves_second_request(client):
     """Segunda llamada a /events usa caché, no hace fetch externo dos veces."""
     call_count = {"n": 0}
 
-    async def fake_usgs(window):
+    async def fake_usgs(window, min_magnitude=None):
         call_count["n"] += 1
         return [], None
 
     async def fake_inpres(window):
         return [], None
 
-    async def fake_emsc(window):
+    async def fake_emsc(window, min_magnitude=None):
         return [], None
 
     # NOTA (Fase 3/4, change "unify-dashboard-events-source"): /events migró

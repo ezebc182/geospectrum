@@ -6,6 +6,8 @@ import { FilterPanel, type SeismicFilters } from '@/components/FilterPanel';
 import { AdvancedSeismicMap } from '@/components/AdvancedSeismicMap';
 import { EventsTable } from '@/components/EventsTable';
 import { seismicAPI } from '@/lib/api';
+import { getActiveArea } from '@/lib/areas';
+import { useAreaRefresh } from '@/lib/use-area-refresh';
 import type { SeismicEvent } from '@/lib/types';
 import { Search, MapPin, List, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -55,24 +57,27 @@ export default function ExplorePage() {
     setView('map');
   };
 
-  const handleSearch = async () => {
+  // Recibe los filtros por parámetro (no del closure): el cambio de área
+  // busca con filtros recién calculados que el estado todavía no reflejó —
+  // leer `filters` acá sería la trampa del closure viejo.
+  const runSearch = async (f: SeismicFilters) => {
     setIsSearching(true);
     setError(null);
 
     try {
       const params = {
-        sources: filters.sources.join(','),
-        minMag: filters.minMag,
-        maxMag: filters.maxMag,
-        minDepth: filters.minDepth ?? undefined,
-        maxDepth: filters.maxDepth ?? undefined,
-        minLat: filters.minLat ?? undefined,
-        maxLat: filters.maxLat ?? undefined,
-        minLon: filters.minLon ?? undefined,
-        maxLon: filters.maxLon ?? undefined,
-        windowMinutes: filters.windowMinutes,
-        feltOnly: filters.feltOnly,
-        reviewedOnly: filters.reviewedOnly,
+        sources: f.sources.join(','),
+        minMag: f.minMag,
+        maxMag: f.maxMag,
+        minDepth: f.minDepth ?? undefined,
+        maxDepth: f.maxDepth ?? undefined,
+        minLat: f.minLat ?? undefined,
+        maxLat: f.maxLat ?? undefined,
+        minLon: f.minLon ?? undefined,
+        maxLon: f.maxLon ?? undefined,
+        windowMinutes: f.windowMinutes,
+        feltOnly: f.feltOnly,
+        reviewedOnly: f.reviewedOnly,
       };
 
       const results = await seismicAPI.searchEvents(params);
@@ -88,6 +93,32 @@ export default function ExplorePage() {
       setIsSearching(false);
     }
   };
+
+  const handleSearch = () => runSearch(filters);
+
+  // El selector de área del header también manda acá (bug 2026-08-20: cambiar
+  // la región no actualizaba nada — nadie escuchaba el evento). El bbox del
+  // área se vuelca a los filtros y se re-busca; volver al preset por defecto
+  // (is_default) limpia el recorte. Para áreas que cruzan el antimeridiano el
+  // bbox dice -180..180: filtro más ancho de la cuenta — mostrar de más es el
+  // error seguro, un min/max de longitud no puede representar ese corte.
+  useAreaRefresh(async () => {
+    const active = await getActiveArea();
+    const bbox = active && !active.is_default ? active.area.bbox : null;
+    // `filters` sale de la clausura del render en que llegó el evento —
+    // useAreaRefresh invoca siempre la versión fresca del handler. No se usa
+    // el updater funcional de setFilters porque disparar la búsqueda adentro
+    // sería un efecto colateral en una función que React exige pura.
+    const next: SeismicFilters = {
+      ...filters,
+      minLat: bbox?.minlat ?? null,
+      maxLat: bbox?.maxlat ?? null,
+      minLon: bbox?.minlon ?? null,
+      maxLon: bbox?.maxlon ?? null,
+    };
+    setFilters(next);
+    await runSearch(next);
+  });
 
   const exportToCSV = () => {
     if (eventos.length === 0) return;

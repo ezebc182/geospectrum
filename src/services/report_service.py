@@ -10,7 +10,7 @@ más filtros in-memory (ver design.md del change
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from src.config.settings import settings
 from src.models.event import MonitorReport, SeismicEvent
@@ -38,12 +38,13 @@ CANONICAL_SOURCES: list[str] = ["usgs", "emsc", "inpres"]
 async def _fetch_parallel(
     time_window: int,
     sources: list[str],
+    min_magnitude: Optional[float] = None,
 ) -> tuple[list[SeismicEvent], list[SeismicEvent], list[SeismicEvent], list[str]]:
     """
     Consulta USGS, EMSC e INPRES en paralelo con asyncio.gather.
 
-    Respeta el caché TTL: si hay resultado fresco para la clave fuente+ventana,
-    lo devuelve sin hacer fetch externo.
+    Respeta el caché TTL: si hay resultado fresco para la clave
+    fuente+ventana+piso, lo devuelve sin hacer fetch externo.
 
     Movida sin cambios de firma ni de comportamiento desde src/main.py
     (Fase 2, task 2.2 del change "unify-dashboard-events-source").
@@ -52,14 +53,18 @@ async def _fetch_parallel(
         (usgs_events, emsc_events, inpres_events, errors)
     """
     ttl = settings.cache_ttl_seconds
+    # El piso viaja en la clave del caché: /report (piso default) y
+    # /events/search (min_mag del usuario) comparten el store global — sin
+    # esto, una búsqueda M4+ serviría resultados recortados al /report.
+    piso = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
-    async def _cached_fetch(source: str, fetcher, window: int):
-        key = f"{source}:{window}"
+    async def _cached_fetch(source: str, fetcher: Any, window: int, with_min: bool) -> Any:
+        key = f"{source}:{window}:{piso if with_min else '-'}"
         if ttl > 0:
             hit = cache.get(key)
             if hit is not None:
                 return hit
-        result = await fetcher(window)
+        result = await (fetcher(window, min_magnitude=piso) if with_min else fetcher(window))
         if ttl > 0:
             cache.set(key, result, ttl)
         return result
@@ -68,13 +73,14 @@ async def _fetch_parallel(
     fetch_map: list[str] = []
 
     if "usgs" in sources:
-        tasks.append(_cached_fetch("usgs", fetch_usgs_events, time_window))
+        tasks.append(_cached_fetch("usgs", fetch_usgs_events, time_window, with_min=True))
         fetch_map.append("usgs")
     if "emsc" in sources:
-        tasks.append(_cached_fetch("emsc", fetch_emsc_events, time_window))
+        tasks.append(_cached_fetch("emsc", fetch_emsc_events, time_window, with_min=True))
         fetch_map.append("emsc")
     if "inpres" in sources:
-        tasks.append(_cached_fetch("inpres", fetch_inpres_events, time_window))
+        # El proxy INPRES no acepta piso de magnitud; se filtra post-merge.
+        tasks.append(_cached_fetch("inpres", fetch_inpres_events, time_window, with_min=False))
         fetch_map.append("inpres")
 
     results = await asyncio.gather(*tasks)
@@ -134,6 +140,7 @@ async def build_report(
     sources: list[str],
     window_minutes: Optional[int] = None,
     area: Optional[dict] = None,
+    min_magnitude: Optional[float] = None,
 ) -> MonitorReport:
     """
     Orquesta la fusión de eventos sísmicos de las fuentes dadas y calcula
@@ -173,7 +180,7 @@ async def build_report(
     effective_window = window_minutes if window_minutes is not None else settings.window_minutes
 
     usgs_events, emsc_events, inpres_events, errors = await _fetch_parallel(
-        effective_window, sources
+        effective_window, sources, min_magnitude
     )
 
     merged_events = merge_all_sources(usgs_events, emsc_events, inpres_events)

@@ -156,8 +156,14 @@ async def test_build_report_uses_settings_window_minutes_by_default():
 
         await build_report(sources=CANONICAL_SOURCES)
 
-        mock_usgs.assert_called_once_with(settings.window_minutes)
-        mock_emsc.assert_called_once_with(settings.window_minutes)
+        # USGS/EMSC llevan además el piso de magnitud del fetch; INPRES no
+        # (el proxy no lo acepta, se filtra post-merge).
+        mock_usgs.assert_called_once_with(
+            settings.window_minutes, min_magnitude=settings.source_min_magnitude
+        )
+        mock_emsc.assert_called_once_with(
+            settings.window_minutes, min_magnitude=settings.source_min_magnitude
+        )
         mock_inpres.assert_called_once_with(settings.window_minutes)
 
 
@@ -176,8 +182,8 @@ async def test_build_report_respects_explicit_window_minutes():
 
         await build_report(sources=CANONICAL_SOURCES, window_minutes=15)
 
-        mock_usgs.assert_called_once_with(15)
-        mock_emsc.assert_called_once_with(15)
+        mock_usgs.assert_called_once_with(15, min_magnitude=settings.source_min_magnitude)
+        mock_emsc.assert_called_once_with(15, min_magnitude=settings.source_min_magnitude)
         mock_inpres.assert_called_once_with(15)
 
 
