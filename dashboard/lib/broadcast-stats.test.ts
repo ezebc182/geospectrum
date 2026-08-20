@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { computeBroadcastStats } from './broadcast-stats';
+import {
+  computeBroadcastStats,
+  latestEvents,
+  isFreshEvent,
+  formatUtcClock,
+} from './broadcast-stats';
 import type { SeismicEvent } from './types';
 
 function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
@@ -54,5 +59,40 @@ describe('computeBroadcastStats', () => {
   it('ignora eventos con hora futura respecto de now (relojes desincronizados)', () => {
     const eventos = [makeEvento({ hora_utc: '2026-08-20T13:05:00+00:00' })];
     expect(computeBroadcastStats(eventos, NOW).last24h).toBe(0);
+  });
+});
+
+describe('latestEvents', () => {
+  it('ordena del más nuevo al más viejo y recorta a n', () => {
+    const eventos = [
+      makeEvento({ id: 'viejo', hora_utc: '2026-08-20T01:00:00+00:00' }),
+      makeEvento({ id: 'nuevo', hora_utc: '2026-08-20T12:00:00+00:00' }),
+      makeEvento({ id: 'medio', hora_utc: '2026-08-20T06:00:00+00:00' }),
+    ];
+    expect(latestEvents(eventos, 2).map((e) => e.id)).toEqual(['nuevo', 'medio']);
+  });
+
+  it('no muta el array original', () => {
+    const eventos = [
+      makeEvento({ id: 'a', hora_utc: '2026-08-20T01:00:00+00:00' }),
+      makeEvento({ id: 'b', hora_utc: '2026-08-20T12:00:00+00:00' }),
+    ];
+    latestEvents(eventos, 2);
+    expect(eventos[0].id).toBe('a');
+  });
+});
+
+describe('isFreshEvent', () => {
+  it('true dentro de la ventana, false fuera y false en el futuro', () => {
+    expect(isFreshEvent(makeEvento({ hora_utc: '2026-08-20T12:50:00+00:00' }), NOW, 15)).toBe(true);
+    expect(isFreshEvent(makeEvento({ hora_utc: '2026-08-20T12:40:00+00:00' }), NOW, 15)).toBe(false);
+    expect(isFreshEvent(makeEvento({ hora_utc: '2026-08-20T13:10:00+00:00' }), NOW, 15)).toBe(false);
+  });
+});
+
+describe('formatUtcClock', () => {
+  it('formatea la hora en UTC sin importar el huso local', () => {
+    expect(formatUtcClock('2026-08-20T12:33:17+00:00')).toBe('12:33:17 UTC');
+    expect(formatUtcClock('2026-08-20T12:33:17-03:00')).toBe('15:33:17 UTC');
   });
 });

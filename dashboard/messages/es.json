@@ -256,7 +256,9 @@
       "last24h": "Últimas 24 h",
       "todayM5": "Hoy ≥M5.0",
       "todayM6": "Hoy ≥M6.0",
-      "nextUpdate": "Actualización en {seconds}s"
+      "nextUpdate": "Actualización en {seconds}s",
+      "depthShort": "Prof.",
+      "freshEvent": "Evento reciente"
     }
   },
   "charts": {
