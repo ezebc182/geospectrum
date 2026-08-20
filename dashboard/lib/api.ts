@@ -85,7 +85,11 @@ class SeismicAPI {
 
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
-        queryParams.append(key, value.toString());
+        // El backend espera snake_case (min_mag, window_minutes): mandar la
+        // clave camelCase hace que FastAPI la ignore EN SILENCIO y el filtro
+        // no filtre nada — verificado contra producción el 2026-08-20.
+        const snakeKey = key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+        queryParams.append(snakeKey, value.toString());
       }
     });
 

@@ -14,7 +14,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
-import { Globe2, RefreshCw } from 'lucide-react';
+import { Globe2, RefreshCw, Tv } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { reportFetcher } from '@/lib/api';
@@ -25,6 +25,7 @@ import { EVENT_PARAM } from '@/lib/share-event';
 import { useAreaRefresh } from '@/lib/use-area-refresh';
 import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
 import { GlobeEventPanel } from '@/components/GlobeEventPanel';
+import { GlobeBroadcastOverlay } from '@/components/GlobeBroadcastOverlay';
 import type { SeismicEvent } from '@/lib/types';
 
 // three.js accede a `window` al importarse: con SSR el build revienta. El
@@ -81,6 +82,9 @@ function GlobeView() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(
     () => searchParams.get(EVENT_PARAM),
   );
+
+  // Modo transmisión: overlay de pantalla completa para compartir en stream.
+  const [isBroadcast, setIsBroadcast] = useState(false);
 
   // El área nueva gana el foco de cámara: cambiar de área es una acción
   // explícita y más reciente que cualquier evento que ya estuviera enfocado.
@@ -142,14 +146,25 @@ function GlobeView() {
           </div>
         </div>
 
-        <button
-          onClick={() => mutate()}
-          className="flex items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 dark:border-gray-700"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          {t('refresh')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsBroadcast(true)}
+            className="flex items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 dark:border-gray-700"
+          >
+            <Tv className="h-4 w-4" aria-hidden="true" />
+            {t('broadcast.enter')}
+          </button>
+          <button
+            onClick={() => mutate()}
+            className="flex items-center gap-2 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-muted/60 dark:border-gray-700"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            {t('refresh')}
+          </button>
+        </div>
       </div>
+
+      {isBroadcast && <GlobeBroadcastOverlay onClose={() => setIsBroadcast(false)} />}
 
       <AreaRefreshIndicator isRefreshing={isRefreshingArea}>
         {isLoading ? (

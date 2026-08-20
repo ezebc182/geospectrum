@@ -248,6 +248,15 @@
         "strong": "Fuerte",
         "major": "Mayor"
       }
+    },
+    "broadcast": {
+      "enter": "Modo transmisión",
+      "exit": "Salir del modo transmisión",
+      "title": "GeoSpectrum en vivo",
+      "last24h": "Últimas 24 h",
+      "todayM5": "Hoy ≥M5.0",
+      "todayM6": "Hoy ≥M6.0",
+      "nextUpdate": "Actualización en {seconds}s"
     }
   },
   "charts": {
