@@ -84,7 +84,13 @@ function GlobeView() {
   );
 
   // Modo transmisión: overlay de pantalla completa para compartir en stream.
-  const [isBroadcast, setIsBroadcast] = useState(false);
+  // ABIERTO por defecto (pedido 2026-08-20): la página-vestíbulo con un botón
+  // no tenía sentido. Excepción: un link compartido con ?event= abre ESE
+  // evento — cerrar la transmisión (X/Escape) deja el globo con panel como
+  // fallback para explorar.
+  const [isBroadcast, setIsBroadcast] = useState(
+    () => searchParams.get(EVENT_PARAM) === null,
+  );
 
   // El área nueva gana el foco de cámara: cambiar de área es una acción
   // explícita y más reciente que cualquier evento que ya estuviera enfocado.
