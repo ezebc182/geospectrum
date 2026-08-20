@@ -205,19 +205,26 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
   const [billboard, setBillboard] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
+  // Epoch de navegación MANUAL: prev/next lo suben para re-armar el timer
+  // (cambiar a mano y que a los 2s rote solo se siente como un glitch).
+  // Con slideIndex en las deps el timer también se re-armaba en cada tick
+  // automático — mismo resultado observable, intención confusa.
+  const [navEpoch, setNavEpoch] = useState(0);
   const slide: BillboardSlide =
     BILLBOARD_SLIDES[((slideIndex % BILLBOARD_SLIDES.length) + BILLBOARD_SLIDES.length) % BILLBOARD_SLIDES.length];
   const openBillboard = () => {
     setSlideIndex(0);
     setBillboard(true);
   };
-  // Rotación automática tipo cartelera; los botones prev/next la re-arman
-  // (cambiar a mano y que a los 2s rote solo se siente como un glitch).
+  const navigateSlide = (delta: number) => {
+    setSlideIndex((i) => i + delta);
+    setNavEpoch((e) => e + 1);
+  };
   useEffect(() => {
     if (!billboard) return;
     const timer = setInterval(() => setSlideIndex((i) => i + 1), BILLBOARD_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [billboard, slideIndex]);
+  }, [billboard, navEpoch]);
 
   const isSpectroShown = (channel: string) =>
     spectroSelection === null
@@ -638,7 +645,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             </h2>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setSlideIndex((i) => i - 1)}
+                onClick={() => navigateSlide(-1)}
                 aria-label={t('billboardPrev')}
                 title={t('billboardPrev')}
                 className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
@@ -646,7 +653,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setSlideIndex((i) => i + 1)}
+                onClick={() => navigateSlide(1)}
                 aria-label={t('billboardNext')}
                 title={t('billboardNext')}
                 className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
@@ -664,23 +671,26 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             </div>
           </div>
 
-          {slide === 'wall' && (
-            <div
-              data-testid="billboard-wall"
-              className="flex flex-1 flex-wrap content-start justify-center gap-1.5 overflow-hidden p-3"
-            >
-              {wallStrips.map((s) => (
-                <LiveSpectrogramCanvas
-                  key={s.channel}
-                  channel={s.channel}
-                  label={s.name}
-                  width={SPECTRO_WIDTH}
-                  height={SPECTRO_HEIGHT}
-                  variant="strip"
-                />
-              ))}
-            </div>
-          )}
+          {/* El muro queda MONTADO (oculto) mientras rota otro slide: cada
+              tira es 1 WebSocket + 1 fetch de historial, y desmontar/montar
+              ~74 en cada rotación era una tormenta de reconexiones. */}
+          <div
+            data-testid="billboard-wall"
+            className={`flex-1 flex-wrap content-start justify-center gap-1.5 overflow-hidden p-3 ${
+              slide === 'wall' ? 'flex' : 'hidden'
+            }`}
+          >
+            {wallStrips.map((s) => (
+              <LiveSpectrogramCanvas
+                key={s.channel}
+                channel={s.channel}
+                label={s.name}
+                width={SPECTRO_WIDTH}
+                height={SPECTRO_HEIGHT}
+                variant="strip"
+              />
+            ))}
+          </div>
 
           {slide === 'analytics' && (
             <div

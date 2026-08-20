@@ -257,14 +257,30 @@ describe('cartelera (billboard)', () => {
     await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
-    expect(screen.getByTestId('billboard-wall')).toBeTruthy();
+    expect(screen.getByTestId('billboard-wall').classList.contains('hidden')).toBe(false);
 
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente panel' }));
-    expect(screen.queryByTestId('billboard-wall')).toBeNull();
+    // El muro queda MONTADO pero oculto: desmontar ~74 tiras (1 WS + 1 fetch
+    // cada una) en cada rotación era una tormenta de reconexiones.
+    expect(screen.getByTestId('billboard-wall').classList.contains('hidden')).toBe(true);
     expect(screen.getByTestId('billboard-analytics')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Panel anterior' }));
-    expect(screen.getByTestId('billboard-wall')).toBeTruthy();
+    expect(screen.getByTestId('billboard-wall').classList.contains('hidden')).toBe(false);
+  });
+
+  it('prev desde el primer slide da la vuelta al último (índice negativo)', async () => {
+    const ahora = Date.now();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'a', lugar: 'X, Chile', hora_utc: new Date(ahora - 10 * 60_000).toISOString() }),
+    ]);
+    getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Panel anterior' }));
+    expect(screen.getByTestId('billboard-analytics')).toBeTruthy();
   });
 
   it('Escape con la cartelera abierta cierra la cartelera, no la transmisión', async () => {
