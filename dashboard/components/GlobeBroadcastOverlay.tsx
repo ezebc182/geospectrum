@@ -24,8 +24,11 @@ import { seismicAPI } from '@/lib/api';
 import {
   computeBroadcastStats,
   formatUtcClock,
+  hourlyBuckets,
   isFreshEvent,
   latestEvents,
+  minutesSinceMag,
+  topRegions,
 } from '@/lib/broadcast-stats';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
@@ -47,8 +50,10 @@ const MIN_MAG = 3;
 const REFRESH_SECONDS = 90;
 
 // Feed lateral: cuántos eventos mostrar y cuándo resaltar uno como nuevo.
-const FEED_SIZE = 14;
+// El panel scrollea, así que puede cargar bastante más que lo que entra.
+const FEED_SIZE = 50;
 const FRESH_MINUTES = 15;
+const TOP_REGIONS = 6;
 
 // Coreografía del spotlight (mismos tiempos que el hero de la landing):
 // cada tanto la cámara gira hacia uno de los sismos fuertes y abre su
@@ -151,6 +156,48 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     };
   }, [pool]);
 
+  // Analíticas del HUD: una serie por gráfico, un solo tono, valores
+  // directos — nada de leyendas ni dobles ejes en un panel de transmisión.
+  const regiones = useMemo(() => topRegions(eventos ?? [], TOP_REGIONS), [eventos]);
+  const horas = useMemo(
+    () => hourlyBuckets(eventos ?? [], statsNow ?? new Date(0)),
+    [eventos, statsNow]
+  );
+  const maxHora = Math.max(1, ...horas.map((h) => h.count));
+  const maxRegion = Math.max(1, ...regiones.map((r) => r.count));
+
+  // Ticker tipo noticiero: frases generadas de los datos, en loop.
+  const ticker = useMemo(() => {
+    if (!eventos || eventos.length === 0 || statsNow === null) return '';
+    const frases: string[] = [];
+    const ultimo = latestEvents(eventos, 1)[0];
+    if (ultimo) {
+      frases.push(
+        t('tickerLatest', {
+          mag: formatMagnitude(ultimo.mag),
+          lugar: ultimo.lugar ?? `${ultimo.lat.toFixed(1)}, ${ultimo.lon.toFixed(1)}`,
+          rel: format.relativeTime(new Date(ultimo.hora_utc), now),
+        })
+      );
+    }
+    const minM5 = minutesSinceMag(eventos, statsNow, 5);
+    frases.push(
+      minM5 === null
+        ? t('tickerNoM5')
+        : t('tickerSinceM5', {
+            rel: format.relativeTime(new Date(statsNow.getTime() - minM5 * 60_000), now),
+          })
+    );
+    if (regiones[0]) {
+      frases.push(
+        t('tickerTopRegion', { region: regiones[0].region, count: regiones[0].count })
+      );
+    }
+    const magMax = Math.max(...eventos.map((e) => e.mag));
+    frases.push(t('tickerMaxMag', { mag: formatMagnitude(magMax) }));
+    return frases.join('   •••   ');
+  }, [eventos, statsNow, regiones, t, format, now]);
+
   const spotlight = useMemo<GlobeSpotlight | null>(() => {
     if (!spotlightEvent) return null;
     return {
@@ -178,7 +225,6 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             eventos={eventos ?? []}
             height={viewportHeight}
             showControls={false}
-            enableZoom={false}
             pointScale={1.6}
             // Misma altitud full-bleed que el hero de la landing: con el
             // default (2.5) el globo flotaba chico en un mar de fondo vacío.
@@ -188,10 +234,56 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
         )}
       </div>
 
+      {/* Panel de analíticas: regiones más activas + actividad por hora.
+          Una serie y un tono por gráfico; los valores van directos. */}
+      <aside className="absolute top-14 left-0 z-10 w-72 space-y-3 p-3">
+        <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t('topRegions')}
+          </h2>
+          <ul className="space-y-1.5">
+            {regiones.map((r) => (
+              <li key={r.region.toUpperCase()} className="flex items-center gap-2">
+                <span className="w-24 truncate text-xs text-foreground">{r.region}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted/40">
+                  <div
+                    className="h-full rounded-full bg-seismic-600"
+                    style={{ width: `${(r.count / maxRegion) * 100}%` }}
+                  />
+                </div>
+                <span className="w-7 text-right font-data text-xs text-muted-foreground">
+                  {r.count}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t('hourlyActivity')}
+          </h2>
+          <div className="flex h-16 items-end gap-px" role="img" aria-label={t('hourlyActivity')}>
+            {horas.map((h, i) => (
+              <div
+                key={i}
+                title={`${h.count}`}
+                className={`flex-1 rounded-t-sm ${h.hasM5 ? 'bg-severity-high' : 'bg-seismic-600'}`}
+                style={{ height: `${Math.max(h.count > 0 ? 8 : 2, (h.count / maxHora) * 100)}%` }}
+              />
+            ))}
+          </div>
+          <div className="mt-1 flex justify-between font-data text-[9px] text-muted-foreground">
+            <span>-24 h</span>
+            <span>{t('now')}</span>
+          </div>
+        </section>
+      </aside>
+
       {/* Feed lateral: últimos eventos, el más nuevo arriba. Los de los
           últimos minutos llevan punto pulsante — la "notificación" del HUD. */}
-      <aside className="absolute top-14 bottom-0 right-0 z-10 w-80 overflow-hidden border-l border-border bg-background/85 backdrop-blur">
-        <ul className="divide-y divide-border/60">
+      <aside className="absolute top-14 bottom-9 right-0 z-10 w-80 overflow-y-auto border-l border-border bg-background/85 backdrop-blur">
+        <ul data-testid="broadcast-feed" className="divide-y divide-border/60">
           {feed.map((evento) => {
             const severity = getMagnitudeSeverity(evento.mag);
             return (
@@ -271,6 +363,20 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
           </button>
         </div>
       </div>
+
+      {/* Ticker tipo noticiero: frases generadas de los datos, en loop
+          continuo. El contenido va duplicado para que el corte del loop
+          no deje la cinta vacía. */}
+      {ticker && (
+        <div className="absolute inset-x-0 bottom-0 z-10 flex h-9 items-center overflow-hidden border-t border-border bg-background/90 backdrop-blur">
+          <div className="broadcast-ticker flex shrink-0 items-center whitespace-nowrap font-data text-xs text-foreground">
+            <span className="px-8">{ticker}</span>
+            <span className="px-8" aria-hidden="true">
+              {ticker}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 

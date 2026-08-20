@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { SWRConfig } from 'swr';
 
@@ -94,12 +94,33 @@ describe('GlobeBroadcastOverlay', () => {
     renderOverlay();
 
     await waitFor(() => expect(screen.getByText('Nuevo, Japón')).toBeTruthy());
-    const filas = screen.getAllByRole('listitem');
+    const feed = screen.getByTestId('broadcast-feed');
+    const filas = within(feed).getAllByRole('listitem');
     expect(filas[0].textContent).toContain('Nuevo, Japón');
     expect(filas[1].textContent).toContain('Viejo, Chile');
     // El de hace 5 min lleva el punto de "recién llegado"; el de 3 horas no.
     expect(filas[0].querySelector('[title="Evento reciente"]')).toBeTruthy();
     expect(filas[1].querySelector('[title="Evento reciente"]')).toBeNull();
+  });
+
+  it('muestra las analíticas y el ticker generados de los datos', async () => {
+    const ahora = Date.now();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'a', lugar: '10 km N of X, Chile', hora_utc: new Date(ahora - 10 * 60_000).toISOString() }),
+      makeEvento({ id: 'b', lugar: 'OFF COAST, CHILE', hora_utc: new Date(ahora - 30 * 60_000).toISOString() }),
+      makeEvento({ id: 'c', mag: 5.4, lugar: '5 km S of Y, Indonesia', hora_utc: new Date(ahora - 2 * 60 * 60_000).toISOString() }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => expect(screen.getByText('Regiones más activas (24 h)')).toBeTruthy());
+    // Chile lidera el ranking con 2 eventos
+    expect(screen.getByText('Chile')).toBeTruthy();
+    // El ticker menciona la región más activa (contenido duplicado para el loop)
+    expect(
+      screen.getAllByText(/Región más activa: Chile con 2 eventos/).length
+    ).toBeGreaterThanOrEqual(1);
+    // El feed scrollea
+    expect(document.querySelector('.overflow-y-auto')).toBeTruthy();
   });
 
   it('cierra con Escape y con el botón de salir', async () => {

@@ -258,7 +258,15 @@
       "todayM6": "Hoy ≥M6.0",
       "nextUpdate": "Actualización en {seconds}s",
       "depthShort": "Prof.",
-      "freshEvent": "Evento reciente"
+      "freshEvent": "Evento reciente",
+      "topRegions": "Regiones más activas (24 h)",
+      "hourlyActivity": "Actividad por hora (24 h)",
+      "now": "ahora",
+      "tickerLatest": "Último evento: M{mag} — {lugar} ({rel})",
+      "tickerSinceM5": "Último M≥5.0: {rel}",
+      "tickerNoM5": "Sin eventos M≥5.0 en las últimas 24 horas",
+      "tickerTopRegion": "Región más activa: {region} con {count} eventos",
+      "tickerMaxMag": "Magnitud máxima de las últimas 24 h: M{mag}"
     }
   },
   "charts": {

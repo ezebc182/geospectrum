@@ -136,3 +136,23 @@
 .dark .leaflet-control-zoom {
   border: 2px solid rgb(55 65 81);
 }
+/* Cinta del ticker del modo transmisión: el contenido va duplicado en el
+   markup, así el loop (-50%) empalma sin dejar la cinta vacía. */
+@keyframes broadcast-ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.broadcast-ticker {
+  animation: broadcast-ticker-scroll 45s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .broadcast-ticker {
+    animation: none;
+  }
+}

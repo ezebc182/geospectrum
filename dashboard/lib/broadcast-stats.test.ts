@@ -4,6 +4,10 @@ import {
   latestEvents,
   isFreshEvent,
   formatUtcClock,
+  parseRegion,
+  topRegions,
+  hourlyBuckets,
+  minutesSinceMag,
 } from './broadcast-stats';
 import type { SeismicEvent } from './types';
 
@@ -87,6 +91,62 @@ describe('isFreshEvent', () => {
     expect(isFreshEvent(makeEvento({ hora_utc: '2026-08-20T12:50:00+00:00' }), NOW, 15)).toBe(true);
     expect(isFreshEvent(makeEvento({ hora_utc: '2026-08-20T12:40:00+00:00' }), NOW, 15)).toBe(false);
     expect(isFreshEvent(makeEvento({ hora_utc: '2026-08-20T13:10:00+00:00' }), NOW, 15)).toBe(false);
+  });
+});
+
+describe('parseRegion', () => {
+  it('toma lo que sigue a la última coma (formato USGS)', () => {
+    expect(parseRegion('153 km N of Waingapu, Indonesia')).toBe('Indonesia');
+    expect(parseRegion('5 km S of San José del Palmar, Colombia')).toBe('Colombia');
+  });
+
+  it('sin coma usa el string entero (formato EMSC)', () => {
+    expect(parseRegion('GREENLAND SEA')).toBe('GREENLAND SEA');
+  });
+
+  it('null o vacío devuelven null', () => {
+    expect(parseRegion(null)).toBeNull();
+    expect(parseRegion('algo,  ')).toBeNull();
+  });
+});
+
+describe('topRegions', () => {
+  it('agrupa sin distinguir mayúsculas y ordena por cantidad', () => {
+    const eventos = [
+      makeEvento({ id: 'a', lugar: '10 km N of X, Chile' }),
+      makeEvento({ id: 'b', lugar: 'OFF COAST, CHILE' }),
+      makeEvento({ id: 'c', lugar: '5 km S of Y, Indonesia' }),
+    ];
+    expect(topRegions(eventos, 5)).toEqual([
+      { region: 'Chile', count: 2 },
+      { region: 'Indonesia', count: 1 },
+    ]);
+  });
+});
+
+describe('hourlyBuckets', () => {
+  it('pone cada evento en su hora, con la más nueva a la derecha', () => {
+    const eventos = [
+      makeEvento({ id: 'a', hora_utc: '2026-08-20T12:30:00+00:00' }), // hace 30 min
+      makeEvento({ id: 'b', mag: 5.5, hora_utc: '2026-08-20T10:30:00+00:00' }), // hace 2.5 h
+      makeEvento({ id: 'c', hora_utc: '2026-08-19T12:00:00+00:00' }), // hace 25 h: afuera
+    ];
+    const buckets = hourlyBuckets(eventos, NOW);
+    expect(buckets).toHaveLength(24);
+    expect(buckets[23]).toEqual({ count: 1, hasM5: false });
+    expect(buckets[21]).toEqual({ count: 1, hasM5: true });
+    expect(buckets.reduce((s, b) => s + b.count, 0)).toBe(2);
+  });
+});
+
+describe('minutesSinceMag', () => {
+  it('mide desde el último evento que supera el umbral', () => {
+    const eventos = [
+      makeEvento({ id: 'a', mag: 5.2, hora_utc: '2026-08-20T10:00:00+00:00' }),
+      makeEvento({ id: 'b', mag: 4.0, hora_utc: '2026-08-20T12:30:00+00:00' }),
+    ];
+    expect(minutesSinceMag(eventos, NOW, 5)).toBe(180);
+    expect(minutesSinceMag(eventos, NOW, 6)).toBeNull();
   });
 });
 
