@@ -168,6 +168,25 @@ describe('GlobeBroadcastOverlay', () => {
     expect(screen.getByTestId('broadcast-feed')).toBeTruthy();
   });
 
+  it('permite agregar y quitar estaciones del stack de espectrogramas', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    getLiveChannelsMock.mockResolvedValue([
+      { city_id: 'tokyo', channel: 'JP.JYT..BHZ' },
+      { city_id: 'seattle', channel: 'UW.LON..HHZ' },
+    ]);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
+    expect(within(screen.getByTestId('spectro-strips')).getByText('Tokyo')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar paneles' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Tokyo' }));
+    expect(within(screen.getByTestId('spectro-strips')).queryByText('Tokyo')).toBeNull();
+    expect(within(screen.getByTestId('spectro-strips')).getByText('Seattle')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Tokyo' }));
+    expect(within(screen.getByTestId('spectro-strips')).getByText('Tokyo')).toBeTruthy();
+  });
+
   it('cierra con Escape y con el botón de salir', async () => {
     searchEventsMock.mockResolvedValue([]);
     const onClose = renderOverlay();

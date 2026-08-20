@@ -99,6 +99,22 @@ const DEFAULT_PANELS: PanelConfig = {
 
 const PANELS_STORAGE_KEY = 'globe.broadcast.panels.v1';
 
+// Qué estaciones eligió el usuario para el stack de espectrogramas.
+// null = nunca eligió: se muestran las primeras SPECTRO_STRIPS en vivo.
+const SPECTROS_STORAGE_KEY = 'globe.broadcast.spectros.v1';
+
+function loadSpectroSelection(): string[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(SPECTROS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadPanelConfig(): PanelConfig {
   if (typeof window === 'undefined') return DEFAULT_PANELS;
   try {
@@ -134,14 +150,41 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     () => seismicAPI.getLiveChannels(),
     { refreshInterval: 5 * 60_000 }
   );
-  const spectros = useMemo(
-    () =>
-      (liveChannels ?? []).slice(0, SPECTRO_STRIPS).map((c) => ({
-        channel: c.channel,
-        name: CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id,
-      })),
-    [liveChannels]
-  );
+  // Selección del usuario (agregar/quitar estaciones); sin selección se
+  // muestran las primeras SPECTRO_STRIPS que estén en vivo.
+  const [spectroSelection, setSpectroSelection] = useState<string[] | null>(loadSpectroSelection);
+  const toggleSpectro = (channel: string) => {
+    setSpectroSelection((prev) => {
+      const current =
+        prev ?? (liveChannels ?? []).slice(0, SPECTRO_STRIPS).map((c) => c.channel);
+      const next = current.includes(channel)
+        ? current.filter((c) => c !== channel)
+        : [...current, channel];
+      try {
+        window.localStorage.setItem(SPECTROS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // sin storage: la selección vive solo esta sesión
+      }
+      return next;
+    });
+  };
+
+  const spectros = useMemo(() => {
+    const all = liveChannels ?? [];
+    const chosen =
+      spectroSelection === null
+        ? all.slice(0, SPECTRO_STRIPS)
+        : all.filter((c) => spectroSelection.includes(c.channel));
+    return chosen.map((c) => ({
+      channel: c.channel,
+      name: CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id,
+    }));
+  }, [liveChannels, spectroSelection]);
+
+  const isSpectroShown = (channel: string) =>
+    spectroSelection === null
+      ? (liveChannels ?? []).slice(0, SPECTRO_STRIPS).some((c) => c.channel === channel)
+      : spectroSelection.includes(channel);
 
   const [panels, setPanels] = useState<PanelConfig>(loadPanelConfig);
   const [showConfig, setShowConfig] = useState(false);
@@ -366,7 +409,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('spectrograms')}
             </h2>
-            <div className="space-y-1">
+            <div data-testid="spectro-strips" className="space-y-1">
               {spectros.map((s) => (
                 <LiveSpectrogramCanvas
                   key={s.channel}
@@ -500,6 +543,32 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                   {label}
                 </label>
               ))}
+
+              {/* Estaciones del stack de espectrogramas: agregar/quitar de
+                  entre las que están transmitiendo ahora. */}
+              {(liveChannels ?? []).length > 0 && (
+                <>
+                  <div className="mt-2 mb-1 border-t border-border px-2 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {t('spectrograms')}
+                  </div>
+                  <div className="max-h-52 overflow-y-auto">
+                    {(liveChannels ?? []).map((c) => (
+                      <label
+                        key={c.channel}
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-popover-foreground hover:bg-accent"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSpectroShown(c.channel)}
+                          onChange={() => toggleSpectro(c.channel)}
+                          className="accent-current"
+                        />
+                        {CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
