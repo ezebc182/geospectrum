@@ -9,9 +9,13 @@ sin PYTHONUNBUFFERED los logs se perdían en el buffer: silencio total.
 """
 
 import threading
+import time
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
+from obspy import Trace
 
 from src.services.seedlink_ingestor import SeedLinkIngestor
 
@@ -68,3 +72,148 @@ def test_la_excepcion_del_hilo_no_llega_sola_al_proceso_principal(monkeypatch):
     # El hilo murió sin que nadie afuera se enterara por vía de excepción: la
     # única señal es `failure`.
     assert ingestor.failure is not None
+
+
+# ---------------------------------------------------------------------------
+# Watchdog de reconexión por canal (memoria: los streams se caen de a uno,
+# la conexión TCP sigue viva y la única cura era un redeploy).
+# ---------------------------------------------------------------------------
+
+
+class _FakeConn:
+    """Imita SeedLinkConnection: terminate() hace salir a run() limpio."""
+
+    def __init__(self, client: "_FakeClient"):
+        self._client = client
+
+    def terminate(self):
+        self._client.terminated.set()
+
+
+class _FakeClient:
+    """Cliente cuyo run() bloquea hasta que el watchdog llama terminate()."""
+
+    def __init__(self):
+        self.terminated = threading.Event()
+        self.conn = _FakeConn(self)
+        self.selected: list[tuple] = []
+
+    def select_stream(self, net, sta, cha):
+        self.selected.append((net, sta, cha))
+
+    def run(self):
+        self.terminated.wait(timeout=10)
+
+
+def _trace(net="UW", sta="LON", cha="HHZ") -> Trace:
+    # 2 muestras: no alcanza para una columna (npts < fs*4), así _on_data
+    # registra actividad y corta antes de publicar al bus.
+    return Trace(
+        data=np.zeros(2),
+        header={"network": net, "station": sta, "channel": cha, "sampling_rate": 1.0},
+    )
+
+
+def _ingestor_rapido(**kwargs) -> "SeedLinkIngestor":
+    defaults = dict(
+        stale_after_s=0.15,
+        check_interval_s=0.03,
+        give_up_after_s=30,
+        reconnect_delay_s=0.01,
+    )
+    defaults.update(kwargs)
+    return SeedLinkIngestor(bus=MagicMock(), **defaults)
+
+
+def test_on_data_registra_actividad_en_el_watchdog():
+    # Umbral holgado a propósito: este test verifica el CABLEADO (_on_data →
+    # watchdog), no el timing. Con 0.15s el primer _compute_column en frío
+    # tardaba más que el umbral y el test flaqueaba bajo coverage.
+    ingestor = _ingestor_rapido(stale_after_s=60)
+    hace_rato = datetime.now(timezone.utc) - timedelta(seconds=600)
+    ingestor.watchdog.note_connected(["UW.LON.HHZ"], now=hace_rato)
+
+    ingestor._on_data(_trace())
+
+    ahora = datetime.now(timezone.utc)
+    assert ingestor.watchdog.stale_channels(now=ahora) == []
+
+
+def test_canal_mudo_fuerza_reconexion_y_resuscribe(monkeypatch):
+    """Sin datos, todos los canales se vuelven stale: el watchdog termina el
+    cliente y el loop de supervisión crea uno nuevo con las mismas streams."""
+    creados: list[_FakeClient] = []
+
+    def _factory(*args, **kwargs):
+        client = _FakeClient()
+        creados.append(client)
+        return client
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.create_client", _factory)
+    ingestor = _ingestor_rapido()
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ")]), daemon=True
+    )
+    thread.start()
+    deadline = time.monotonic() + 5
+    while len(creados) < 2 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    ingestor.stop()
+    thread.join(timeout=5)
+
+    assert len(creados) >= 2, "el watchdog debió forzar al menos una reconexión"
+    assert creados[1].selected == [("UW", "LON", "HHZ")]
+
+
+def test_sin_ningun_dato_en_give_up_after_el_proceso_muere(monkeypatch):
+    """Reconectar para siempre sin recibir NADA sería el viejo deploy verde y
+    mudo con otro disfraz: pasado give_up_after el proceso tiene que morir
+    con error para que Railway lo reinicie y el fallo quede visible."""
+    monkeypatch.setattr(
+        "src.services.seedlink_ingestor.create_client", lambda *a, **kw: _FakeClient()
+    )
+    ingestor = _ingestor_rapido(give_up_after_s=0.4)
+
+    with pytest.raises(RuntimeError):
+        ingestor.run([("UW", "LON", "HHZ")])
+
+    assert isinstance(ingestor.failure, RuntimeError)
+
+
+def test_error_tras_haber_recibido_datos_reconecta_en_vez_de_morir(monkeypatch):
+    """Un corte del servidor después de haber estado transmitiendo no es un
+    arranque fallido: se reintenta con backoff en vez de matar el proceso."""
+    creados: list = []
+
+    class _ClientQueEmiteYMuere(_FakeClient):
+        def __init__(self, on_data):
+            super().__init__()
+            self._on_data = on_data
+
+        def run(self):
+            self._on_data(_trace())
+            raise ConnectionError("el servidor cortó la conexión")
+
+    def _factory(server, on_data):
+        client = (
+            _ClientQueEmiteYMuere(on_data) if len(creados) == 0 else _FakeClient()
+        )
+        creados.append(client)
+        return client
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.create_client", _factory)
+    ingestor = _ingestor_rapido()
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ")]), daemon=True
+    )
+    thread.start()
+    deadline = time.monotonic() + 5
+    while len(creados) < 2 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    ingestor.stop()
+    thread.join(timeout=5)
+
+    assert len(creados) >= 2, "tras el ConnectionError debió reconectar"
+    assert ingestor.failure is None
