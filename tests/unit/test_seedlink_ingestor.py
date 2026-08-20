@@ -217,3 +217,75 @@ def test_error_tras_haber_recibido_datos_reconecta_en_vez_de_morir(monkeypatch):
 
     assert len(creados) >= 2, "tras el ConnectionError debió reconectar"
     assert ingestor.failure is None
+
+
+class _ClienteSordo(_FakeClient):
+    """Cliente cuyo conn ignora terminate(): simula la carrera real de ObsPy
+    donde collect() resetea terminate_flag al reentrar y la señal se pierde."""
+
+    def __init__(self):
+        super().__init__()
+        self.terminates = 0
+        self.conn = self  # el propio cliente hace de conn
+
+    def terminate(self):
+        self.terminates += 1  # ignora la señal: run() sigue bloqueado
+
+
+def test_terminate_perdido_se_reintenta_sin_quemar_strikes(monkeypatch):
+    """La señal de terminate puede perderse (collect() la pisa al reentrar).
+    El watchdog debe reintentar en cada chequeo, y NO quemar strikes hasta
+    que la reconexión ocurra de verdad — si no, tres terminates perdidos
+    dejan al canal en cuarentena sin haber reconectado ni una vez."""
+    cliente = _ClienteSordo()
+    monkeypatch.setattr(
+        "src.services.seedlink_ingestor.create_client", lambda *a, **kw: cliente
+    )
+    ingestor = _ingestor_rapido()  # max_strikes default = 3
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ")]), daemon=True
+    )
+    thread.start()
+    deadline = time.monotonic() + 5
+    # Con strikes quemados por intento, el watchdog se rinde en 3 terminates.
+    while cliente.terminates < 5 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    ingestor.stop()
+    cliente.terminated.set()
+    thread.join(timeout=5)
+
+    assert cliente.terminates >= 5, (
+        "el watchdog dejó de reintentar: quemó strikes por terminates perdidos"
+    )
+
+
+def test_canal_muerto_permanente_quema_strikes_solo_al_reconectar(monkeypatch):
+    """Con reconexiones REALES, un canal que nunca revive queda en cuarentena
+    tras max_strikes ciclos y las reconexiones paran: exactamente 1 cliente
+    inicial + max_strikes reconexiones, ni una más."""
+    creados: list[_FakeClient] = []
+
+    def _factory(*args, **kwargs):
+        client = _FakeClient()
+        creados.append(client)
+        return client
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.create_client", _factory)
+    ingestor = _ingestor_rapido(give_up_after_s=30)
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ")]), daemon=True
+    )
+    thread.start()
+    deadline = time.monotonic() + 5
+    while len(creados) < 4 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    # Tiempo de sobra para una quinta conexión que NO debe ocurrir.
+    time.sleep(0.5)
+    ingestor.stop()
+    thread.join(timeout=5)
+
+    assert len(creados) == 4, (
+        f"esperaba 1 conexión + 3 reconexiones (cuarentena), hubo {len(creados)}"
+    )

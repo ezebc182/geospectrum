@@ -164,8 +164,13 @@ class SeedLinkIngestor:
         """Hilo daemon: fuerza reconexión cuando hay canales mudos.
 
         `conn.terminate()` es la única vía thread-safe para sacar a `run()`
-        de su loop (hace que `collect()` devuelva SLTERMINATE y run() retorne
-        limpio). `close()` NO es thread-safe — lo dice su propio docstring.
+        de su loop (`close()` NO lo es — lo dice su propio docstring). Pero la
+        señal puede PERDERSE: `collect()` resetea terminate_flag al reentrar,
+        así que si terminate() cae entre dos collect(), no pega. Por eso acá
+        solo se dispara y se reintenta en el próximo chequeo; los strikes se
+        queman en el loop de supervisión cuando el ciclo termina DE VERDAD —
+        si no, tres terminates perdidos dejarían al canal en cuarentena sin
+        haber reconectado ni una vez.
         """
         while not self._stop.wait(self.check_interval_s):
             now = datetime.now(timezone.utc)
@@ -180,7 +185,6 @@ class SeedLinkIngestor:
                 self.watchdog.stale_after_s,
                 ", ".join(stale),
             )
-            self.watchdog.note_reconnect(now)
             try:
                 client.conn.terminate()
             except Exception:
@@ -269,6 +273,11 @@ class SeedLinkIngestor:
                         "reintento en %.0fs",
                         self.reconnect_delay_s,
                     )
+                # El ciclo terminó: la reconexión va a ocurrir de verdad. Recién
+                # acá se queman strikes de los canales que siguen mudos (ver
+                # _watchdog_loop: hacerlo al disparar contaba terminates
+                # perdidos como reconexiones).
+                self.watchdog.note_reconnect(datetime.now(timezone.utc))
                 first_attempt = False
                 self._stop.wait(self.reconnect_delay_s)
         except BaseException as exc:
