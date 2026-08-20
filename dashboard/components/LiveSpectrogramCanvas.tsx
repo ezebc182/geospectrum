@@ -14,6 +14,10 @@ interface LiveSpectrogramCanvasProps {
   label: string;
   height?: number;
   width?: number;
+  /** 'strip': tira fina apilable (estilo RaspberryShake) — tag chiquito con
+   * el nombre, sin código de canal ni hora, para que el dato sea el
+   * protagonista y no el cartel. */
+  variant?: 'default' | 'strip';
 }
 
 interface SpecColumn {
@@ -76,7 +80,13 @@ function lerpColor(hexA: string, hexB: string, t: number): string {
  * corriendo la imagen existente 1px a la izquierda, igual que un
  * sismógrafo de papel — sin recargar ninguna imagen completa.
  */
-export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 400 }: LiveSpectrogramCanvasProps) {
+export function LiveSpectrogramCanvas({
+  channel,
+  label,
+  height = 120,
+  width = 400,
+  variant = 'default',
+}: LiveSpectrogramCanvasProps) {
   // Hora de última actualización en el formato del locale activo (Decision 6):
   // el toLocaleTimeString() sin locale dependía del runtime, no del idioma
   // elegido por el usuario.
@@ -177,6 +187,26 @@ export function LiveSpectrogramCanvas({ channel, label, height = 120, width = 40
       ws?.close();
     };
   }, [channel, width, height]);
+
+  if (variant === 'strip') {
+    // Tira apilable: el dato manda. Solo un tag mínimo con el nombre, como
+    // las tiras de los streams de referencia (RaspberryShake).
+    return (
+      <div className="relative overflow-hidden rounded-sm bg-black" style={{ width, height }}>
+        <canvas ref={canvasRef} width={width} height={height} className="block" />
+        <div className="absolute top-0.5 left-0.5 z-10 flex items-center gap-1 rounded-sm bg-black/70 px-1 py-px">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              status === 'live' ? 'bg-green-400' : status === 'error' ? 'bg-red-500' : 'bg-yellow-400'
+            }`}
+          />
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-white">
+            {label}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative bg-black rounded border-2 border-gray-700 overflow-hidden" style={{ width, height }}>

@@ -69,13 +69,15 @@ const broadcastFetcher = (): Promise<SeismicEvent[]> =>
 
 // Clases COMPLETAS por severidad: interpolar `bg-severity-${s}/15` deja la
 // clase fuera del build de Tailwind (el JIT solo ve strings literales).
-// Cuántas tiras de espectrograma en vivo mostrar. live-channels solo ofrece
-// canales con columnas frescas (el filtro del backend), así que las que se
-// muestran siempre están transmitiendo.
-const SPECTRO_STRIPS = 2;
+// Stack de tiras finas de espectrograma (estilo RaspberryShake): se van
+// agregando a medida que live-channels ofrece estaciones transmitiendo.
+// 8 tiras de 44px entran sin scroll junto a las analíticas; el corte es
+// por espacio, no por dato — el panel del HUD no scrollea (pedido del
+// usuario: el único scroll vive en el feed de eventos).
+const SPECTRO_STRIPS = 8;
 // El ancho de la tira: el panel izquierdo mide w-72 (288px) menos p-3.
-const SPECTRO_WIDTH = 264;
-const SPECTRO_HEIGHT = 72;
+const SPECTRO_WIDTH = 240;
+const SPECTRO_HEIGHT = 44;
 
 const CITY_NAME_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c.name]));
 
@@ -288,7 +290,9 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   // al ancestro" — el overlay quedaba DEBAJO del navbar de la app en vez
   // de tapar el viewport entero. Visto en producción el 2026-08-20.
   const overlay = (
-    <div className="fixed inset-0 z-[100] bg-background">
+    // overflow-hidden en la raíz: ningún panel del HUD genera scroll; el
+    // único scroll permitido es el interno del feed de eventos.
+    <div className="fixed inset-0 z-[100] overflow-hidden bg-background">
       {/* Globo full-bleed detrás del HUD */}
       <div className="absolute inset-0">
         {viewportHeight !== null && (
@@ -308,7 +312,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
       {/* Panel de analíticas: regiones más activas + actividad por hora.
           Una serie y un tono por gráfico; los valores van directos. */}
       {(panels.analytics || panels.spectrograms) && (
-      <aside className="absolute top-14 left-0 z-10 w-72 space-y-3 p-3">
+      <aside className="absolute top-14 bottom-9 left-0 z-10 w-72 space-y-3 overflow-hidden p-3">
         {panels.analytics && (
         <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -362,7 +366,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('spectrograms')}
             </h2>
-            <div className="space-y-2">
+            <div className="space-y-1">
               {spectros.map((s) => (
                 <LiveSpectrogramCanvas
                   key={s.channel}
@@ -370,6 +374,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                   label={s.name}
                   width={SPECTRO_WIDTH}
                   height={SPECTRO_HEIGHT}
+                  variant="strip"
                 />
               ))}
             </div>

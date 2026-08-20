@@ -131,19 +131,25 @@ describe('GlobeBroadcastOverlay', () => {
     expect(document.querySelector('.overflow-y-auto')).toBeTruthy();
   });
 
-  it('muestra tiras de espectrograma de los canales en vivo', async () => {
+  it('apila una tira de espectrograma por canal en vivo, con tope de 8', async () => {
     searchEventsMock.mockResolvedValue([]);
     getLiveChannelsMock.mockResolvedValue([
       { city_id: 'tokyo', channel: 'JP.JYT..BHZ' },
       { city_id: 'seattle', channel: 'UW.LON..HHZ' },
-      { city_id: 'lima', channel: 'II.NNA.00.BHZ' }, // 3ro: queda afuera del corte
+      { city_id: 'lima', channel: 'II.NNA.00.BHZ' },
+      { city_id: 'osaka', channel: 'JP.JWT..BHZ' },
+      { city_id: 'taipei', channel: 'IU.TATO.00.BHZ' },
+      { city_id: 'guam', channel: 'IU.GUMO.00.BHZ' },
+      { city_id: 'quito', channel: 'EC.PULU..HHZ' },
+      { city_id: 'santiago', channel: 'C1.MT18..BHZ' },
+      { city_id: 'anchorage', channel: 'AK.RC01..BHZ' }, // 9no: afuera del tope
     ]);
     renderOverlay();
 
     await waitFor(() => expect(screen.getByText('Espectrogramas en vivo')).toBeTruthy());
     expect(screen.getByText('Tokyo')).toBeTruthy();
-    expect(screen.getByText('Seattle')).toBeTruthy();
-    expect(screen.queryByText('Lima')).toBeNull();
+    expect(screen.getByText('Santiago')).toBeTruthy();
+    expect(screen.queryByText('Anchorage')).toBeNull();
   });
 
   it('permite ocultar y volver a mostrar paneles desde el engranaje', async () => {
