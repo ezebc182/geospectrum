@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
 import { X, Radio } from 'lucide-react';
@@ -87,8 +88,12 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     [eventos, statsNow]
   );
 
-  return (
-    <div className="fixed inset-0 z-50 bg-background">
+  // Portal a <body>: el layout de (app) tiene ancestros con transform
+  // (SidebarInset, indicadores) que convierten `fixed` en "fixed relativo
+  // al ancestro" — el overlay quedaba DEBAJO del navbar de la app en vez
+  // de tapar el viewport entero. Visto en producción el 2026-08-20.
+  const overlay = (
+    <div className="fixed inset-0 z-[100] bg-background">
       {/* Globo full-bleed detrás del HUD */}
       <div className="absolute inset-0">
         {viewportHeight !== null && (
@@ -98,6 +103,9 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             showControls={false}
             enableZoom={false}
             pointScale={1.6}
+            // Misma altitud full-bleed que el hero de la landing: con el
+            // default (2.5) el globo flotaba chico en un mar de fondo vacío.
+            initialAltitude={1.35}
           />
         )}
       </div>
@@ -154,4 +162,6 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
