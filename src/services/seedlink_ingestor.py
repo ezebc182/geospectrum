@@ -32,7 +32,7 @@ from scipy.signal import spectrogram as scipy_spectrogram
 from src.config.settings import settings
 from src.services.channel_watchdog import ChannelWatchdog
 from src.services.event_bus import EventBus, RedisPubSubBus
-from src.services.spectrogram_service import LIVE_CHANNELS_BY_CITY
+from src.services.spectrogram_service import LIVE_CANDIDATES_BY_CITY
 from src.services.timescale_service import TimescaleColumnWriter
 
 logger = logging.getLogger(__name__)
@@ -291,8 +291,10 @@ class SeedLinkIngestor:
             self._stop.set()
 
 
-def _default_channels() -> list[tuple[str, str, str]]:
-    """Canales a suscribir, derivados de LIVE_CHANNELS_BY_CITY.
+def channels_from_catalog(
+    candidates_by_city: dict[str, list[str]],
+) -> list[tuple[str, str, str]]:
+    """Canales a suscribir, derivados del catálogo multi-candidata.
 
     Antes esta lista estaba escrita a mano y en paralelo a la del service, con
     un comentario que decía "misma fuente de verdad" sobre dos listas que había
@@ -300,21 +302,25 @@ def _default_channels() -> list[tuple[str, str, str]]:
     un detalle: agregar una ciudad en un lado y olvidarla en el otro da un
     canal que el front ofrece como "Vivo" y que nadie está transmitiendo.
 
-    Ahora se deriva. El service publica canales SEED completos
-    ("IU.TATO.00.BHZ") y SeedLink se suscribe por (red, estación, canal): el
-    location code se descarta acá porque el servidor lo resuelve solo, y es
-    justamente el campo que no se puede escribir de memoria.
+    Se suscriben TODAS las candidatas (primaria + respaldos): si el respaldo
+    no produce columnas, el failover de resolve_live_catalog es teatro.
+
+    El service publica canales SEED completos ("IU.TATO.00.BHZ") y SeedLink
+    se suscribe por (red, estación, canal): el location code se descarta acá
+    porque el servidor lo resuelve solo, y es justamente el campo que no se
+    puede escribir de memoria.
     """
     canales = []
-    for seed_id in LIVE_CHANNELS_BY_CITY.values():
-        net, sta, _loc, chan = seed_id.split(".")
-        par = (net, sta, chan)
-        if par not in canales:  # dos ciudades pueden compartir estación
-            canales.append(par)
+    for candidates in candidates_by_city.values():
+        for seed_id in candidates:
+            net, sta, _loc, chan = seed_id.split(".")
+            par = (net, sta, chan)
+            if par not in canales:  # ciudades pueden compartir estación
+                canales.append(par)
     return canales
 
 
-DEFAULT_CHANNELS = _default_channels()
+DEFAULT_CHANNELS = channels_from_catalog(LIVE_CANDIDATES_BY_CITY)
 
 
 if __name__ == "__main__":

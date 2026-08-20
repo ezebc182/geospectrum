@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from obspy import Trace
 
-from src.services.seedlink_ingestor import SeedLinkIngestor
+from src.services.seedlink_ingestor import SeedLinkIngestor, channels_from_catalog
 
 
 class _BoomClient:
@@ -289,3 +289,24 @@ def test_canal_muerto_permanente_quema_strikes_solo_al_reconectar(monkeypatch):
     assert len(creados) == 4, (
         f"esperaba 1 conexión + 3 reconexiones (cuarentena), hubo {len(creados)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Derivación de suscripciones del catálogo multi-candidata: el ingestor debe
+# suscribir TODAS las candidatas (primaria + respaldos), no solo la primaria
+# — si no, el respaldo nunca produce columnas y el failover es teatro.
+# ---------------------------------------------------------------------------
+
+
+def test_channels_from_catalog_incluye_respaldos_y_deduplica():
+    candidatas = {
+        "sandiego": ["CI.BAR..BHZ", "CI.PLM..BHZ"],
+        # Otra ciudad comparte estación con distinto location code: para
+        # SeedLink es la misma suscripción (net, sta, cha) — se descarta loc.
+        "otra": ["CI.PLM.00.BHZ", "UW.LON..HHZ"],
+    }
+    assert channels_from_catalog(candidatas) == [
+        ("CI", "BAR", "BHZ"),
+        ("CI", "PLM", "BHZ"),
+        ("UW", "LON", "HHZ"),
+    ]

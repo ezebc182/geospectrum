@@ -17,51 +17,8 @@ from datetime import datetime, timedelta, timezone
 import asyncpg
 import pytest
 
-from src.services.spectrogram_service import filter_live_catalog
+from src.services.spectrogram_service import resolve_live_catalog
 from src.services.timescale_service import TimescaleColumnWriter
-
-
-# ---------------------------------------------------------------------------
-# filter_live_catalog (lógica pura del endpoint)
-# ---------------------------------------------------------------------------
-
-
-CATALOG = {
-    "tokyo": "JP.JYT..BHZ",
-    "lima": "II.NNA.00.BHZ",
-    "taipei": "IU.TATO.00.BHZ",
-}
-
-
-def test_sin_senal_de_actividad_devuelve_el_catalogo_completo():
-    """active=None significa "no pude consultar la base" (no configurada o
-    caída): mejor ofrecer todo que esconder canales que sí transmiten."""
-    result = filter_live_catalog(CATALOG, None)
-    assert result == [
-        {"city_id": "tokyo", "channel": "JP.JYT..BHZ"},
-        {"city_id": "lima", "channel": "II.NNA.00.BHZ"},
-        {"city_id": "taipei", "channel": "IU.TATO.00.BHZ"},
-    ]
-
-
-def test_filtra_las_ciudades_sin_columnas_frescas():
-    result = filter_live_catalog(CATALOG, {"IU.TATO.00.BHZ"})
-    assert result == [{"city_id": "taipei", "channel": "IU.TATO.00.BHZ"}]
-
-
-def test_conjunto_activo_vacio_devuelve_lista_vacia():
-    """Ingestor caído (cero canales frescos) → ninguna ciudad ofrece Vivo.
-    Distinto de None: acá la base respondió y la respuesta es "nada"."""
-    assert filter_live_catalog(CATALOG, set()) == []
-
-
-def test_dos_ciudades_que_comparten_canal_activo_aparecen_ambas():
-    catalog = {"a": "IU.TATO.00.BHZ", "b": "IU.TATO.00.BHZ"}
-    result = filter_live_catalog(catalog, {"IU.TATO.00.BHZ"})
-    assert result == [
-        {"city_id": "a", "channel": "IU.TATO.00.BHZ"},
-        {"city_id": "b", "channel": "IU.TATO.00.BHZ"},
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -130,3 +87,58 @@ async def test_fetch_active_channels_no_duplica_canales(spectro_writer):
     active = await spectro_writer.fetch_active_channels(minutes=10)
 
     assert active == ["IU.TATO.00.BHZ"]
+
+
+# ---------------------------------------------------------------------------
+# resolve_live_catalog: catálogo multi-candidata (primaria + respaldos).
+# Perseguir a la estación "viva de hoy" editando el catálogo es un juego
+# perdido (CI.BAR transmitía el 19/8 y estaba muda el 20/8): por ciudad se
+# listan candidatas verificadas y gana la primera con columnas frescas.
+# ---------------------------------------------------------------------------
+
+CANDIDATES = {
+    "sandiego": ["CI.BAR..BHZ", "CI.PLM..BHZ", "CI.MUR..BHZ"],
+    "seattle": ["UW.LON..HHZ", "UW.SP2..HHZ"],
+    "taipei": ["IU.TATO.00.BHZ"],
+}
+
+
+def test_resolve_sin_senal_de_actividad_devuelve_la_primaria_de_cada_ciudad():
+    result = resolve_live_catalog(CANDIDATES, None)
+    assert result == [
+        {"city_id": "sandiego", "channel": "CI.BAR..BHZ"},
+        {"city_id": "seattle", "channel": "UW.LON..HHZ"},
+        {"city_id": "taipei", "channel": "IU.TATO.00.BHZ"},
+    ]
+
+
+def test_resolve_primaria_muda_cae_al_primer_respaldo_vivo():
+    activos = {"CI.MUR..BHZ", "UW.LON..HHZ", "IU.TATO.00.BHZ"}
+    result = resolve_live_catalog(CANDIDATES, activos)
+    assert {"city_id": "sandiego", "channel": "CI.MUR..BHZ"} in result
+    assert {"city_id": "seattle", "channel": "UW.LON..HHZ"} in result
+
+
+def test_resolve_respeta_el_orden_de_preferencia_no_el_del_set():
+    """Si la primaria y un respaldo están vivos, gana la primaria."""
+    activos = {"CI.PLM..BHZ", "CI.BAR..BHZ"}
+    result = resolve_live_catalog({"sandiego": CANDIDATES["sandiego"]}, activos)
+    assert result == [{"city_id": "sandiego", "channel": "CI.BAR..BHZ"}]
+
+
+def test_resolve_ciudad_sin_ninguna_candidata_viva_no_aparece():
+    result = resolve_live_catalog(CANDIDATES, {"IU.TATO.00.BHZ"})
+    assert result == [{"city_id": "taipei", "channel": "IU.TATO.00.BHZ"}]
+
+
+def test_resolve_conjunto_activo_vacio_devuelve_lista_vacia():
+    assert resolve_live_catalog(CANDIDATES, set()) == []
+
+
+def test_resolve_dos_ciudades_que_comparten_canal_activo_aparecen_ambas():
+    candidates = {"a": ["IU.TATO.00.BHZ"], "b": ["IU.TATO.00.BHZ"]}
+    result = resolve_live_catalog(candidates, {"IU.TATO.00.BHZ"})
+    assert result == [
+        {"city_id": "a", "channel": "IU.TATO.00.BHZ"},
+        {"city_id": "b", "channel": "IU.TATO.00.BHZ"},
+    ]

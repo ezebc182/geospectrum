@@ -78,61 +78,79 @@ NETWORK_CODES = {
 #   - istanbul: la más cercana que transmite (GE.TIRR) está a 388 km, en
 #     Rumania. Sirve para sismicidad regional, no para eventos locales de la
 #     falla Norte de Anatolia.
-LIVE_CHANNELS_BY_CITY = {
+# Candidatas por ciudad, en orden de preferencia (primaria primero). Las
+# estaciones se caen de a una y perseguir a la "viva de hoy" editando el
+# catálogo es un juego perdido: el failover lo resuelve resolve_live_catalog
+# contra las columnas frescas de TimescaleDB. Toda candidata nueva se agrega
+# VERIFICADA contra rtserve (INFO + get_waveforms), nunca desde el mapa FDSN.
+LIVE_CANDIDATES_BY_CITY: Dict[str, List[str]] = {
     # Asia-Pacífico
-    "tokyo": "JP.JYT..BHZ",
-    "osaka": "JP.JWT..BHZ",
-    "taipei": "IU.TATO.00.BHZ",
-    "guam": "IU.GUMO.00.BHZ",
-    "kathmandu": "NK.KKN..BHZ",
+    "tokyo": ["JP.JYT..BHZ"],
+    "osaka": ["JP.JWT..BHZ"],
+    "taipei": ["IU.TATO.00.BHZ"],
+    "guam": ["IU.GUMO.00.BHZ"],
+    "kathmandu": ["NK.KKN..BHZ"],
     # Sudamérica
-    "lima": "II.NNA.00.BHZ",
-    "arequipa": "C1.AP01..BHZ",
-    "santiago": "C1.MT18..BHZ",
-    "valparaiso": "C1.MT02..BHZ",
-    "antofagasta": "C.GO02..BHZ",
-    "quito": "EC.PULU..HHZ",
+    "lima": ["II.NNA.00.BHZ"],
+    "arequipa": ["C1.AP01..BHZ"],
+    "santiago": ["C1.MT18..BHZ"],
+    "valparaiso": ["C1.MT02..BHZ"],
+    "antofagasta": ["C.GO02..BHZ"],
+    "quito": ["EC.PULU..HHZ"],
     # Centroamérica y Caribe
-    "mexicocity": "G.UNM.00.BHZ",
-    "sanjose": "G.HDC.00.BHZ",
-    "managua": "GE.BOAB..BHZ",
-    "portauprince": "CU.SDDR.00.BHZ",
+    "mexicocity": ["G.UNM.00.BHZ"],
+    "sanjose": ["G.HDC.00.BHZ"],
+    "managua": ["GE.BOAB..BHZ"],
+    "portauprince": ["CU.SDDR.00.BHZ"],
     # Norteamérica
-    "losangeles": "CI.USC..BHZ",
+    "losangeles": ["CI.USC..BHZ"],
     # Barrett (46 km de San Diego): la red AZ entera no existe en
     # rtserve.earthscope.org — AZ.SIO5 nunca transmitió ni una columna.
     # Verificado 2026-08-19 con INFO + get_waveforms contra el servidor real.
-    "sandiego": "CI.BAR..BHZ",
-    "sanfrancisco": "BK.MCCM.00.BHZ",
-    "portland": "UO.PF27..HHZ",
-    "seattle": "UW.LON..HHZ",
-    "vancouver": "CN.QEPB..HHZ",
-    "anchorage": "AK.RC01..BHZ",
+    "sandiego": ["CI.BAR..BHZ"],
+    "sanfrancisco": ["BK.MCCM.00.BHZ"],
+    "portland": ["UO.PF27..HHZ"],
+    "seattle": ["UW.LON..HHZ"],
+    "vancouver": ["CN.QEPB..HHZ"],
+    "anchorage": ["AK.RC01..BHZ"],
     # Europa / Mediterráneo
-    "istanbul": "GE.TIRR..BHZ",
+    "istanbul": ["GE.TIRR..BHZ"],
     # Oceanía
-    "wellington": "IU.SNZO.00.BHZ",
-    "auckland": "NZ.HIZ.10.HHZ",
-    "christchurch": "NZ.KHZ.10.HHZ",
+    "wellington": ["IU.SNZO.00.BHZ"],
+    "auckland": ["NZ.HIZ.10.HHZ"],
+    "christchurch": ["NZ.KHZ.10.HHZ"],
+}
+
+# Vista primaria-por-ciudad, para los consumidores que esperan un solo canal.
+LIVE_CHANNELS_BY_CITY = {
+    city: candidates[0] for city, candidates in LIVE_CANDIDATES_BY_CITY.items()
 }
 
 
-def filter_live_catalog(
-    catalog: Dict[str, str], active_channels: Optional[set]
+def resolve_live_catalog(
+    candidates_by_city: Dict[str, List[str]], active_channels: Optional[set]
 ) -> List[Dict[str, str]]:
-    """Filtra el catálogo de ciudades a las que tienen streaming REAL.
+    """Resuelve el canal vivo de cada ciudad entre sus candidatas.
 
-    `active_channels` son los canales con columnas frescas en TimescaleDB.
-    `None` significa "no se pudo consultar" (base no configurada o caída):
-    en ese caso se devuelve el catálogo completo — mejor ofrecer de más que
-    esconder canales que sí transmiten. Un set vacío en cambio es una
-    respuesta real ("nada fresco") y filtra todo.
+    Perseguir a la estación "viva de hoy" editando el catálogo es un juego
+    perdido (CI.BAR transmitía el 19/8 y estaba muda el 20/8): cada ciudad
+    lista candidatas VERIFICADAS en orden de preferencia y gana la primera
+    con columnas frescas en TimescaleDB.
+
+    `active_channels=None` significa "no se pudo consultar la base": se
+    devuelve la primaria de cada ciudad — mejor ofrecer de más que esconder
+    canales que sí transmiten. Un set vacío es una respuesta real ("nada
+    fresco") y no devuelve ninguna ciudad.
     """
-    return [
-        {"city_id": city_id, "channel": channel}
-        for city_id, channel in catalog.items()
-        if active_channels is None or channel in active_channels
-    ]
+    result = []
+    for city_id, candidates in candidates_by_city.items():
+        if active_channels is None:
+            chosen = candidates[0] if candidates else None
+        else:
+            chosen = next((c for c in candidates if c in active_channels), None)
+        if chosen is not None:
+            result.append({"city_id": city_id, "channel": chosen})
+    return result
 
 
 class SpectrogramService:
