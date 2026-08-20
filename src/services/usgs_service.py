@@ -31,13 +31,13 @@ async def fetch_usgs_events(
     """
     end_utc = datetime.now(timezone.utc)
     start_utc = end_utc - timedelta(minutes=window_minutes)
-    piso = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
+    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
     params = {
         "format": "geojson",
         "starttime": start_utc.strftime("%Y-%m-%dT%H:%M:%S"),
         "endtime": end_utc.strftime("%Y-%m-%dT%H:%M:%S"),
-        "minmagnitude": str(piso),
+        "minmagnitude": str(effective_min_mag),
         # Sin bbox: la ingesta es GLOBAL y el recorte geográfico ocurre al leer,
         # en build_report() vía point_in_area(). Filtrar acá ataba el catálogo a
         # los Andes y dejaba en cero cualquier área fuera de Sudamérica.

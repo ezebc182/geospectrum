@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FilterPanel, type SeismicFilters } from '@/components/FilterPanel';
 import { AdvancedSeismicMap } from '@/components/AdvancedSeismicMap';
@@ -57,10 +57,18 @@ export default function ExplorePage() {
     setView('map');
   };
 
+  // "Última búsqueda gana": la manual y la disparada por cambio de área
+  // pueden volar en paralelo, y una respuesta vieja lenta pisaría a la
+  // nueva. Mismo patrón runIdRef que useAreaRefresh usa adentro, aplicado
+  // acá al estado de resultados.
+  const searchRunIdRef = useRef(0);
+
   // Recibe los filtros por parámetro (no del closure): el cambio de área
   // busca con filtros recién calculados que el estado todavía no reflejó —
   // leer `filters` acá sería la trampa del closure viejo.
   const runSearch = async (f: SeismicFilters) => {
+    const runId = ++searchRunIdRef.current;
+    const isCurrentRun = () => runId === searchRunIdRef.current;
     setIsSearching(true);
     setError(null);
 
@@ -81,16 +89,20 @@ export default function ExplorePage() {
       };
 
       const results = await seismicAPI.searchEvents(params);
+      if (!isCurrentRun()) return;
       setEventos(results);
 
       if (results.length === 0) {
         setError({ kind: 'noResults' });
       }
     } catch (err) {
+      if (!isCurrentRun()) return;
       setError({ kind: 'failed', message: err instanceof Error ? err.message : null });
       console.error('Search error:', err);
     } finally {
-      setIsSearching(false);
+      if (isCurrentRun()) {
+        setIsSearching(false);
+      }
     }
   };
 
@@ -199,7 +211,12 @@ export default function ExplorePage() {
                   {t.rich('resultsCount', {
                     count: eventos.length,
                     n: (chunks) => (
-                      <span className="font-bold text-lg text-foreground">{chunks}</span>
+                      <span
+                        data-testid="search-results-count"
+                        className="font-bold text-lg text-foreground"
+                      >
+                        {chunks}
+                      </span>
                     ),
                   })}
                 </div>

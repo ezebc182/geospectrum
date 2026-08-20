@@ -40,7 +40,7 @@ async def fetch_emsc_events(
     """
     now = datetime.now(timezone.utc)
     start_time = now - timedelta(minutes=window_minutes)
-    piso = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
+    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
     url = "https://www.seismicportal.eu/fdsnws/event/1/query"
 
@@ -48,7 +48,7 @@ async def fetch_emsc_events(
         "format": "json",
         "start": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
         "end": now.strftime("%Y-%m-%dT%H:%M:%S"),
-        "minmag": str(piso),
+        "minmag": str(effective_min_mag),
         # Sin bbox: ingesta GLOBAL, el recorte por área ocurre al leer.
         # Ver el comentario equivalente en usgs_service.
         "orderby": "time-asc",

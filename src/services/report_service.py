@@ -56,15 +56,15 @@ async def _fetch_parallel(
     # El piso viaja en la clave del caché: /report (piso default) y
     # /events/search (min_mag del usuario) comparten el store global — sin
     # esto, una búsqueda M4+ serviría resultados recortados al /report.
-    piso = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
+    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
     async def _cached_fetch(source: str, fetcher: Any, window: int, with_min: bool) -> Any:
-        key = f"{source}:{window}:{piso if with_min else '-'}"
+        key = f"{source}:{window}:{effective_min_mag if with_min else '-'}"
         if ttl > 0:
             hit = cache.get(key)
             if hit is not None:
                 return hit
-        result = await (fetcher(window, min_magnitude=piso) if with_min else fetcher(window))
+        result = await (fetcher(window, min_magnitude=effective_min_mag) if with_min else fetcher(window))
         if ttl > 0:
             cache.set(key, result, ttl)
         return result

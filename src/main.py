@@ -509,15 +509,15 @@ async def _fetch_parallel(
     ttl = settings.cache_ttl_seconds
     # Mismo criterio que report_service._fetch_parallel: el piso viaja en la
     # clave (el store del caché es global entre módulos).
-    piso = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
+    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
     async def _cached_fetch(source: str, fetcher: Any, window: int, with_min: bool) -> Any:
-        key = f"{source}:{window}:{piso if with_min else '-'}"
+        key = f"{source}:{window}:{effective_min_mag if with_min else '-'}"
         if ttl > 0:
             hit = cache.get(key)
             if hit is not None:
                 return hit
-        result = await (fetcher(window, min_magnitude=piso) if with_min else fetcher(window))
+        result = await (fetcher(window, min_magnitude=effective_min_mag) if with_min else fetcher(window))
         if ttl > 0:
             cache.set(key, result, ttl)
         return result

@@ -113,3 +113,52 @@ describe('Explorador y área activa', () => {
     expect(params.maxLon).toBeUndefined();
   });
 });
+
+
+describe('carrera entre búsquedas', () => {
+  const evento = (id: string) => ({
+    id,
+    fuentes: ['USGS'],
+    hora_utc: '2026-08-20T10:00:00Z',
+    lat: -33,
+    lon: -70,
+    prof_km: 10,
+    mag: 4.0,
+    mag_tipo: 'ml',
+    lugar: id,
+    sentido: false,
+    revisado: false,
+  });
+
+  it('una respuesta vieja lenta no pisa a la búsqueda más nueva', async () => {
+    // Búsqueda A (área vieja) lenta con DOS eventos; búsqueda B (área nueva)
+    // rápida con UNO. Si A resuelve después, el conteo no debe volverse 2.
+    let resolveA: (v: unknown) => void = () => {};
+    const promesaA = new Promise((res) => (resolveA = res));
+
+    searchMock
+      .mockImplementationOnce(() => promesaA)
+      .mockImplementationOnce(async () => [evento('nuevo')]);
+    getActiveAreaMock.mockResolvedValue(AREA_CHILE);
+    renderExplore();
+
+    act(() => {
+      emitAreaChanged();
+    });
+    await waitFor(() => expect(searchMock).toHaveBeenCalledTimes(1));
+    act(() => {
+      emitAreaChanged();
+    });
+    await waitFor(() => expect(searchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-results-count').textContent).toBe('1')
+    );
+
+    // Llega tarde la respuesta vieja y no debe pisar nada.
+    await act(async () => {
+      resolveA([evento('viejo-1'), evento('viejo-2')]);
+    });
+
+    expect(screen.getByTestId('search-results-count').textContent).toBe('1');
+  });
+});
