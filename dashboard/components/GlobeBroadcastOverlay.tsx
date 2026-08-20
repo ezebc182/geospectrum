@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import { X, Radio } from 'lucide-react';
+import { X, Radio, Settings2 } from 'lucide-react';
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 
 import { seismicAPI } from '@/lib/api';
@@ -31,6 +31,8 @@ import {
   topRegions,
 } from '@/lib/broadcast-stats';
 import { buildSpotlightCard } from '@/components/spotlight-card';
+import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
@@ -67,6 +69,45 @@ const broadcastFetcher = (): Promise<SeismicEvent[]> =>
 
 // Clases COMPLETAS por severidad: interpolar `bg-severity-${s}/15` deja la
 // clase fuera del build de Tailwind (el JIT solo ve strings literales).
+// Cuántas tiras de espectrograma en vivo mostrar. live-channels solo ofrece
+// canales con columnas frescas (el filtro del backend), así que las que se
+// muestran siempre están transmitiendo.
+const SPECTRO_STRIPS = 2;
+// El ancho de la tira: el panel izquierdo mide w-72 (288px) menos p-3.
+const SPECTRO_WIDTH = 264;
+const SPECTRO_HEIGHT = 72;
+
+const CITY_NAME_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c.name]));
+
+// Qué paneles del HUD están visibles. Persistido: el que arma su stream
+// una vez no quiere reconfigurarlo en cada apertura.
+interface PanelConfig {
+  analytics: boolean;
+  spectrograms: boolean;
+  feed: boolean;
+  ticker: boolean;
+}
+
+const DEFAULT_PANELS: PanelConfig = {
+  analytics: true,
+  spectrograms: true,
+  feed: true,
+  ticker: true,
+};
+
+const PANELS_STORAGE_KEY = 'globe.broadcast.panels.v1';
+
+function loadPanelConfig(): PanelConfig {
+  if (typeof window === 'undefined') return DEFAULT_PANELS;
+  try {
+    const raw = window.localStorage.getItem(PANELS_STORAGE_KEY);
+    if (!raw) return DEFAULT_PANELS;
+    return { ...DEFAULT_PANELS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_PANELS;
+  }
+}
+
 const SEVERITY_CHIP: Record<ReturnType<typeof getMagnitudeSeverity>, string> = {
   low: 'bg-severity-low/15 text-severity-low',
   moderate: 'bg-severity-moderate/15 text-severity-moderate',
@@ -83,6 +124,36 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   const { data: eventos } = useSWR('broadcast-events', broadcastFetcher, {
     refreshInterval: REFRESH_SECONDS * 1000,
   });
+
+  // Qué estaciones tienen streaming AHORA: se re-consulta cada 5 min porque
+  // los streams SeedLink se caen y vuelven solos.
+  const { data: liveChannels } = useSWR(
+    'broadcast-live-channels',
+    () => seismicAPI.getLiveChannels(),
+    { refreshInterval: 5 * 60_000 }
+  );
+  const spectros = useMemo(
+    () =>
+      (liveChannels ?? []).slice(0, SPECTRO_STRIPS).map((c) => ({
+        channel: c.channel,
+        name: CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id,
+      })),
+    [liveChannels]
+  );
+
+  const [panels, setPanels] = useState<PanelConfig>(loadPanelConfig);
+  const [showConfig, setShowConfig] = useState(false);
+  const togglePanel = (key: keyof PanelConfig) => {
+    setPanels((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        window.localStorage.setItem(PANELS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // sin storage (modo privado): la config vive solo esta sesión
+      }
+      return next;
+    });
+  };
 
   // El globo pide alto en píxeles (no %): se sigue el viewport a mano.
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -236,7 +307,9 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
       {/* Panel de analíticas: regiones más activas + actividad por hora.
           Una serie y un tono por gráfico; los valores van directos. */}
+      {(panels.analytics || panels.spectrograms) && (
       <aside className="absolute top-14 left-0 z-10 w-72 space-y-3 p-3">
+        {panels.analytics && (
         <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             {t('topRegions')}
@@ -258,7 +331,9 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             ))}
           </ul>
         </section>
+        )}
 
+        {panels.analytics && (
         <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             {t('hourlyActivity')}
@@ -278,10 +353,34 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             <span>{t('now')}</span>
           </div>
         </section>
+        )}
+
+        {/* Espectrogramas en vivo (estilo RaspberryShake): tiras que avanzan
+            solas, de estaciones que live-channels garantiza transmitiendo. */}
+        {panels.spectrograms && spectros.length > 0 && (
+          <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
+            <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {t('spectrograms')}
+            </h2>
+            <div className="space-y-2">
+              {spectros.map((s) => (
+                <LiveSpectrogramCanvas
+                  key={s.channel}
+                  channel={s.channel}
+                  label={s.name}
+                  width={SPECTRO_WIDTH}
+                  height={SPECTRO_HEIGHT}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </aside>
+      )}
 
       {/* Feed lateral: últimos eventos, el más nuevo arriba. Los de los
           últimos minutos llevan punto pulsante — la "notificación" del HUD. */}
+      {panels.feed && (
       <aside className="absolute top-14 bottom-9 right-0 z-10 w-80 overflow-y-auto border-l border-border bg-background/85 backdrop-blur">
         <ul data-testid="broadcast-feed" className="divide-y divide-border/60">
           {feed.map((evento) => {
@@ -312,6 +411,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
           })}
         </ul>
       </aside>
+      )}
 
       {/* HUD: barra superior */}
       <div className="absolute top-0 inset-x-0 z-10 flex items-center justify-between gap-4 bg-background/85 backdrop-blur border-b border-border px-4 py-2">
@@ -349,10 +449,18 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="relative flex items-center gap-3">
           <span className="text-xs text-muted-foreground font-data whitespace-nowrap">
             {t('nextUpdate', { seconds: secondsLeft })}
           </span>
+          <button
+            onClick={() => setShowConfig((v) => !v)}
+            aria-label={t('configurePanels')}
+            title={t('configurePanels')}
+            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Settings2 className="h-4 w-4" />
+          </button>
           <button
             onClick={onClose}
             aria-label={t('exit')}
@@ -361,13 +469,41 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
           >
             <X className="h-4 w-4" />
           </button>
+
+          {/* Popover simple (sin Radix: un dropdown con inputs se come el
+              typeahead — ver la trampa documentada del repo) */}
+          {showConfig && (
+            <div className="absolute right-0 top-full z-20 mt-2 w-52 rounded-lg border border-border bg-popover p-2 shadow-lg">
+              {(
+                [
+                  ['analytics', t('panelAnalytics')],
+                  ['spectrograms', t('panelSpectrograms')],
+                  ['feed', t('panelFeed')],
+                  ['ticker', t('panelTicker')],
+                ] as [keyof PanelConfig, string][]
+              ).map(([key, label]) => (
+                <label
+                  key={key}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-popover-foreground hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    checked={panels[key]}
+                    onChange={() => togglePanel(key)}
+                    className="accent-current"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Ticker tipo noticiero: frases generadas de los datos, en loop
           continuo. El contenido va duplicado para que el corte del loop
           no deje la cinta vacía. */}
-      {ticker && (
+      {panels.ticker && ticker && (
         <div className="absolute inset-x-0 bottom-0 z-10 flex h-9 items-center overflow-hidden border-t border-border bg-background/90 backdrop-blur">
           <div className="broadcast-ticker flex shrink-0 items-center whitespace-nowrap font-data text-xs text-foreground">
             <span className="px-8">{ticker}</span>
