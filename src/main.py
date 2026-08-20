@@ -68,8 +68,8 @@ from src.services.merge_service import merge_all_sources
 from src.services.report_service import build_report, count_by_source, CANONICAL_SOURCES
 from src.services.spectrogram_service import (
     get_spectrogram_service,
-    filter_live_catalog,
-    LIVE_CHANNELS_BY_CITY,
+    resolve_live_catalog,
+    LIVE_CANDIDATES_BY_CITY,
 )
 from src.services.event_bus import RedisPubSubBus
 from src.services.timescale_service import TimescaleColumnWriter
@@ -2169,7 +2169,7 @@ async def get_live_channels() -> list[dict]:
                 "se devuelve el catálogo completo",
                 exc_info=True,
             )
-    return filter_live_catalog(LIVE_CHANNELS_BY_CITY, active)
+    return resolve_live_catalog(LIVE_CANDIDATES_BY_CITY, active)
 
 
 @app.get("/spectrograms/{channel}/history", tags=["spectrograms"])
