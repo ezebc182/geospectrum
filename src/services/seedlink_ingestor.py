@@ -30,6 +30,7 @@ from obspy.clients.seedlink.easyseedlink import create_client
 from scipy.signal import spectrogram as scipy_spectrogram
 
 from src.config.settings import settings
+from src.services.channel_watchdog import ChannelWatchdog
 from src.services.event_bus import EventBus, RedisPubSubBus
 from src.services.spectrogram_service import LIVE_CHANNELS_BY_CITY
 from src.services.timescale_service import TimescaleColumnWriter
@@ -48,6 +49,22 @@ BUFFER_SECONDS = 120
 # la FFT en cada paquete diminuto que llega).
 COLUMN_INTERVAL_SECONDS = 4
 
+# Un canal sin datos durante este tiempo se considera mudo. Alineado con el
+# filtro de frescura de live-channels (10 min): reconectar a los 5 le da al
+# canal la chance de reaparecer antes de que la UI lo dé de baja.
+STALE_AFTER_SECONDS = 300
+
+# Cada cuánto revisa el hilo watchdog si hay canales mudos.
+CHECK_INTERVAL_SECONDS = 30
+
+# Si tras reconectar y reconectar no llega UN dato de NINGÚN canal en este
+# tiempo, el proceso muere con error: reconectar para siempre en silencio
+# sería el viejo "deploy verde y mudo" con otro disfraz.
+GIVE_UP_AFTER_SECONDS = 900
+
+# Pausa entre ciclos de conexión.
+RECONNECT_DELAY_SECONDS = 5
+
 
 class SeedLinkIngestor:
     """Consume 1+ canales SeedLink y publica columnas de espectrograma al bus."""
@@ -57,14 +74,24 @@ class SeedLinkIngestor:
         bus: EventBus,
         server: str = "rtserve.earthscope.org",
         column_writer: Optional[TimescaleColumnWriter] = None,
+        stale_after_s: float = STALE_AFTER_SECONDS,
+        check_interval_s: float = CHECK_INTERVAL_SECONDS,
+        give_up_after_s: float = GIVE_UP_AFTER_SECONDS,
+        reconnect_delay_s: float = RECONNECT_DELAY_SECONDS,
     ):
         self.bus = bus
         self.server = server
         self.column_writer = column_writer
+        self.watchdog = ChannelWatchdog(stale_after_s=stale_after_s)
+        self.check_interval_s = check_interval_s
+        self.give_up_after_s = give_up_after_s
+        self.reconnect_delay_s = reconnect_delay_s
         self._buffers: dict[str, Stream] = {}
         self._last_column_emit: dict[str, datetime] = {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._client = None
+        self._last_any_data: Optional[datetime] = None
+        self._stop = threading.Event()
         # Excepción que terminó el hilo de run(), si terminó por error. El
         # proceso principal la consulta para decidir su código de salida.
         self.failure: Optional[BaseException] = None
@@ -72,6 +99,13 @@ class SeedLinkIngestor:
     def _on_data(self, trace: Trace) -> None:
         """Callback de ObsPy — corre en el hilo bloqueante de client.run()."""
         channel_id = trace.id  # ej. "IU.MAJO.00.BHZ"
+
+        now_utc = datetime.now(timezone.utc)
+        stats = trace.stats
+        # El watchdog trabaja con la clave de suscripción (sin location code:
+        # es el campo que el servidor resuelve solo y no se puede adivinar).
+        self.watchdog.note_data(f"{stats.network}.{stats.station}.{stats.channel}", now_utc)
+        self._last_any_data = now_utc
 
         stream = self._buffers.setdefault(channel_id, Stream())
         stream += trace
@@ -126,15 +160,62 @@ class SeedLinkIngestor:
             )
             return None
 
+    def _watchdog_loop(self) -> None:
+        """Hilo daemon: fuerza reconexión cuando hay canales mudos.
+
+        `conn.terminate()` es la única vía thread-safe para sacar a `run()`
+        de su loop (`close()` NO lo es — lo dice su propio docstring). Pero la
+        señal puede PERDERSE: `collect()` resetea terminate_flag al reentrar,
+        así que si terminate() cae entre dos collect(), no pega. Por eso acá
+        solo se dispara y se reintenta en el próximo chequeo; los strikes se
+        queman en el loop de supervisión cuando el ciclo termina DE VERDAD —
+        si no, tres terminates perdidos dejarían al canal en cuarentena sin
+        haber reconectado ni una vez.
+        """
+        while not self._stop.wait(self.check_interval_s):
+            now = datetime.now(timezone.utc)
+            client = self._client
+            if client is None:
+                continue
+            stale = self.watchdog.stale_channels(now)
+            if not stale:
+                continue
+            logger.warning(
+                "seedlink_ingestor: canales mudos hace >%.0fs: %s — forzando reconexión",
+                self.watchdog.stale_after_s,
+                ", ".join(stale),
+            )
+            try:
+                client.conn.terminate()
+            except Exception:
+                logger.exception("seedlink_ingestor: fallo terminando la conexión")
+
+    def stop(self) -> None:
+        """Corte ordenado (lo usan los tests; en producción el proceso vive)."""
+        self._stop.set()
+        client = self._client
+        if client is not None:
+            try:
+                client.conn.terminate()
+            except Exception:
+                pass
+
     def run(self, channels: list[tuple[str, str, str]]) -> None:
         """
         Bloqueante. channels: lista de (network, station, channel), ej.
         [("IU", "MAJO", "BHZ"), ("II", "ERM", "BHZ")].
         Debe llamarse desde un hilo dedicado (ver __main__).
 
-        Cualquier excepción se loguea acá y se guarda en `self.failure` antes de
-        propagarse: al correr en un hilo, el traceback no llega solo al proceso
-        principal y el arranque fallido queda invisible.
+        Loop de supervisión: cada ciclo crea el cliente, se suscribe y corre
+        hasta que el watchdog (o el servidor) termina la conexión; entonces
+        reconecta y re-suscribe todo, que es lo que revive a los streams que
+        se caen de a uno. Un fallo en el PRIMER ciclo sin haber recibido nunca
+        datos se propaga como antes (arranque roto = exit code visible), igual
+        que pasar `give_up_after_s` reconectando sin recibir nada.
+
+        Cualquier excepción fatal se loguea acá y se guarda en `self.failure`
+        antes de propagarse: al correr en un hilo, el traceback no llega solo
+        al proceso principal y el arranque fallido queda invisible.
         """
         try:
             self._loop = asyncio.new_event_loop()
@@ -149,13 +230,56 @@ class SeedLinkIngestor:
                     self.column_writer.connect(), self._loop
                 ).result()
 
-            self._client = create_client(self.server, on_data=self._on_data)
-            for net, sta, cha in channels:
-                self._client.select_stream(net, sta, cha)
-                logger.info("seedlink_ingestor: suscripto a %s.%s.%s", net, sta, cha)
+            channel_keys = [f"{net}.{sta}.{cha}" for net, sta, cha in channels]
+            threading.Thread(target=self._watchdog_loop, daemon=True).start()
 
-            logger.info("seedlink_ingestor: conectando a %s ...", self.server)
-            self._client.run()  # bloquea para siempre
+            started_at = datetime.now(timezone.utc)
+            first_attempt = True
+            while not self._stop.is_set():
+                now = datetime.now(timezone.utc)
+                last_signal = self._last_any_data or started_at
+                if (
+                    not first_attempt
+                    and (now - last_signal).total_seconds() >= self.give_up_after_s
+                ):
+                    raise RuntimeError(
+                        "seedlink_ingestor: sin datos de ningún canal hace "
+                        f"{self.give_up_after_s:.0f}s pese a reconectar — me rindo "
+                        "para que el fallo sea visible y el proceso se reinicie"
+                    )
+                try:
+                    client = create_client(self.server, on_data=self._on_data)
+                    for net, sta, cha in channels:
+                        client.select_stream(net, sta, cha)
+                        logger.info(
+                            "seedlink_ingestor: suscripto a %s.%s.%s", net, sta, cha
+                        )
+                    self.watchdog.note_connected(channel_keys, datetime.now(timezone.utc))
+                    # Publicado recién acá: el watchdog solo debe poder terminar
+                    # un cliente ya suscripto, no uno a medio armar.
+                    self._client = client
+                    logger.info("seedlink_ingestor: conectando a %s ...", self.server)
+                    client.run()  # bloquea hasta terminate() o END del server
+                    logger.warning(
+                        "seedlink_ingestor: streaming terminado — reconectando en %.0fs",
+                        self.reconnect_delay_s,
+                    )
+                except BaseException:
+                    if first_attempt and self._last_any_data is None:
+                        # Arranque roto de verdad: propagar como siempre.
+                        raise
+                    logger.exception(
+                        "seedlink_ingestor: ciclo de streaming con error — "
+                        "reintento en %.0fs",
+                        self.reconnect_delay_s,
+                    )
+                # El ciclo terminó: la reconexión va a ocurrir de verdad. Recién
+                # acá se queman strikes de los canales que siguen mudos (ver
+                # _watchdog_loop: hacerlo al disparar contaba terminates
+                # perdidos como reconexiones).
+                self.watchdog.note_reconnect(datetime.now(timezone.utc))
+                first_attempt = False
+                self._stop.wait(self.reconnect_delay_s)
         except BaseException as exc:
             # `BaseException` y no `Exception`: un KeyboardInterrupt o un
             # SystemExit dentro del hilo también tienen que quedar registrados,
@@ -163,6 +287,8 @@ class SeedLinkIngestor:
             self.failure = exc
             logger.exception("seedlink_ingestor: el ingestor terminó con error")
             raise
+        finally:
+            self._stop.set()
 
 
 def _default_channels() -> list[tuple[str, str, str]]:
