@@ -49,7 +49,7 @@ const SeismicGlobe = dynamic(
 const WINDOW_MINUTES = 24 * 60;
 const MIN_MAG = 3;
 // Cadencia de refresco, como el "Next update in: Ns" de la referencia.
-const REFRESH_SECONDS = 90;
+const REFRESH_SECONDS = 30;
 
 // Feed lateral: cuántos eventos mostrar y cuándo resaltar uno como nuevo.
 // El panel scrollea, así que puede cargar bastante más que lo que entra.

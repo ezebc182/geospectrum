@@ -118,3 +118,16 @@ async def test_cache_no_mezcla_pisos_de_magnitud_distintos():
     # Si la clave no incluyera el piso, la segunda tanda saldría del caché y
     # las llamadas con 4.0 no existirían.
     assert llamadas.count(4.0) == 2
+
+
+@pytest.mark.asyncio
+async def test_emsc_pide_orden_descendente_para_que_el_limit_corte_lo_viejo(monkeypatch):
+    """Bug 2026-08-20: con orderby=time-asc y limit=2000, una ventana que
+    supera el limit (1 semana M1+ ≈ 4600 eventos) se quedaba con los MÁS
+    VIEJOS: el Explorador mostraba data de ayer y descartaba la de hoy.
+    Con el piso M3 anterior nunca se alcanzaba el limit y no dolía.
+    orderby=time (descendente, igual que USGS) hace que el corte tire lo
+    viejo y conserve lo reciente."""
+    monkeypatch.setattr("src.services.emsc_service.httpx.AsyncClient", _CapturingClient)
+    await fetch_emsc_events(window_minutes=10080)
+    assert _CapturingClient.captured["orderby"] == "time"
