@@ -7,8 +7,13 @@ import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
 
-const { searchEventsMock } = vi.hoisted(() => ({ searchEventsMock: vi.fn() }));
-vi.mock('@/lib/api', () => ({ seismicAPI: { searchEvents: searchEventsMock } }));
+const { searchEventsMock, getLiveChannelsMock } = vi.hoisted(() => ({
+  searchEventsMock: vi.fn(),
+  getLiveChannelsMock: vi.fn(),
+}));
+vi.mock('@/lib/api', () => ({
+  seismicAPI: { searchEvents: searchEventsMock, getLiveChannels: getLiveChannelsMock },
+}));
 
 // SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
 // del repo, la lógica del globo se testea en lib/globe-data.test.ts).
@@ -34,6 +39,9 @@ function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
 }
 
 function renderOverlay(onClose = vi.fn()) {
+  if (getLiveChannelsMock.getMockImplementation() === undefined) {
+    getLiveChannelsMock.mockResolvedValue([]);
+  }
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
       {/* Caché de SWR fresco por test: la clave 'broadcast-events' es la
@@ -121,6 +129,37 @@ describe('GlobeBroadcastOverlay', () => {
     ).toBeGreaterThanOrEqual(1);
     // El feed scrollea
     expect(document.querySelector('.overflow-y-auto')).toBeTruthy();
+  });
+
+  it('muestra tiras de espectrograma de los canales en vivo', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    getLiveChannelsMock.mockResolvedValue([
+      { city_id: 'tokyo', channel: 'JP.JYT..BHZ' },
+      { city_id: 'seattle', channel: 'UW.LON..HHZ' },
+      { city_id: 'lima', channel: 'II.NNA.00.BHZ' }, // 3ro: queda afuera del corte
+    ]);
+    renderOverlay();
+
+    await waitFor(() => expect(screen.getByText('Espectrogramas en vivo')).toBeTruthy());
+    expect(screen.getByText('Tokyo')).toBeTruthy();
+    expect(screen.getByText('Seattle')).toBeTruthy();
+    expect(screen.queryByText('Lima')).toBeNull();
+  });
+
+  it('permite ocultar y volver a mostrar paneles desde el engranaje', async () => {
+    const ahora = Date.now();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'a', lugar: 'X, Chile', hora_utc: new Date(ahora - 10 * 60_000).toISOString() }),
+    ]);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('broadcast-feed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar paneles' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Feed de eventos' }));
+    expect(screen.queryByTestId('broadcast-feed')).toBeNull();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Feed de eventos' }));
+    expect(screen.getByTestId('broadcast-feed')).toBeTruthy();
   });
 
   it('cierra con Escape y con el botón de salir', async () => {
