@@ -70,55 +70,62 @@ NETWORK_CODES = {
 # Los tres formatos de location code que aparecen abajo —"00", "10" y vacío—
 # son reales y salieron del paso 4. Adivinarlos es justamente lo que rompe.
 #
-# Ausencias conocidas:
-#   - bogota: no hay ninguna estación colombiana transmitiendo por este
-#     servidor. Cae a FDSN 24h, que sí funciona.
+# Ausencias conocidas (re-verificadas 2026-08-20):
 #   - manila y jakarta: sin estación en vivo a menos de 333 km.
-#   - tehran: IRIS no devuelve inventario para esa zona.
-#   - istanbul: la más cercana que transmite (GE.TIRR) está a 388 km, en
-#     Rumania. Sirve para sismicidad regional, no para eventos locales de la
+#   - tehran: IRIS no devuelve inventario para esa zona (FDSN 204).
+#   - istanbul: la más cercana que transmite (HT.ALN, Alexandroupoli) está a
+#     247 km. Sirve para sismicidad regional, no para eventos locales de la
 #     falla Norte de Anatolia.
 # Candidatas por ciudad, en orden de preferencia (primaria primero). Las
 # estaciones se caen de a una y perseguir a la "viva de hoy" editando el
 # catálogo es un juego perdido: el failover lo resuelve resolve_live_catalog
 # contra las columnas frescas de TimescaleDB. Toda candidata nueva se agrega
 # VERIFICADA contra rtserve (INFO + get_waveforms), nunca desde el mapa FDSN.
+# Respaldos verificados el 2026-08-20 contra rtserve (get_waveforms con
+# muestras y lag < 90s). Primarias promovidas solo con mejora dramática:
+# valparaiso (VA01 a 4 km vs 50), portauprince (PAPH1 a 3,7 km vs 116),
+# istanbul (ALN a 247 km vs 388), managua (NANN a 26 km vs 72) y santiago
+# (MT18 llevaba >12h muda; queda última como candidata histórica).
 LIVE_CANDIDATES_BY_CITY: Dict[str, List[str]] = {
     # Asia-Pacífico
-    "tokyo": ["JP.JYT..BHZ"],
-    "osaka": ["JP.JWT..BHZ"],
-    "taipei": ["IU.TATO.00.BHZ"],
-    "guam": ["IU.GUMO.00.BHZ"],
-    "kathmandu": ["NK.KKN..BHZ"],
+    "tokyo": ["JP.JYT..BHZ", "IU.MAJO.00.BHZ", "JP.JSG..BHZ"],
+    "osaka": ["JP.JWT..BHZ", "PS.INU..BHZ", "G.INU.00.BHZ"],
+    "taipei": ["IU.TATO.00.BHZ", "TW.YHNB..BHZ", "TW.NACB..BHZ"],
+    "guam": ["IU.GUMO.00.BHZ", "MI.FLX..BHZ"],
+    "kathmandu": ["NK.KKN..BHZ", "IO.EVN..BHZ"],
     # Sudamérica
     "lima": ["II.NNA.00.BHZ"],
     "arequipa": ["C1.AP01..BHZ"],
-    "santiago": ["C1.MT18..BHZ"],
-    "valparaiso": ["C1.MT02..BHZ"],
-    "antofagasta": ["C.GO02..BHZ"],
-    "quito": ["EC.PULU..HHZ"],
+    "santiago": ["C1.MT05..BHZ", "C1.MT14..BHZ", "C1.MT16..BHZ", "C1.MT18..BHZ"],
+    "valparaiso": ["C1.VA01..BHZ", "C1.MT02..BHZ", "C1.VA06..BHZ"],
+    "antofagasta": ["C.GO02..BHZ", "C1.AF02..BHZ", "C1.AF01..BHZ"],
+    "quito": ["EC.PULU..HHZ", "EC.ANTS..HHZ", "EC.SLOR..HHZ"],
+    # CM.RUS revivió: en julio no transmitía (por eso Bogotá no estaba) y el
+    # 20/8 verificó con lag 25s. La cobertura es regional (170 km).
+    "bogota": ["CM.RUS.00.HHZ", "CM.HEL.00.HHZ"],
     # Centroamérica y Caribe
-    "mexicocity": ["G.UNM.00.BHZ"],
-    "sanjose": ["G.HDC.00.BHZ"],
-    "managua": ["GE.BOAB..BHZ"],
-    "portauprince": ["CU.SDDR.00.BHZ"],
+    "mexicocity": ["G.UNM.00.BHZ", "MG.TXMV..HHZ", "MX.TLIG..BHZ"],
+    "sanjose": ["G.HDC.00.BHZ", "TC.TCS1..HHZ", "OV.VPCC..HHZ"],
+    "managua": ["NU.NANN..HHZ", "GE.BOAB..BHZ", "OV.VRBA..HHZ"],
+    "portauprince": ["AY.PAPH1..HHZ", "CU.SDDR.00.BHZ", "ZC.JIDR..BHZ"],
     # Norteamérica
-    "losangeles": ["CI.USC..BHZ"],
+    "losangeles": ["CI.USC..BHZ", "CI.PASC.00.BHZ", "CI.DJJ..BHZ"],
     # Barrett (46 km de San Diego): la red AZ entera no existe en
     # rtserve.earthscope.org — AZ.SIO5 nunca transmitió ni una columna.
     # Verificado 2026-08-19 con INFO + get_waveforms contra el servidor real.
-    "sandiego": ["CI.BAR..BHZ"],
-    "sanfrancisco": ["BK.MCCM.00.BHZ"],
-    "portland": ["UO.PF27..HHZ"],
-    "seattle": ["UW.LON..HHZ"],
-    "vancouver": ["CN.QEPB..HHZ"],
-    "anchorage": ["AK.RC01..BHZ"],
+    # BAR es intermitente (viva el 19/8, muda el 20/8): por eso los respaldos.
+    "sandiego": ["CI.BAR..BHZ", "CI.PLM..BHZ", "CI.MUR..BHZ"],
+    "sanfrancisco": ["BK.MCCM.00.BHZ", "BK.SAO.00.BHZ", "BK.CMB.00.BHZ"],
+    "portland": ["UO.PF27..HHZ", "UO.COOPR..HHZ", "UO.GRESH..HHZ"],
+    "seattle": ["UW.LON..HHZ", "UW.SP2..HHZ", "UW.MORSE..HHZ"],
+    "vancouver": ["CN.QEPB..HHZ", "CN.BOIB..HHZ", "CN.GOBB..HHZ"],
+    "anchorage": ["AK.RC01..BHZ", "AK.FIRE..BHZ", "AT.PMR..BHZ"],
     # Europa / Mediterráneo
-    "istanbul": ["GE.TIRR..BHZ"],
+    "istanbul": ["HT.ALN..HHZ", "GE.TIRR..BHZ", "HL.RDO..HHZ"],
     # Oceanía
-    "wellington": ["IU.SNZO.00.BHZ"],
-    "auckland": ["NZ.HIZ.10.HHZ"],
-    "christchurch": ["NZ.KHZ.10.HHZ"],
+    "wellington": ["IU.SNZO.00.BHZ", "NZ.BFZ.10.HHZ", "NZ.KHZ.10.HHZ"],
+    "auckland": ["NZ.HIZ.10.HHZ", "NZ.OUZ.10.HHZ", "NZ.URZ.10.HHZ"],
+    "christchurch": ["NZ.KHZ.10.HHZ", "NZ.RPZ.10.HHZ", "NZ.ODZ.10.HHZ"],
 }
 
 # Vista primaria-por-ciudad, para los consumidores que esperan un solo canal.
