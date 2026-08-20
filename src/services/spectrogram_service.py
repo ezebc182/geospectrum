@@ -128,12 +128,6 @@ LIVE_CANDIDATES_BY_CITY: Dict[str, List[str]] = {
     "christchurch": ["NZ.KHZ.10.HHZ", "NZ.RPZ.10.HHZ", "NZ.ODZ.10.HHZ"],
 }
 
-# Vista primaria-por-ciudad, para los consumidores que esperan un solo canal.
-LIVE_CHANNELS_BY_CITY = {
-    city: candidates[0] for city, candidates in LIVE_CANDIDATES_BY_CITY.items()
-}
-
-
 def resolve_live_catalog(
     candidates_by_city: Dict[str, List[str]], active_channels: Optional[set]
 ) -> List[Dict[str, str]]:
