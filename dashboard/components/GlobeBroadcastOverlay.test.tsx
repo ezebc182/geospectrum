@@ -1,0 +1,90 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+import { SWRConfig } from 'swr';
+
+import es from '@/messages/es.json';
+import type { SeismicEvent } from '@/lib/types';
+import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
+
+const { searchEventsMock } = vi.hoisted(() => ({ searchEventsMock: vi.fn() }));
+vi.mock('@/lib/api', () => ({ seismicAPI: { searchEvents: searchEventsMock } }));
+
+// SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
+// del repo, la lógica del globo se testea en lib/globe-data.test.ts).
+vi.mock('@/components/SeismicGlobe', () => ({
+  SeismicGlobe: () => null,
+}));
+
+function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
+  return {
+    id: 'ev-1',
+    fuentes: ['USGS'],
+    hora_utc: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    lat: -31.5,
+    lon: -68.5,
+    prof_km: 10,
+    mag: 4.2,
+    mag_tipo: 'ML',
+    lugar: '43 km SE de San Juan, Argentina',
+    sentido: false,
+    revisado: false,
+    ...overrides,
+  };
+}
+
+function renderOverlay(onClose = vi.fn()) {
+  render(
+    <NextIntlClientProvider locale="es-AR" messages={es}>
+      {/* Caché de SWR fresco por test: la clave 'broadcast-events' es la
+          misma en todos y el caché de módulo filtraría datos entre tests. */}
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <GlobeBroadcastOverlay onClose={onClose} />
+      </SWRConfig>
+    </NextIntlClientProvider>
+  );
+  return onClose;
+}
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe('GlobeBroadcastOverlay', () => {
+  it('pide 24h de eventos con piso M3 (parámetros explícitos, no defaults)', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+    await waitFor(() =>
+      expect(searchEventsMock).toHaveBeenCalledWith({ windowMinutes: 1440, minMag: 3 })
+    );
+  });
+
+  it('muestra los contadores calculados de los eventos', async () => {
+    const hoy = new Date().toISOString();
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'a', mag: 6.5, hora_utc: hoy }),
+      makeEvento({ id: 'b', mag: 5.1, hora_utc: hoy }),
+      makeEvento({ id: 'c', mag: 3.5, hora_utc: hoy }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => expect(screen.getByText('3')).toBeTruthy());
+    expect(screen.getByText('Últimas 24 h')).toBeTruthy();
+    // Hoy >=M5: el 6.5 y el 5.1
+    expect(screen.getByText('2')).toBeTruthy();
+    // Hoy >=M6: solo el 6.5
+    expect(screen.getByText('1')).toBeTruthy();
+  });
+
+  it('cierra con Escape y con el botón de salir', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    const onClose = renderOverlay();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salir del modo transmisión' }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
