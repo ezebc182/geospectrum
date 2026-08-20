@@ -51,7 +51,7 @@ async def fetch_emsc_events(
         "minmag": str(effective_min_mag),
         # Sin bbox: ingesta GLOBAL, el recorte por área ocurre al leer.
         # Ver el comentario equivalente en usgs_service.
-        "orderby": "time-asc",
+        "orderby": "time",
         "limit": str(settings.source_fetch_limit),
     }
 
