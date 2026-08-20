@@ -193,7 +193,7 @@ class TestFiltroDeReporte:
         from src.models.event import SeismicEvent
         from src.services import report_service
 
-        async def fake_fetch(window, sources):
+        async def fake_fetch(window, sources, min_magnitude=None):
             return ([SeismicEvent(**e) for e in eventos], [], [], [])
 
         monkeypatch.setattr(report_service, "_fetch_parallel", fake_fetch)

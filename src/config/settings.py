@@ -23,8 +23,12 @@ class Settings(BaseSettings):
     region_minlon: float = -75.0
     region_maxlon: float = -60.0
 
-    # Umbral de magnitud
-    min_mag_alert: float = 3.0
+    # Piso de magnitud del FETCH a las fuentes. Existe para descartar
+    # micro-sismos (M<1 de redes locales densas), NO para esconder sismos
+    # reales: con el viejo 3.0 los M<3 jamás entraban al sistema y el
+    # dashboard parecía muerto (bug 2026-08-20). Los endpoints pueden pedir
+    # un piso mayor por request; este es el mínimo que se trae de origen.
+    source_min_magnitude: float = 1.0
 
     # Techo de eventos por consulta a cada fuente. Con la ingesta global el
     # viejo hardcode de 200 dejaba de alcanzar: 200 eventos mundiales ordenados

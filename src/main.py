@@ -16,7 +16,7 @@ import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 from uuid import UUID
 
 import asyncpg
@@ -200,7 +200,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifecycle manager para startup/shutdown."""
     logger.info("GeoSpectrum Service starting")
     logger.info("Region: %s", settings.bbox)
-    logger.info("Min magnitude: %s", settings.min_mag_alert)
+    logger.info("Source min magnitude: %s", settings.source_min_magnitude)
     logger.info("Window: %s minutes", settings.window_minutes)
 
     if settings.inpres_proxy_url:
@@ -482,6 +482,7 @@ async def metrics() -> Response:
 async def _fetch_parallel(
     time_window: int,
     sources: list[str],
+    min_magnitude: Optional[float] = None,
 ) -> tuple[list[SeismicEvent], list[SeismicEvent], list[SeismicEvent], list[str]]:
     """
     Consulta USGS, EMSC e INPRES en paralelo con asyncio.gather.
@@ -506,14 +507,17 @@ async def _fetch_parallel(
         (usgs_events, emsc_events, inpres_events, errors)
     """
     ttl = settings.cache_ttl_seconds
+    # Mismo criterio que report_service._fetch_parallel: el piso viaja en la
+    # clave (el store del caché es global entre módulos).
+    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
-    async def _cached_fetch(source: str, fetcher, window: int):
-        key = f"{source}:{window}"
+    async def _cached_fetch(source: str, fetcher: Any, window: int, with_min: bool) -> Any:
+        key = f"{source}:{window}:{effective_min_mag if with_min else '-'}"
         if ttl > 0:
             hit = cache.get(key)
             if hit is not None:
                 return hit
-        result = await fetcher(window)
+        result = await (fetcher(window, min_magnitude=effective_min_mag) if with_min else fetcher(window))
         if ttl > 0:
             cache.set(key, result, ttl)
         return result
@@ -522,13 +526,14 @@ async def _fetch_parallel(
     fetch_map: list[str] = []
 
     if "usgs" in sources:
-        tasks.append(_cached_fetch("usgs", fetch_usgs_events, time_window))
+        tasks.append(_cached_fetch("usgs", fetch_usgs_events, time_window, with_min=True))
         fetch_map.append("usgs")
     if "emsc" in sources:
-        tasks.append(_cached_fetch("emsc", fetch_emsc_events, time_window))
+        tasks.append(_cached_fetch("emsc", fetch_emsc_events, time_window, with_min=True))
         fetch_map.append("emsc")
     if "inpres" in sources:
-        tasks.append(_cached_fetch("inpres", fetch_inpres_events, time_window))
+        # El proxy INPRES no acepta piso; se filtra post-merge en el endpoint.
+        tasks.append(_cached_fetch("inpres", fetch_inpres_events, time_window, with_min=False))
         fetch_map.append("inpres")
 
     results = await asyncio.gather(*tasks)
@@ -887,8 +892,11 @@ async def search_events(
         source_list = sources.lower().split(",") if sources else ["usgs", "emsc", "inpres"]
         source_list = [s.strip() for s in source_list]
 
+        # El min_mag del usuario llega hasta la FUENTE: antes el fetch venía
+        # recortado a un piso fijo y el slider del Explorador era mentira
+        # (pedía 2.5 sobre un universo ya cortado en 3.0).
         usgs_events, emsc_events, inpres_events, errors = await _fetch_parallel(
-            time_window, source_list
+            time_window, source_list, min_mag
         )
         for err in errors:
             logger.warning("Source error in search: %s", err)

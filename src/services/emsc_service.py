@@ -21,7 +21,9 @@ from src.observability.metrics import source_fetch_duration_seconds, source_erro
 logger = logging.getLogger(__name__)
 
 
-async def fetch_emsc_events(window_minutes: int) -> Tuple[List[SeismicEvent], Optional[str]]:
+async def fetch_emsc_events(
+    window_minutes: int, min_magnitude: Optional[float] = None
+) -> Tuple[List[SeismicEvent], Optional[str]]:
     """
     Fetch eventos desde EMSC API.
 
@@ -30,12 +32,15 @@ async def fetch_emsc_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
 
     Args:
         window_minutes: Ventana temporal en minutos
+        min_magnitude: Piso de magnitud a pedir a la fuente. None usa
+            settings.source_min_magnitude (piso bajo anti micro-sismos).
 
     Returns:
         Tupla (lista_eventos, error_opcional)
     """
     now = datetime.now(timezone.utc)
     start_time = now - timedelta(minutes=window_minutes)
+    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
 
     url = "https://www.seismicportal.eu/fdsnws/event/1/query"
 
@@ -43,7 +48,7 @@ async def fetch_emsc_events(window_minutes: int) -> Tuple[List[SeismicEvent], Op
         "format": "json",
         "start": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
         "end": now.strftime("%Y-%m-%dT%H:%M:%S"),
-        "minmag": str(settings.min_mag_alert),
+        "minmag": str(effective_min_mag),
         # Sin bbox: ingesta GLOBAL, el recorte por área ocurre al leer.
         # Ver el comentario equivalente en usgs_service.
         "orderby": "time-asc",
