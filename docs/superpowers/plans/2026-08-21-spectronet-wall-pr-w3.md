@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** El ingestor calcula métricas de dominio por canal (RSAM, frecuencia dominante, Frequency Index, pico dB, eventos/hora) y las distribuye vía Redis; el dashboard las muestra como fila completa en las tarjetas de `/spectrograms-live` y como banda compacta en las tiras del muro cuando `showMetrics` está activo.
+**Goal:** El ingestor calcula métricas de dominio por canal (RSAM, frecuencia dominante, Frequency Index, pico dB, eventos/hora) y las distribuye vía Redis; el dashboard las muestra como fila completa en las tarjetas de `/spectrograms-live` y como banda compacta en las tiras del muro cuando `showMetrics` está activo. Además: el armador expone **todas las subestaciones** del catálogo (no solo la ganadora por ciudad) con buscador y distancia a la ciudad, estilo SWARM; y **toda hora visible en la app pasa a UTC explícito**.
 
 **Architecture:** Las métricas se derivan EXCLUSIVAMENTE de datos que el ingestor ya tiene en mano (buffer de 120 s y columna espectral recién calculada) — cero recomputación server-side (restricción OOM del PR #25). El ingestor publica cada métrica en el canal pub/sub `metrics:{SCNL}` y escribe un snapshot key `metrics:latest:{SCNL}` con TTL 60 s; la API lo sirve con `GET /stations/{channel}/metrics` (singular, spec) y `GET /stations/metrics?channel=...` (batch). El frontend usa **polling ligero** (SWR cada 15 s, un request batch por contenedor) — NO un WS nuevo: el muro monta ~74 tiras y un WS por tira sería una tormenta de conexiones.
 
@@ -20,9 +20,11 @@
 - **Payload de métricas** (contrato único, `null` = no disponible):
   `{"channel": "IU.MAJO.00.BHZ", "endtime": "2026-08-21T14:32:10.000000Z", "rsam": 123.4, "freq_hz": 2.4, "fi": -0.12, "peak_db": 87.3, "events_hour": 3}`
 - Identificadores en inglés, comentarios en español. i18n ES/EN con paridad de claves.
-- TDD estricto; **verificación por mutación** en los detectores (countEvents) y en el Frequency Index.
+- TDD estricto; **verificación por mutación** en los detectores (countEvents), en el Frequency Index y en la distancia haversine.
 - Tests backend: `./venv/bin/python -m pytest <ruta> -v --no-cov` (venv en `venv/`, NO `.venv/`; Docker arriba para testcontainers). Frontend: `cd dashboard && npx vitest run` y SIEMPRE `npx tsc --noEmit` (vitest no chequea tipos, `next build` sí).
 - La publicación de métricas es best-effort: un fallo de métricas JAMÁS debe frenar la ingesta de columnas.
+- **UTC en TODA hora visible** (Tasks 10-11): el estándar del dominio sísmico es UTC y toda fuente (USGS, EMSC, ObsPy `endtime`) ya llega en UTC. Ninguna hora se renderiza en la zona del navegador; toda etiqueta de hora lleva el sufijo `UTC` visible.
+- **Catálogo completo de subestaciones** (Task 12): `LIVE_CANDIDATES_BY_CITY` ingesta 75 canales pero `/spectrograms/live-channels` expone solo la ganadora de cada una de las 27 ciudades. Las otras 48 son subestaciones reales y ya ingestadas — el armador debe poder elegirlas.
 
 ---
 
@@ -1444,38 +1446,640 @@ git commit -m "feat(metricas): banda RSAM/FI/lat en las tiras del muro con showM
 
 ---
 
+### Task 10: UTC en el formateo compartido (`formatDateTimeCompact` + formats de next-intl)
+
+**Files:**
+- Modify: `dashboard/lib/utils.ts:85-92` (`formatDateTimeCompact`)
+- Modify: `dashboard/i18n/request.ts:19-25` (bloque `formats`)
+- Test: `dashboard/lib/utils.test.ts` (agregar; crear si no existe)
+
+**Interfaces:**
+- Consumes: nada.
+- Produces: `formatDateTimeCompact(isoString)` devuelve **UTC** (`YYYY-MM-DD HH:MM:SS`); los formats nombrados de next-intl (`medium`/`short`/`time`) fijan `timeZone: 'UTC'`, así que **todo `format.dateTime(...)` de la app pasa a UTC sin tocar cada call-site**. Task 11 rotula la UI.
+
+**Por qué esto primero:** es un cambio de una línea por función que arregla el bug de raíz. `formatDateTimeCompact` usa hoy `getHours()`/`getDate()` — hora **local del navegador**. Un usuario en Buenos Aires (UTC-3) ve un sismo de las 13:06 UTC como "10:06" en una app que rotula "UTC" al lado. Eso no es un detalle cosmético: es un dato sísmico mal presentado.
+
+- [ ] **Step 1: Write the failing tests**
+
+```typescript
+// dashboard/lib/utils.test.ts (agregar; si el archivo no existe, crearlo con
+// los imports del patrón de otros tests de lib/)
+import { describe, expect, it } from 'vitest';
+
+import { formatDateTimeCompact } from './utils';
+
+describe('formatDateTimeCompact — siempre UTC', () => {
+  it('formatea en UTC, no en la zona del proceso', () => {
+    // 13:06 UTC debe salir 13:06 corra donde corra el test (TZ del CI puede
+    // ser cualquiera). Con getHours() local esto falla fuera de UTC.
+    expect(formatDateTimeCompact('2026-08-21T13:06:40.000Z')).toBe(
+      '2026-08-21 13:06:40',
+    );
+  });
+
+  it('no corre el día hacia atrás cerca de medianoche UTC', () => {
+    // El caso que delata la zona local: 00:30 UTC es "el día anterior 21:30"
+    // en Buenos Aires. La fecha debe seguir siendo la del 22.
+    expect(formatDateTimeCompact('2026-08-22T00:30:00.000Z')).toBe(
+      '2026-08-22 00:30:00',
+    );
+  });
+
+  it('acepta el formato de endtime de ObsPy (microsegundos)', () => {
+    expect(formatDateTimeCompact('2026-08-21T14:32:10.123456Z')).toBe(
+      '2026-08-21 14:32:10',
+    );
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd dashboard && TZ=America/Argentina/Buenos_Aires npx vitest run lib/utils.test.ts`
+Expected: FAIL — con `TZ` forzada a UTC-3 los tres tests muestran la hora corrida.
+(Correr SIEMPRE con `TZ=...` explícita: si la máquina ya está en UTC, el test verde no prueba nada.)
+
+- [ ] **Step 3: Write the implementation**
+
+En `dashboard/lib/utils.ts`, reemplazar el cuerpo de `formatDateTimeCompact` (los getters locales por los UTC) y actualizar el docstring:
+
+```typescript
+/**
+ * "YYYY-MM-DD HH:MM:SS" en **UTC**, estilo USGS: una sola línea corta que
+ * sigue siendo ordenable a simple vista (año primero), a diferencia de
+ * formatDateTime ("5 ago 2026, 1:05:39 p. m.") que es más legible pero casi
+ * el doble de ancho.
+ *
+ * UTC y no la zona del navegador a propósito: el estándar del dominio
+ * sísmico es UTC y todas las fuentes (USGS, EMSC, endtime de ObsPy) ya
+ * llegan en UTC. Renderizar en hora local corría el dato hasta 14 h y
+ * convivía con carteles que decían "UTC" al lado.
+ */
+export function formatDateTimeCompact(isoString: string): string {
+  const date = new Date(isoString);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
+    `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
+  );
+}
+```
+
+En `dashboard/i18n/request.ts`, agregar `timeZone: 'UTC'` a los tres formats nombrados y explicar por qué:
+
+```typescript
+/**
+ * Formats globales nombrados (Decision 6). `formatDateTimeCompact` de
+ * lib/utils (YYYY-MM-DD HH:MM:SS estilo USGS) NO se localiza — es formato
+ * técnico ordenable, deliberadamente fuera de esta tabla (pero también UTC).
+ *
+ * timeZone: 'UTC' en los tres: el dominio sísmico trabaja en UTC y todas
+ * las fuentes llegan en UTC. Fijarlo acá convierte a UTC TODOS los
+ * `format.dateTime(...)` de la app de una sola vez, sin tocar call-sites.
+ */
+export const formats = {
+  dateTime: {
+    medium: { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' },
+    short: { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' },
+    time: { timeStyle: 'medium', timeZone: 'UTC' },
+  },
+} as const;
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd dashboard && TZ=America/Argentina/Buenos_Aires npx vitest run lib/utils.test.ts && npx tsc --noEmit`
+Expected: 3 PASS + tsc limpio
+
+- [ ] **Step 5: Correr la suite completa con TZ hostil**
+
+Run: `cd dashboard && TZ=Asia/Tokyo npx vitest run 2>&1 | tail -8`
+Expected: todo PASS. Si algún test existente falla, es que **asumía hora local** — arreglar el TEST (esperar UTC), no revertir el fix: el comportamiento nuevo es el correcto. Anotar cuáles se tocaron en el mensaje de commit.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add dashboard/lib/utils.ts dashboard/i18n/request.ts dashboard/lib/utils.test.ts
+git commit -m "fix(utc): formatDateTimeCompact y formats de next-intl en UTC"
+```
+
+---
+
+### Task 11: Sufijo UTC visible en las horas de la UI
+
+**Files:**
+- Modify: `dashboard/components/LiveSpectrogramCanvas.tsx:189-209` (variante `default`, la hora de `lastUpdate`)
+- Modify: `dashboard/components/SortableSpectrogramCard.tsx` (fila de métricas de Task 7: rotular la latencia)
+- Modify: `dashboard/messages/es.json` y `en.json` (clave compartida `common.utcSuffix`, PARIDAD)
+- Test: `dashboard/components/LiveSpectrogramCanvas.test.tsx` (agregar)
+
+**Interfaces:**
+- Consumes: los formats UTC de Task 10; `latencySeconds` (Task 6).
+- Produces: toda hora absoluta visible lleva `UTC` al lado. **Las duraciones relativas NO** (una latencia de "8s" o un "hace 5 minutos" no tienen zona horaria — rotularlas sería ruido incorrecto).
+
+**Alcance deliberado:** este task rotula las superficies que el PR-W3 toca (espectrogramas y tarjetas). El resto de la app (`GlobeEventPanel`, paneles de admin, mapas) YA quedó en UTC por Task 10 — el rótulo en esas vistas es un pase de UI aparte para no inflar este PR. Anotarlo en el cuerpo del PR como seguimiento explícito.
+
+- [ ] **Step 1: i18n primero**
+
+En `dashboard/messages/es.json` y `en.json`, dentro del namespace `common` (si no existe, crearlo al nivel de los otros namespaces raíz): `"utcSuffix": "UTC"` en AMBOS (no se traduce: "UTC" es UTC en todos los idiomas; la clave existe para no hardcodear la cadena en JSX y para que la auditoría de paridad la vea).
+
+- [ ] **Step 2: Write the failing test**
+
+```tsx
+// dashboard/components/LiveSpectrogramCanvas.test.tsx (agregar al describe existente)
+it('la hora de última actualización se muestra en UTC con su rótulo', async () => {
+  renderCanvas({ variant: 'default' });   // helper existente del archivo
+
+  const ws = MockWebSocket.instances[0];
+  await act(async () => {
+    ws.onmessage?.({
+      data: JSON.stringify({
+        channel: 'IU.MAJO.00.BHZ',
+        endtime: '2026-08-21T13:06:40.000000Z',
+        freqs: [1, 2],
+        power_db: [40, 50],
+      }),
+    } as MessageEvent);
+  });
+
+  // 13:06:40 UTC, no la hora local del runner
+  expect(screen.getByText(/13:06:40/)).toBeInTheDocument();
+  expect(screen.getByText(/UTC/)).toBeInTheDocument();
+});
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `cd dashboard && TZ=America/Argentina/Buenos_Aires npx vitest run components/LiveSpectrogramCanvas.test.tsx`
+Expected: FAIL — falta el rótulo `UTC` (la hora ya sale bien por Task 10)
+
+- [ ] **Step 4: Write the implementation**
+
+En `LiveSpectrogramCanvas.tsx`, variante `default`, junto al `format.dateTime(new Date(lastUpdate), 'time')`, agregar el sufijo con `useTranslations('common')`:
+```tsx
+{format.dateTime(new Date(lastUpdate), 'time')} {tCommon('utcSuffix')}
+```
+
+En la fila de métricas de `SortableSpectrogramCard.tsx` (Task 7): la latencia es una **duración** (`8s`), NO lleva sufijo UTC. Si en esa fila se agregara alguna hora absoluta, ahí sí corresponde el rótulo.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `cd dashboard && TZ=Asia/Tokyo npx vitest run components/LiveSpectrogramCanvas.test.tsx components/SortableSpectrogramCard.test.tsx && npx tsc --noEmit`
+Expected: PASS + tsc limpio
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add dashboard/components/LiveSpectrogramCanvas.tsx dashboard/components/SortableSpectrogramCard.tsx dashboard/messages/es.json dashboard/messages/en.json dashboard/components/LiveSpectrogramCanvas.test.tsx
+git commit -m "feat(utc): rotulo UTC visible en las horas de espectrogramas y tarjetas"
+```
+
+---
+
+### Task 12: Catálogo de subestaciones buscable (estilo SWARM)
+
+**Files:**
+- Modify: `src/services/spectrogram_service.py` (agregar `station_catalog()` junto a `resolve_live_catalog` :131-154)
+- Modify: `src/main.py` (endpoint `GET /spectrograms/station-catalog`, junto a `/spectrograms/live-channels` :2163-2186 — declararlo ANTES de `/spectrograms/{city_id}` :2212)
+- Modify: `dashboard/lib/api.ts` (método `getStationCatalog()` junto a `getLiveChannels()` :131)
+- Modify: `dashboard/lib/types.ts` (tipo `StationCatalogEntry`)
+- Modify: `dashboard/components/WallManager.tsx:54-60` (el `catalog` pasa a salir del endpoint nuevo)
+- Modify: `dashboard/components/WallBuilder.tsx` (el buscador existente filtra también por SCNL/estación/distancia; badge de "vivo")
+- Modify: `dashboard/messages/es.json` y `en.json` (PARIDAD)
+- Test: `tests/unit/test_station_catalog.py`, `dashboard/components/WallManager.test.tsx`
+
+**Interfaces:**
+- Consumes: `LIVE_CANDIDATES_BY_CITY` (`spectrogram_service.py:89-129`), `HIGH_RISK_SEISMIC_CITIES` con `lat`/`lon` (`dashboard/lib/seismic-cities.ts:10-11`), `fetch_active_channels` (`timescale_service.py:88`).
+- Produces: `station_catalog(candidates_by_city, active_channels) -> list[dict]` con **una entrada por canal candidato** (75, no 27): `{"channel": "C1.MT14..BHZ", "city_id": "santiago", "station": "MT14", "network": "C1", "is_live": false, "is_primary": false}`; endpoint `GET /spectrograms/station-catalog`; tipo `StationCatalogEntry` en el front; `seismicAPI.getStationCatalog()`.
+
+**Qué problema resuelve:** hoy el armador ofrece 27 canales — uno por ciudad, el que el failover eligió. Las otras 48 candidatas del catálogo **ya se están ingestando** (el ingestor se suscribe a todas, `channels_from_catalog` :286-312) pero son invisibles en la UI. Un usuario que quiere comparar dos estaciones de Santiago (MT05 vs MT14) no puede. Estilo SWARM: se lista TODO y el usuario elige; el badge "vivo" informa sin esconder.
+
+- [ ] **Step 1: Write the failing backend test**
+
+```python
+# tests/unit/test_station_catalog.py
+"""station_catalog expone TODAS las candidatas (75), no solo la ganadora
+por ciudad que devuelve resolve_live_catalog (27)."""
+
+from src.services.spectrogram_service import (
+    LIVE_CANDIDATES_BY_CITY,
+    station_catalog,
+)
+
+SAMPLE = {
+    "santiago": ["C1.MT05..BHZ", "C1.MT14..BHZ"],
+    "lima": ["II.NNA.00.BHZ"],
+}
+
+
+def test_devuelve_una_entrada_por_candidata():
+    result = station_catalog(SAMPLE, active_channels=set())
+
+    assert [e["channel"] for e in result] == [
+        "C1.MT05..BHZ",
+        "C1.MT14..BHZ",
+        "II.NNA.00.BHZ",
+    ]
+
+
+def test_marca_primaria_solo_la_primera_de_cada_ciudad():
+    result = station_catalog(SAMPLE, active_channels=set())
+    by_channel = {e["channel"]: e for e in result}
+
+    assert by_channel["C1.MT05..BHZ"]["is_primary"] is True
+    assert by_channel["C1.MT14..BHZ"]["is_primary"] is False
+    assert by_channel["II.NNA.00.BHZ"]["is_primary"] is True
+
+
+def test_is_live_refleja_las_columnas_frescas():
+    result = station_catalog(SAMPLE, active_channels={"C1.MT14..BHZ"})
+    by_channel = {e["channel"]: e for e in result}
+
+    assert by_channel["C1.MT14..BHZ"]["is_live"] is True
+    assert by_channel["C1.MT05..BHZ"]["is_live"] is False
+
+
+def test_sin_datos_de_frescura_nada_se_marca_vivo():
+    # active_channels=None = "no se pudo consultar la base" (misma semántica
+    # que resolve_live_catalog): se ofrece todo, sin mentir sobre frescura.
+    result = station_catalog(SAMPLE, active_channels=None)
+
+    assert len(result) == 3
+    assert all(e["is_live"] is False for e in result)
+
+
+def test_desglosa_red_y_estacion_del_scnl():
+    result = station_catalog({"lima": ["II.NNA.00.BHZ"]}, active_channels=set())
+
+    assert result[0]["network"] == "II"
+    assert result[0]["station"] == "NNA"
+    assert result[0]["city_id"] == "lima"
+
+
+def test_el_catalogo_real_expone_mas_canales_que_ciudades():
+    result = station_catalog(LIVE_CANDIDATES_BY_CITY, active_channels=set())
+
+    assert len(result) > len(LIVE_CANDIDATES_BY_CITY)  # 75 vs 27
+    assert len({e["channel"] for e in result}) == len(result)  # sin duplicados
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `./venv/bin/python -m pytest tests/unit/test_station_catalog.py -v --no-cov`
+Expected: FAIL con `ImportError: cannot import name 'station_catalog'`
+
+- [ ] **Step 3: Write the backend implementation**
+
+En `src/services/spectrogram_service.py`, después de `resolve_live_catalog`:
+
+```python
+def station_catalog(
+    candidates_by_city: Dict[str, List[str]], active_channels: Optional[set]
+) -> List[Dict[str, object]]:
+    """Catálogo COMPLETO de subestaciones: una entrada por candidata.
+
+    resolve_live_catalog devuelve la ganadora de cada ciudad (lo que el
+    dashboard consume por default); esto expone las 75 que el ingestor
+    realmente está ingestando, para que el usuario elija subestación como
+    en SWARM (comparar MT05 vs MT14 de Santiago, por ejemplo).
+
+    `is_live` es informativo: una candidata muda se ofrece igual, con el
+    badge en gris. active_channels=None ("no se pudo consultar la base",
+    misma semántica que resolve_live_catalog) no marca nada como vivo en
+    vez de mentir.
+    """
+    catalog: List[Dict[str, object]] = []
+    for city_id, candidates in candidates_by_city.items():
+        for index, channel in enumerate(candidates):
+            parts = channel.split(".")
+            catalog.append(
+                {
+                    "channel": channel,
+                    "city_id": city_id,
+                    "network": parts[0] if len(parts) > 0 else "",
+                    "station": parts[1] if len(parts) > 1 else "",
+                    "is_live": bool(active_channels) and channel in active_channels,
+                    "is_primary": index == 0,
+                }
+            )
+    return catalog
+```
+
+En `src/main.py`, junto a `/spectrograms/live-channels` (y ANTES de `/spectrograms/{city_id}`), replicando su manejo de Timescale ausente:
+
+```python
+@app.get("/spectrograms/station-catalog")
+async def get_station_catalog() -> list[dict]:
+    """Catálogo completo de subestaciones para el armador (PR-W3).
+
+    Distinto de /live-channels: ese devuelve la ganadora por ciudad; este
+    devuelve TODAS las candidatas ingestadas con su estado de frescura.
+    """
+    active = None
+    if column_writer is not None:
+        try:
+            active = await column_writer.fetch_active_channels(LIVE_FRESHNESS_MINUTES)
+        except Exception:
+            logger.warning("station-catalog: no se pudo consultar frescura", exc_info=True)
+    return station_catalog(LIVE_CANDIDATES_BY_CITY, active)
+```
+(Importar `station_catalog` junto a `resolve_live_catalog`. Copiar el patrón exacto de manejo de errores del endpoint `/live-channels` existente.)
+
+- [ ] **Step 4: Run backend tests**
+
+Run: `./venv/bin/python -m pytest tests/unit/test_station_catalog.py -v --no-cov`
+Expected: 6 PASS
+
+- [ ] **Step 5: Write the failing frontend test** (en `dashboard/components/WallManager.test.tsx`)
+
+```tsx
+it('el catálogo ofrece las subestaciones, no solo una por ciudad', async () => {
+  // mock de getStationCatalog con dos candidatas de la misma ciudad
+  renderManager({
+    catalog: [
+      { channel: 'C1.MT05..BHZ', city_id: 'santiago', network: 'C1', station: 'MT05', is_live: true, is_primary: true },
+      { channel: 'C1.MT14..BHZ', city_id: 'santiago', network: 'C1', station: 'MT14', is_live: false, is_primary: false },
+    ],
+  });
+
+  expect(await screen.findByText(/MT05/)).toBeInTheDocument();
+  expect(screen.getByText(/MT14/)).toBeInTheDocument();
+});
+
+it('el buscador filtra por código de estación, no solo por ciudad', async () => {
+  renderManager({ catalog: [/* mismas dos entradas */] });
+
+  fireEvent.change(await screen.findByPlaceholderText(/buscar|search/i), {
+    target: { value: 'MT14' },
+  });
+
+  expect(screen.queryByText(/MT05/)).toBeNull();
+  expect(screen.getByText(/MT14/)).toBeInTheDocument();
+});
+```
+(`renderManager` es el helper del archivo; usar `fireEvent`, NO `userEvent` — no está instalado en el repo, lección del W2.)
+
+- [ ] **Step 6: Write the frontend implementation**
+
+1. `dashboard/lib/types.ts`:
+```typescript
+/** Entrada del catálogo completo de subestaciones (PR-W3). */
+export interface StationCatalogEntry {
+  channel: string;
+  city_id: string;
+  network: string;
+  station: string;
+  is_live: boolean;
+  is_primary: boolean;
+}
+```
+2. `dashboard/lib/api.ts`: `getStationCatalog(): Promise<StationCatalogEntry[]>` → `GET /spectrograms/station-catalog`, con el mismo patrón de error que `getLiveChannels()`.
+3. `dashboard/components/WallManager.tsx:54-60`: cambiar la SWR `walls-catalog` a `getStationCatalog()` y armar el `catalog: WallChannel[]` con label `"{Ciudad} · {STATION}"` (el label es lo que ve el usuario y lo que se persiste en el muro). Mantener el orden del backend (primarias primero dentro de cada ciudad) y **la primaria viva de cada ciudad arriba de todo** para no cambiar el flujo del usuario que solo quiere "la de Tokyo".
+4. `dashboard/components/WallBuilder.tsx`: el buscador existente ("Search channel or city") debe matchear también contra `channel` y `station` (case-insensitive). Junto a cada candidata no viva, un punto gris; viva, verde — mismo lenguaje visual que el resto de la app. Claves i18n nuevas con paridad ES/EN para el placeholder actualizado y el tooltip del estado.
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `cd dashboard && npx vitest run components/WallManager.test.tsx components/WallBuilder.test.tsx && npx tsc --noEmit`
+Expected: PASS + tsc limpio
+
+- [ ] **Step 8: Verificación por mutación del filtro**
+
+Mutar el buscador para que vuelva a matchear solo por ciudad: debe fallar `el buscador filtra por código de estación`. Revertir.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/services/spectrogram_service.py src/main.py tests/unit/test_station_catalog.py dashboard/lib/api.ts dashboard/lib/types.ts dashboard/components/WallManager.tsx dashboard/components/WallBuilder.tsx dashboard/messages/es.json dashboard/messages/en.json dashboard/components/WallManager.test.tsx
+git commit -m "feat(catalogo): subestaciones buscables en el armador (75 canales, no 27)"
+```
+
+---
+
+### Task 13: Distancia a la ciudad en el catálogo (la "más cercana" de SWARM)
+
+**Files:**
+- Create: `dashboard/lib/station-distance.ts`
+- Test: `dashboard/lib/station-distance.test.ts`
+- Modify: `dashboard/components/WallManager.tsx` (ordenar por distancia dentro de cada ciudad), `dashboard/components/WallBuilder.tsx` (mostrar los km)
+
+**Interfaces:**
+- Consumes: `StationCatalogEntry` (Task 12), `HIGH_RISK_SEISMIC_CITIES` con `lat`/`lon` (`seismic-cities.ts:10-11, 24-25`).
+- Produces: `haversineKm(aLat, aLon, bLat, bLon): number`; `STATION_COORDS: Record<string, {lat: number; lon: number}>`; `stationDistanceKm(entry: StationCatalogEntry): number | null`.
+
+**Decisión de alcance (importante):** las coordenadas de las estaciones **no están en el repo** — hoy solo hay las de las ciudades. Pedirlas a FDSN en vivo agregaría una dependencia de red al armador, y el catálogo es fijo (75 canales verificados a mano, con las distancias ya anotadas en los comentarios de `spectrogram_service.py:74-88`). Por eso: **tabla estática `STATION_COORDS` en el front**, poblada desde los comentarios existentes del catálogo y completada con FDSN **una sola vez, a mano, al implementar**. Una estación sin coordenada devuelve `null` y se muestra sin km — nunca un número inventado.
+
+- [ ] **Step 1: Write the failing tests**
+
+```typescript
+// dashboard/lib/station-distance.test.ts
+import { describe, expect, it } from 'vitest';
+
+import { haversineKm, stationDistanceKm } from './station-distance';
+
+describe('haversineKm', () => {
+  it('la distancia de un punto a sí mismo es cero', () => {
+    expect(haversineKm(-33.4489, -70.6693, -33.4489, -70.6693)).toBe(0);
+  });
+
+  it('calcula una distancia conocida (Santiago–Valparaíso ≈ 100 km)', () => {
+    const km = haversineKm(-33.4489, -70.6693, -33.0472, -71.6127);
+    expect(km).toBeGreaterThan(90);
+    expect(km).toBeLessThan(110);
+  });
+
+  it('es simétrica', () => {
+    const ida = haversineKm(35.6762, 139.6503, -33.4489, -70.6693);
+    const vuelta = haversineKm(-33.4489, -70.6693, 35.6762, 139.6503);
+    expect(Math.abs(ida - vuelta)).toBeLessThan(0.001);
+  });
+
+  it('cruza el antimeridiano por el lado corto', () => {
+    // 179.9E a 179.9W son 0.2 grados de longitud, ~22 km en el ecuador,
+    // NO 359.8 grados. Es el bug clásico de restar longitudes a lo bruto.
+    const km = haversineKm(0, 179.9, 0, -179.9);
+    expect(km).toBeLessThan(50);
+  });
+});
+
+describe('stationDistanceKm', () => {
+  const entry = {
+    channel: 'C1.VA01..BHZ',
+    city_id: 'valparaiso',
+    network: 'C1',
+    station: 'VA01',
+    is_live: true,
+    is_primary: true,
+  };
+
+  it('devuelve los km entre la estación y su ciudad', () => {
+    const km = stationDistanceKm(entry);
+    expect(km).not.toBeNull();
+    expect(km!).toBeLessThan(20); // VA01 está a ~4 km de Valparaíso
+  });
+
+  it('sin coordenada de la estación devuelve null (nunca un número inventado)', () => {
+    expect(stationDistanceKm({ ...entry, channel: 'XX.NADA..HHZ', station: 'NADA' })).toBeNull();
+  });
+
+  it('sin ciudad conocida devuelve null', () => {
+    expect(stationDistanceKm({ ...entry, city_id: 'atlantis' })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd dashboard && npx vitest run lib/station-distance.test.ts`
+Expected: FAIL (módulo inexistente)
+
+- [ ] **Step 3: Write the implementation**
+
+```typescript
+// dashboard/lib/station-distance.ts
+/**
+ * Distancia estación ↔ ciudad para el armador (PR-W3, "la más cercana" de
+ * SWARM).
+ *
+ * Tabla estática y no una consulta FDSN a propósito: el catálogo son 75
+ * canales fijos verificados a mano (ver los comentarios de
+ * spectrogram_service.py, que ya anotan varias de estas distancias), y
+ * meterle una llamada de red al armador para un dato inmutable no se paga.
+ * Una estación sin coordenada devuelve null: se muestra sin km, nunca con
+ * un número inventado.
+ */
+
+import { HIGH_RISK_SEISMIC_CITIES } from './seismic-cities';
+import type { StationCatalogEntry } from './types';
+
+const EARTH_RADIUS_KM = 6371;
+
+const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
+
+export function haversineKm(
+  aLat: number,
+  aLon: number,
+  bLat: number,
+  bLon: number,
+): number {
+  const dLat = toRadians(bLat - aLat);
+  // Normalizar la diferencia de longitud a [-180, 180]: sin esto, cruzar
+  // el antimeridiano da 359.8° en vez de 0.2°.
+  let dLonDeg = bLon - aLon;
+  if (dLonDeg > 180) dLonDeg -= 360;
+  if (dLonDeg < -180) dLonDeg += 360;
+  const dLon = toRadians(dLonDeg);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(aLat)) * Math.cos(toRadians(bLat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * Coordenadas de las estaciones del catálogo, por código de estación.
+ * IMPORTANTE al implementar: completar esta tabla con los 75 canales de
+ * LIVE_CANDIDATES_BY_CITY consultando FDSN UNA vez (station service de
+ * IRIS/EarthScope) y pegando los valores acá. Lo que no se complete queda
+ * fuera y se muestra sin km.
+ */
+export const STATION_COORDS: Record<string, { lat: number; lon: number }> = {
+  VA01: { lat: -33.02, lon: -71.63 },
+  // … completar el resto al implementar …
+};
+
+const CITY_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c]));
+
+export function stationDistanceKm(entry: StationCatalogEntry): number | null {
+  const station = STATION_COORDS[entry.station];
+  const city = CITY_BY_ID.get(entry.city_id);
+  if (!station || !city) return null;
+  return Math.round(haversineKm(city.lat, city.lon, station.lat, station.lon));
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd dashboard && npx vitest run lib/station-distance.test.ts && npx tsc --noEmit`
+Expected: 7 PASS + tsc limpio
+
+- [ ] **Step 5: Verificación por mutación de la distancia**
+
+1. Quitar la normalización del antimeridiano — debe fallar `cruza el antimeridiano por el lado corto`.
+2. Cambiar `Math.cos(toRadians(aLat))` por `1` — debe fallar la distancia conocida Santiago–Valparaíso.
+3. Hacer que `stationDistanceKm` devuelva `0` en vez de `null` cuando falta la coordenada — deben fallar los dos tests de `null`.
+
+- [ ] **Step 6: Integrar en el armador**
+
+En `WallManager.tsx`: dentro de cada ciudad, ordenar las candidatas por distancia ascendente (las sin coordenada, al final); las primarias vivas siguen arriba de todo.
+En `WallBuilder.tsx`: mostrar `· {km} km` junto al SCNL cuando `stationDistanceKm` no es null. El buscador ya matchea por estación (Task 12).
+
+- [ ] **Step 7: Run the frontend suite**
+
+Run: `cd dashboard && npx vitest run && npx tsc --noEmit`
+Expected: todo PASS + tsc limpio
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add dashboard/lib/station-distance.ts dashboard/lib/station-distance.test.ts dashboard/components/WallManager.tsx dashboard/components/WallBuilder.tsx
+git commit -m "feat(catalogo): distancia estacion-ciudad y orden por cercania"
+```
+
+---
+
 ### Task 9: Verificación final, rama y PR
 
 **Files:**
 - Ninguno nuevo — verificación y entrega.
 
-- [ ] **Step 1: Suites completas**
+- [ ] **Step 1: Suites completas, con zona horaria hostil**
 
 ```bash
 ./venv/bin/python -m pytest tests/ --no-cov -q 2>&1 | tail -5
-cd dashboard && npx vitest run 2>&1 | tail -5 && npx tsc --noEmit
+cd dashboard && TZ=Asia/Tokyo npx vitest run 2>&1 | tail -5 && npx tsc --noEmit
 ```
-Expected: todo PASS, tsc limpio.
+Expected: todo PASS, tsc limpio. La `TZ` hostil es deliberada: con el runner en UTC, los tests de UTC pasarían sin probar nada.
 
 - [ ] **Step 2: Verificación anti-regresión del contrato**
 
 - El payload de `spec:{channel}` NO cambió (el frontend del canvas y TimescaleDB siguen intactos): `rg -n '"spec:' src/services/seedlink_ingestor.py` y revisar que `_compute_column` esté sin tocar.
 - `validate_wall_layout` (`wall_service.py:104`) sigue aceptando `showMetrics` — correr `./venv/bin/python -m pytest tests/unit/test_wall_layout_validation.py -v --no-cov`.
+- `/spectrograms/live-channels` sigue devolviendo UNA por ciudad (el catálogo nuevo es un endpoint aparte, no un cambio de contrato): `./venv/bin/python -m pytest tests/unit/test_spectrogram_service.py -v --no-cov`.
+- Los muros guardados con el catálogo viejo siguen abriendo: los `WallChannel` persistidos guardan `{channel,label}` propios, así que un label nuevo ("Santiago · MT05") NO reescribe los existentes. Verificar cargando un muro creado antes del cambio.
 
-- [ ] **Step 3: PR**
+- [ ] **Step 3: QA manual de las tres superficies** (2 minutos)
+
+1. `/spectrograms-live?tab=cards`: la fila de métricas reemplaza el badge de riesgo en las tarjetas vivas.
+2. `/spectrograms-live?tab=wall`: buscar "MT" en el armador debe listar varias subestaciones de Santiago con sus km; activar "Mostrar métricas", guardar.
+3. `/globe` → cartelera (ícono de grilla): la banda `RSAM · FI · lat` aparece en las tiras, y las horas visibles dicen UTC.
+
+- [ ] **Step 4: PR**
 
 ```bash
 git checkout -b feat/spectronet-wall-w3   # si no se creó al arrancar
 git push -u origin feat/spectronet-wall-w3
-gh pr create --title "feat(metricas): RSAM, FI y métricas por canal en tarjetas y muro (PR-W3)" --body "Implementa el §3 del spec del muro SPECTRONET: el ingestor deriva RSAM (paridad SWARM 600s), frecuencia dominante, FI, pico dB, eventos/hora y latencia de datos ya en mano (anti-OOM PR #25), publica metrics:{canal} + snapshot TTL 60s, y la API los sirve con GET /stations/{channel}/metrics y batch. Frontend: fila completa en tarjetas de /spectrograms-live y banda compacta en tiras del muro gated por showMetrics, con polling batch cada 15s."
+gh pr create --title "feat(metricas): RSAM, FI, catálogo de subestaciones y UTC (PR-W3)" --body "Implementa el §3 del spec del muro SPECTRONET más dos pedidos del usuario.
+
+Métricas: el ingestor deriva RSAM (paridad SWARM 600s), frecuencia dominante, FI, pico dB, eventos/hora y latencia de datos ya en mano (anti-OOM PR #25), publica metrics:{canal} + snapshot TTL 60s, y la API los sirve con GET /stations/{channel}/metrics y batch. Frontend: fila completa en tarjetas y banda compacta en tiras del muro gated por showMetrics, con polling batch cada 15s.
+
+Subestaciones: nuevo GET /spectrograms/station-catalog expone las 75 candidatas que el ingestor ya ingesta (antes la UI solo veía las 27 ganadoras del failover); el armador las busca por ciudad, red o código de estación y las ordena por cercanía.
+
+UTC: formatDateTimeCompact y los formats de next-intl pasan a UTC — antes formateaban en la zona del navegador junto a carteles que decían 'UTC'. Seguimiento pendiente: rotular con el sufijo UTC las vistas fuera del alcance de este PR (GlobeEventPanel, paneles de admin, mapas), que ya quedaron en UTC por el cambio de formats."
 ```
 Esperar checks en verde. Squash merge con el título del PR (patrón de la serie).
 
 ---
 
+## Orden de ejecución
+
+Tasks 1 → 8 (métricas, el §3 del spec), luego 10 → 13 (los dos pedidos del usuario del 2026-08-21), y Task 9 cierra con la verificación y el PR. Las Tasks 10-13 son independientes de 1-8: si se ejecutan en paralelo con worktrees, cuidado con los tres archivos compartidos (`messages/es.json`, `messages/en.json`, `WallBuilder.tsx`).
+
 ## Self-Review (hecho al escribir el plan)
 
 - **Cobertura del spec §3**: RSAM (T1), freq dominante/FI/pico dB (T2), eventos/hora (T1), latencia (T6, client-side de `endtime`), canal Redis `metrics:{channel}` (T4), `GET /stations/{channel}/metrics` (T5), fila en tarjeta (T7), banda en tira con `showMetrics` (T8). Decisión de diseño fino que el spec delegaba: polling batch, no WS nuevo.
-- **Tipos consistentes**: el payload JSON usa `freq_hz`/`events_hour` en TODAS las capas (ingestor T4, API T5, `StationMetrics` T6, componentes T7/T8).
-- **Restricción OOM**: las métricas usan el slice del buffer (≤4 s de señal) y las listas de la columna ya publicada; ningún endpoint recomputa espectros.
+- **Cobertura de los pedidos del usuario (2026-08-21)**: subestaciones buscables estilo SWARM (T12: catálogo de 75 + buscador por estación; T13: distancia y orden por cercanía); todo en UTC (T10: el fix de raíz en `formatDateTimeCompact` y los formats de next-intl; T11: el rótulo visible).
+- **Tipos consistentes**: el payload de métricas usa `freq_hz`/`events_hour` en TODAS las capas (ingestor T4, API T5, `StationMetrics` T6, componentes T7/T8). `StationCatalogEntry` (T12) usa `city_id`/`is_live`/`is_primary` en backend y frontend por igual, y T13 lo consume sin cambiarlo.
+- **Restricción OOM**: las métricas usan el slice del buffer (≤4 s de señal) y las listas de la columna ya publicada; ningún endpoint recomputa espectros. El catálogo de subestaciones es un dict en memoria, sin costo.
 - **Nota para el implementador de T4**: la firma real de `SeedLinkIngestor.__init__` manda — ajustar la construcción de los tests a los argumentos existentes (bus/column_writer/watchdog) en vez de copiar a ciegas los ejemplos.
+- **Nota para el implementador de T10**: es esperable que algún test existente asumiera hora local y se ponga rojo. Se arregla el test (esperar UTC), no el fix.
+- **Nota para el implementador de T13**: `STATION_COORDS` llega incompleta a propósito — completar los 75 canales consultando FDSN una vez, y dejar fuera lo que no se pueda verificar (devuelve `null` y se muestra sin km).
