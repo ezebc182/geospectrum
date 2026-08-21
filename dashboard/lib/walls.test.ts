@@ -11,7 +11,7 @@ function mockFetch(status: number, body: unknown = null) {
     statusText: String(status),
     json: () => Promise.resolve(body),
   } as Response;
-  const spy = vi.fn(() => Promise.resolve(response));
+  const spy = vi.fn((_input: string, _init?: RequestInit) => Promise.resolve(response));
   vi.stubGlobal('fetch', spy);
   return spy;
 }
