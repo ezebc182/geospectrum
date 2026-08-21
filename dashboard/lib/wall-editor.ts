@@ -9,6 +9,9 @@ import type { WallChannel, WallColumn, WallGroup, WallLayout } from './types';
 
 export const MAX_WALL_COLUMNS = 8;
 export const MAX_WALL_CHANNELS = 120;
+/** Espejo del backend (MAX_WALL_TEXT_LEN en wall_service.py): largo máximo
+ * de títulos de grupo. */
+export const MAX_WALL_TEXT_LEN = 40;
 
 export function createEmptyLayout(): WallLayout {
   return { columns: [{ groups: [] }], showMetrics: false };

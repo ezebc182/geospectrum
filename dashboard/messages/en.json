@@ -369,7 +369,7 @@
         "duplicate": "Duplicate",
         "delete": "Delete wall",
         "nameTaken": "You already have a wall with that name",
-        "invalidLayout": "The server rejected the wall: check the channels",
+        "invalidLayout": "The server rejected the wall: check titles and channels",
         "saveError": "The wall could not be saved",
         "needSession": "Sign in to save walls",
         "preview": "Preview",

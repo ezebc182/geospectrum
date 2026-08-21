@@ -103,6 +103,36 @@ describe('WallManager', () => {
     );
   });
 
+  it('createWall devuelve null (401) => avisa sesión vencida, NO "Guardado"', async () => {
+    arrange([]);
+    wallsMock.createWall.mockResolvedValue(null);
+    renderManager();
+    await waitFor(() => expect(wallsMock.listWalls).toHaveBeenCalled());
+    fireEvent.change(screen.getByPlaceholderText('Mi muro'), { target: { value: 'Nuevo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(screen.getByText('Iniciá sesión para guardar muros')).toBeTruthy());
+    expect(screen.queryByText('Guardado')).toBeNull();
+    // Tampoco revalidó la lista: no hubo persistencia real.
+    expect(wallsMock.listWalls).toHaveBeenCalledTimes(1);
+  });
+
+  it('deleteWall devuelve false (401) => avisa sesión vencida y preserva la selección', async () => {
+    arrange([{ id: 'w1', name: 'Andes', layout: LAYOUT, created_at: '', updated_at: '' }]);
+    wallsMock.deleteWall.mockResolvedValue(false);
+    renderManager();
+    await waitFor(() => expect(screen.getByText('Andes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Andes'));
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText('Mi muro') as HTMLInputElement).value).toBe('Andes')
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar muro' }));
+    await waitFor(() => expect(screen.getByText('Iniciá sesión para guardar muros')).toBeTruthy());
+    // El muro sigue seleccionado y la lista no se revalidó (mismo criterio
+    // que el fallo por excepción, más abajo).
+    expect(screen.getByRole('button', { name: 'Eliminar muro' })).toBeTruthy();
+    expect(wallsMock.listWalls).toHaveBeenCalledTimes(1);
+  });
+
   it('un fallo al borrar muestra el error y no resetea la selección', async () => {
     arrange([{ id: 'w1', name: 'Andes', layout: LAYOUT, created_at: '', updated_at: '' }]);
     wallsMock.deleteWall.mockRejectedValue(new ApiStatusError(500, 'boom'));

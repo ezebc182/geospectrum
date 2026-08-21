@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import es from '@/messages/es.json';
 import type { WallLayout } from '@/lib/types';
+import { MAX_WALL_TEXT_LEN } from '@/lib/wall-editor';
 import { WallBuilder } from './WallBuilder';
 
 const TOKYO = { channel: 'IU.MAJO.00.BHZ', label: 'Tokyo' };
@@ -52,6 +53,12 @@ describe('WallBuilder', () => {
     const catalog = within(screen.getByTestId('wall-catalog'));
     expect(catalog.queryByText('Tokyo')).toBeNull();
     expect(catalog.getByText('Lima')).toBeTruthy();
+  });
+
+  it('el input de título de grupo respeta el límite del backend (MAX_WALL_TEXT_LEN)', () => {
+    renderBuilder();
+    const input = screen.getByDisplayValue('ASIA') as HTMLInputElement;
+    expect(input.maxLength).toBe(MAX_WALL_TEXT_LEN);
   });
 
   it('renombrar el grupo dispara onChange con el título nuevo', () => {

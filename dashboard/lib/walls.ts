@@ -44,6 +44,29 @@ export async function updateWall(id: string, payload: WallPayload): Promise<Wall
   return request<Wall>(`/walls/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
 }
 
-export async function deleteWall(id: string): Promise<void> {
-  await request<unknown>(`/walls/${id}`, { method: 'DELETE' });
+/** Borra un muro. Devuelve `true` si el backend confirmó el borrado (204) y
+ * `false` cuando la sesión venció (401): no se borró nada del lado del
+ * servidor. No reusa `request` porque ese helper mapea TANTO el 401 como el
+ * 204 a `null` — acá el caller necesita distinguir ambos casos para no
+ * simular un éxito que nunca ocurrió. Otros !ok siguen tirando
+ * ApiStatusError, igual que el resto del CRUD. */
+export async function deleteWall(id: string): Promise<boolean> {
+  const response = await fetch(`${API_BASE_URL}/walls/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (response.status === 401) return false;
+  if (!response.ok) {
+    let detail = `API Error: ${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { detail?: unknown } | null;
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      // body no-JSON: queda el mensaje genérico
+    }
+    throw new ApiStatusError(response.status, detail);
+  }
+  return true;
 }

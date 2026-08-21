@@ -20,7 +20,7 @@ import { WallBuilder } from './WallBuilder';
 
 const CITY_NAME_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c.name]));
 
-type SaveOutcome = 'saved' | 'nameTaken' | 'invalidLayout' | 'saveError' | null;
+type SaveOutcome = 'saved' | 'nameTaken' | 'invalidLayout' | 'saveError' | 'needSession' | null;
 
 /** Copia pendiente de aplicar en el próximo pase del efecto de selección
  * (spec §2 duplicar): evitar un setTimeout(0), frágil en jsdom, para pisar
@@ -97,7 +97,13 @@ export function WallManager() {
     try {
       const payload = { name: name.trim(), layout };
       const saved = selectedId === 'new' ? await createWall(payload) : await updateWall(selectedId, payload);
-      if (saved) setSelectedId(saved.id);
+      if (!saved) {
+        // 401: la sesión venció mientras se editaba. No hubo persistencia —
+        // mostrar "Guardado" acá sería una mentira de UX.
+        setOutcome('needSession');
+        return;
+      }
+      setSelectedId(saved.id);
       setOutcome('saved');
       await mutate();
     } catch (error) {
@@ -112,15 +118,22 @@ export function WallManager() {
   const handleDelete = async () => {
     if (selectedId === 'new') return;
     try {
-      await deleteWall(selectedId);
+      const ok = await deleteWall(selectedId);
+      if (!ok) {
+        // 401: sesión vencida, el muro sigue existiendo del lado del
+        // servidor. Mismo criterio que abajo — no resetear selección ni
+        // revalidar, y avisar con la clave honesta en vez de "Eliminado".
+        setOutcome('needSession');
+        return;
+      }
       setSelectedId('new');
       await mutate();
     } catch {
-      // Mismo criterio que handleSave: se reusa la clave genérica de error
-      // de guardado (no hay una dedicada a "no se pudo borrar") y NO se
-      // resetea la selección ni se revalida la lista — el muro sigue
-      // existiendo del lado del servidor, así que seguir mostrándolo
-      // seleccionado es lo correcto.
+      // Mismo criterio: se reusa la clave genérica de error de guardado (no
+      // hay una dedicada a "no se pudo borrar") y NO se resetea la
+      // selección ni se revalida la lista — el muro sigue existiendo del
+      // lado del servidor, así que seguir mostrándolo seleccionado es lo
+      // correcto.
       setOutcome('saveError');
     }
   };
@@ -164,6 +177,7 @@ export function WallManager() {
           aria-label={t('name')}
           placeholder={t('namePlaceholder')}
           value={name}
+          maxLength={120}
           onChange={(e) => setName(e.target.value)}
         />
         <button

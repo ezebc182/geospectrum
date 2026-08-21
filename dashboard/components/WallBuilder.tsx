@@ -17,6 +17,7 @@ import {
   addColumn,
   addGroup,
   hasChannel,
+  MAX_WALL_TEXT_LEN,
   moveChannel,
   moveGroup,
   removeChannel,
@@ -131,6 +132,7 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
                       aria-label={t('groupTitleLabel')}
                       className="w-full bg-transparent font-mono text-xs font-bold uppercase"
                       value={group.title}
+                      maxLength={MAX_WALL_TEXT_LEN}
                       onChange={(e) => onChange(renameGroup(layout, ci, gi, e.target.value))}
                     />
                     <button type="button" aria-label={t('moveUp')} onClick={() => onChange(moveGroup(layout, ci, gi, -1))}>

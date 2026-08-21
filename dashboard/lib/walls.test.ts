@@ -40,8 +40,13 @@ describe('walls client', () => {
     expect(error.message).toContain('already exists');
   });
 
-  it('delete con 204 resuelve sin intentar parsear body', async () => {
+  it('delete con 204 resuelve true (borrado exitoso)', async () => {
     mockFetch(204);
-    await expect(deleteWall('abc')).resolves.toBeUndefined();
+    await expect(deleteWall('abc')).resolves.toBe(true);
+  });
+
+  it('delete con 401 resuelve false (sesión vencida, no borró nada)', async () => {
+    mockFetch(401);
+    await expect(deleteWall('abc')).resolves.toBe(false);
   });
 });

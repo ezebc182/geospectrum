@@ -369,7 +369,7 @@
         "duplicate": "Duplicar",
         "delete": "Eliminar muro",
         "nameTaken": "Ya tenés un muro con ese nombre",
-        "invalidLayout": "El servidor rechazó el muro: revisá los canales",
+        "invalidLayout": "El servidor rechazó el muro: revisá títulos y canales",
         "saveError": "No se pudo guardar el muro",
         "needSession": "Iniciá sesión para guardar muros",
         "preview": "Vista previa",
