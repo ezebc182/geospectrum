@@ -83,3 +83,47 @@ def swarm_spectrogram_db(
     # centro temporal de cada bin, como computeTime() de SWARM
     times = (starts + nbin / 2) / fs
     return freqs[mask], times, power_db
+
+
+# --- Métricas espectrales por columna (PR-W3, spec muro §3) ---------------
+# Trabajan sobre la columna YA calculada (listas del payload publicado):
+# derivar métricas de datos en mano es la regla anti-OOM del PR #25.
+
+FI_LOW_BAND_HZ = (1.0, 5.0)
+FI_HIGH_BAND_HZ = (5.0, 15.0)
+
+
+def dominant_frequency_hz(freqs, power_db) -> float | None:
+    """Frecuencia del bin de mayor potencia de la columna."""
+    freqs = np.asarray(freqs, dtype=np.float64)
+    power = np.asarray(power_db, dtype=np.float64)
+    if freqs.size == 0 or power.size == 0:
+        return None
+    return float(freqs[int(np.argmax(power))])
+
+
+def peak_db(power_db) -> float | None:
+    """Máximo de la columna — comparable entre estaciones por la escala fija 20-120."""
+    power = np.asarray(power_db, dtype=np.float64)
+    if power.size == 0:
+        return None
+    return float(np.max(power))
+
+
+def frequency_index(freqs, power_db) -> float | None:
+    """FI = log10(mean_dB(5-15) / mean_dB(1-5)).
+
+    Negativo = LP/fluidos, positivo = VT/fractura. None si alguna banda no
+    tiene bins (fs baja) o si una media no es positiva (log indefinido).
+    """
+    freqs = np.asarray(freqs, dtype=np.float64)
+    power = np.asarray(power_db, dtype=np.float64)
+    low = power[(freqs >= FI_LOW_BAND_HZ[0]) & (freqs < FI_LOW_BAND_HZ[1])]
+    high = power[(freqs >= FI_HIGH_BAND_HZ[0]) & (freqs <= FI_HIGH_BAND_HZ[1])]
+    if low.size == 0 or high.size == 0:
+        return None
+    low_mean = float(np.mean(low))
+    high_mean = float(np.mean(high))
+    if low_mean <= 0.0 or high_mean <= 0.0:
+        return None
+    return float(np.log10(high_mean / low_mean))

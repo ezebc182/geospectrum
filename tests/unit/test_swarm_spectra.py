@@ -12,6 +12,9 @@ import pytest
 
 from src.services.swarm_spectra import (
     KAISER_BETA,
+    dominant_frequency_hz,
+    frequency_index,
+    peak_db,
     swarm_bin_samples,
     swarm_column_db,
     swarm_spectrogram_db,
@@ -118,3 +121,50 @@ def test_la_deriva_del_instrumento_no_fabrica_un_embudo():
     assert sine_row.mean() == pytest.approx(
         _expected_peak_db(amp, swarm_bin_samples(fs)), abs=1.0
     )
+
+
+# --- métricas espectrales del PR-W3 ---------------------------------------
+
+
+def test_dominant_frequency_es_el_bin_de_mayor_potencia():
+    freqs = [0.0, 1.0, 2.0, 3.0]
+    power = [10.0, 50.0, 90.0, 40.0]
+    assert dominant_frequency_hz(freqs, power) == 2.0
+
+
+def test_dominant_frequency_con_columna_vacia_es_none():
+    assert dominant_frequency_hz([], []) is None
+
+
+def test_peak_db_es_el_maximo_de_la_columna():
+    assert peak_db([30.0, 87.3, 45.0]) == 87.3
+    assert peak_db([]) is None
+
+
+def test_fi_positivo_cuando_domina_la_banda_alta():
+    # banda baja (1-5) media 40 dB, banda alta (5-15) media 80 dB
+    freqs = [1.0, 3.0, 6.0, 10.0]
+    power = [40.0, 40.0, 80.0, 80.0]
+    result = frequency_index(freqs, power)
+    assert result is not None
+    assert abs(result - np.log10(80.0 / 40.0)) < 1e-9
+
+
+def test_fi_negativo_cuando_domina_la_banda_baja():
+    freqs = [1.0, 3.0, 6.0, 10.0]
+    power = [80.0, 80.0, 40.0, 40.0]
+    result = frequency_index(freqs, power)
+    assert result is not None
+    assert result < 0
+
+
+def test_fi_sin_bins_en_la_banda_alta_es_none():
+    # fs baja: Nyquist < 5 Hz, no hay banda 5-15
+    assert frequency_index([1.0, 2.0, 4.0], [50.0, 50.0, 50.0]) is None
+
+
+def test_fi_con_media_no_positiva_es_none():
+    # dB crudos pueden ser <= 0 con amplitud minúscula; log10 indefinido
+    freqs = [1.0, 3.0, 6.0, 10.0]
+    power = [-5.0, -5.0, 40.0, 40.0]
+    assert frequency_index(freqs, power) is None

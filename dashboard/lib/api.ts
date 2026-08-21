@@ -3,7 +3,14 @@
  */
 
 import type { AppLocale } from './locale';
-import type { BetaSignup, MonitorReport, SeismicEvent, Alert, WallResponse } from './types';
+import type {
+  BetaSignup,
+  MonitorReport,
+  SeismicEvent,
+  Alert,
+  StationCatalogEntry,
+  WallResponse,
+} from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -129,6 +136,14 @@ class SeismicAPI {
    */
   async getLiveChannels(): Promise<{ city_id: string; channel: string }[]> {
     return this.fetchJSON('/spectrograms/live-channels');
+  }
+
+  /**
+   * Catálogo completo de subestaciones (PR-W3): TODAS las candidatas
+   * ingestadas, no solo la ganadora por ciudad de getLiveChannels().
+   */
+  async getStationCatalog(): Promise<StationCatalogEntry[]> {
+    return this.fetchJSON<StationCatalogEntry[]>('/spectrograms/station-catalog');
   }
 
   /**

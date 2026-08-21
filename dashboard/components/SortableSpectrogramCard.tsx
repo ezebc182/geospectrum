@@ -9,21 +9,39 @@ import type { SeismicCity } from '@/lib/seismic-cities';
 import { getRiskColor } from '@/lib/seismic-cities';
 import { SpectrogramViewReal } from '@/components/SpectrogramViewReal';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { latencySeconds, type StationMetrics } from '@/lib/station-metrics';
 
 interface SortableSpectrogramCardProps {
   city: SeismicCity;
   /** Canal SEED si esta ciudad tiene streaming en vivo disponible; si es
    * undefined, la tarjeta muestra solo el modo estático (24h), sin toggle. */
   liveChannel?: string;
+  /** Métricas de dominio del canal en vivo (PR-W3); undefined mientras el
+   * polling no las trajo o si el canal no publica. */
+  metrics?: StationMetrics;
   onRemove: (cityId: string) => void;
 }
 
-export function SortableSpectrogramCard({ city, liveChannel, onRemove }: SortableSpectrogramCardProps) {
+/** Los null del contrato de métricas se muestran como guion, nunca como 0. */
+const DASH = '—';
+
+export function SortableSpectrogramCard({
+  city,
+  liveChannel,
+  metrics,
+  onRemove,
+}: SortableSpectrogramCardProps) {
   const t = useTranslations('charts.spectrogram');
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: city.id,
   });
   const [mode, setMode] = useState<'live' | 'static'>(liveChannel ? 'live' : 'static');
+
+  // La fila solo tiene sentido sobre señal viva: en modo 24h las métricas
+  // serían de un instante que no es el que se está mirando.
+  const showMetrics = mode === 'live' && Boolean(liveChannel) && metrics !== undefined;
+  // Se recalcula en cada render; el polling de 15 s dispara los que importan.
+  const latency = metrics ? latencySeconds(metrics.endtime, Date.now()) : null;
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -71,19 +89,50 @@ export function SortableSpectrogramCard({ city, liveChannel, onRemove }: Sortabl
         <X className="h-3 w-3" />
       </button>
 
-      {/* Nivel de riesgo sísmico de la ZONA (clasificación estática del
-          catálogo, no estado de la señal): punto de color + texto apagado,
-          para que no se lea como una alarma en vivo. */}
-      <div
-        className="absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/50 text-[9px] font-semibold text-gray-300 z-10"
-        title={t('riskTooltip')}
-      >
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ backgroundColor: getRiskColor(city.riskLevel) }}
-        />
-        {t(`riskLabel.${city.riskLevel}`)}
-      </div>
+      {showMetrics && metrics ? (
+        /* Fila de métricas de dominio (PR-W3): con señal viva el estado de la
+           SEÑAL le gana a la clasificación estática de la zona, así que
+           reemplaza al badge de riesgo en vez de convivir con él. */
+        <div
+          data-testid="card-metrics-row"
+          className="absolute bottom-2 left-2 right-2 z-10 flex items-center justify-between gap-1 rounded bg-black/60 px-1.5 py-0.5 font-data text-[9px] text-gray-200"
+          title={t('metrics.tooltip')}
+        >
+          <span>
+            {t('metrics.rsam')} {metrics.rsam === null ? DASH : Math.round(metrics.rsam)}
+          </span>
+          <span>
+            {t('metrics.freqDominant')} {metrics.freq_hz === null ? DASH : `${metrics.freq_hz}Hz`}
+          </span>
+          <span>
+            {t('metrics.fi')} {metrics.fi === null ? DASH : metrics.fi.toFixed(2)}
+          </span>
+          <span>
+            {t('metrics.peakDb')} {metrics.peak_db === null ? DASH : metrics.peak_db.toFixed(1)}
+          </span>
+          <span>
+            {t('metrics.eventsHour')} {metrics.events_hour ?? DASH}
+          </span>
+          <span>
+            {t('metrics.latency')} {latency === null ? DASH : `${latency}s`}
+          </span>
+        </div>
+      ) : (
+        /* Nivel de riesgo sísmico de la ZONA (clasificación estática del
+            catálogo, no estado de la señal): punto de color + texto apagado,
+            para que no se lea como una alarma en vivo. Fallback cuando no hay
+            métricas, para que un canal caído no deje la tarjeta muda. */
+        <div
+          className="absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/50 text-[9px] font-semibold text-gray-300 z-10"
+          title={t('riskTooltip')}
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: getRiskColor(city.riskLevel) }}
+          />
+          {t(`riskLabel.${city.riskLevel}`)}
+        </div>
+      )}
     </div>
   );
 }

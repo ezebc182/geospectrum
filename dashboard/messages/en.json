@@ -6,6 +6,7 @@
       "en": "English"
     },
     "notAvailable": "N/A",
+    "utcSuffix": "UTC",
     "refreshingArea": "Updating data for the selected area…"
   },
   "nav": {
@@ -318,6 +319,15 @@
         "extreme": "Extreme",
         "high": "High",
         "moderate": "Moderate"
+      },
+      "metrics": {
+        "rsam": "RSAM",
+        "freqDominant": "dom f",
+        "fi": "FI",
+        "peakDb": "peak",
+        "eventsHour": "ev/h",
+        "latency": "lat",
+        "tooltip": "RSAM (10 min moving average) · dominant frequency · Frequency Index (− fluids / + fracture) · peak dB (fixed 20-120 scale) · events per hour · latency"
       }
     },
     "spectrogramsPage": {
@@ -342,9 +352,11 @@
         "tabCards": "Cards",
         "tabWall": "Wall",
         "catalogTitle": "Available channels",
-        "searchPlaceholder": "Search channel or city",
+        "searchPlaceholder": "Search city, station or channel",
         "add": "Add",
         "alreadyInWall": "Already in the wall",
+        "channelLive": "Streaming now",
+        "channelSilent": "No recent data",
         "column": "Column {number}",
         "addColumn": "Add column",
         "removeColumn": "Remove column",

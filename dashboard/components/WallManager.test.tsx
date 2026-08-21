@@ -21,6 +21,7 @@ const { wallsMock, apiMock } = vi.hoisted(() => ({
   apiMock: {
     getGlobalWall: vi.fn(),
     getLiveChannels: vi.fn(),
+    getStationCatalog: vi.fn(),
   },
 }));
 
@@ -47,10 +48,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function arrange(walls: unknown[] | null = []) {
+/** Entradas del catálogo completo de subestaciones (PR-W3). */
+const CATALOG = [
+  {
+    channel: 'IU.MAJO.00.BHZ',
+    city_id: 'tokyo',
+    network: 'IU',
+    station: 'MAJO',
+    is_live: true,
+    is_primary: true,
+  },
+];
+
+function arrange(walls: unknown[] | null = [], catalog: unknown[] = CATALOG) {
   wallsMock.listWalls.mockResolvedValue(walls);
   apiMock.getGlobalWall.mockResolvedValue({ id: 'global', name: 'Global', layout: LAYOUT });
-  apiMock.getLiveChannels.mockResolvedValue([{ city_id: 'tokyo', channel: 'IU.MAJO.00.BHZ' }]);
+  apiMock.getStationCatalog.mockResolvedValue(catalog);
 }
 
 describe('WallManager', () => {
@@ -148,5 +161,72 @@ describe('WallManager', () => {
     // selección != 'new') sigue en pantalla y listWalls no se revalidó.
     expect(screen.getByRole('button', { name: 'Eliminar muro' })).toBeTruthy();
     expect(wallsMock.listWalls).toHaveBeenCalledTimes(1);
+  });
+
+  // --- catálogo completo de subestaciones (PR-W3) -------------------------
+  const SANTIAGO_CATALOG = [
+    {
+      channel: 'C1.MT05..BHZ',
+      city_id: 'santiago',
+      network: 'C1',
+      station: 'MT05',
+      is_live: true,
+      is_primary: true,
+    },
+    {
+      channel: 'C1.MT14..BHZ',
+      city_id: 'santiago',
+      network: 'C1',
+      station: 'MT14',
+      is_live: false,
+      is_primary: false,
+    },
+  ];
+
+  /** Filas del catálogo del armador que mencionan una estación. "MT05"
+   * aparece dos veces por fila (label y SCNL), así que se cuentan filas. */
+  const catalogRowsWith = (station: RegExp) =>
+    Array.from(
+      screen.getByTestId('wall-catalog').querySelectorAll('li')
+    ).filter((li) => station.test(li.textContent ?? ''));
+
+  it('el catálogo ofrece las subestaciones, no solo una por ciudad', async () => {
+    arrange([], SANTIAGO_CATALOG);
+    renderManager();
+    await waitFor(() => expect(apiMock.getStationCatalog).toHaveBeenCalled());
+
+    await waitFor(() => expect(catalogRowsWith(/MT05/)).toHaveLength(1));
+    expect(catalogRowsWith(/MT14/)).toHaveLength(1);
+  });
+
+  it('el buscador filtra por código de estación, no solo por ciudad', async () => {
+    arrange([], SANTIAGO_CATALOG);
+    renderManager();
+    await waitFor(() => expect(catalogRowsWith(/MT05/)).toHaveLength(1));
+
+    fireEvent.change(screen.getByPlaceholderText(/buscar/i), {
+      target: { value: 'MT14' },
+    });
+
+    expect(catalogRowsWith(/MT05/)).toHaveLength(0);
+    expect(catalogRowsWith(/MT14/)).toHaveLength(1);
+  });
+
+  it('un muro guardado conserva SU label, no el del catálogo nuevo', async () => {
+    // Anti-regresión: el catálogo ahora etiqueta "Tokyo · MAJO", pero un muro
+    // ya persistido guarda "Tokyo" a secas. Cargarlo NO debe reescribir el
+    // label guardado — el usuario nombró sus tiras y el catálogo no manda.
+    arrange([{ id: 'w1', name: 'Andes', layout: LAYOUT, created_at: '', updated_at: '' }]);
+    renderManager();
+    await waitFor(() => expect(screen.getByText('Andes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Andes'));
+
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText('Mi muro') as HTMLInputElement).value).toBe('Andes')
+    );
+    const rows = screen.getAllByTestId('builder-channel-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Tokyo');
+    expect(rows[0].textContent).not.toContain('MAJO');
   });
 });

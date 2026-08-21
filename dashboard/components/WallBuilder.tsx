@@ -27,10 +27,20 @@ import {
   toggleMetrics,
 } from '@/lib/wall-editor';
 
+/**
+ * Entrada del catálogo del armador (PR-W3): un WallChannel más lo que se
+ * necesita para elegir subestación como en SWARM — el código de estación
+ * (buscable) y si está transmitiendo ahora (informativo, no filtra).
+ */
+export interface CatalogItem extends WallChannel {
+  station: string;
+  isLive: boolean;
+}
+
 interface WallBuilderProps {
   layout: WallLayout;
   onChange: (layout: WallLayout) => void;
-  catalog: WallChannel[];
+  catalog: CatalogItem[];
 }
 
 export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
@@ -42,8 +52,13 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return catalog;
+    // El código de estación se busca aparte del label: con 75 candidatas el
+    // usuario que quiere MT14 lo escribe tal cual, no "Santiago".
     return catalog.filter(
-      (ch) => ch.label.toLowerCase().includes(query) || ch.channel.toLowerCase().includes(query)
+      (ch) =>
+        ch.label.toLowerCase().includes(query) ||
+        ch.channel.toLowerCase().includes(query) ||
+        ch.station.toLowerCase().includes(query)
     );
   }, [catalog, search]);
 
@@ -68,6 +83,13 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
             return (
               <li key={ch.channel} className="flex items-center justify-between gap-2 text-sm">
                 <span className="truncate" title={ch.channel}>
+                  <span
+                    aria-hidden
+                    title={ch.isLive ? t('channelLive') : t('channelSilent')}
+                    className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${
+                      ch.isLive ? 'bg-teal-500' : 'bg-muted-foreground/50'
+                    }`}
+                  />
                   {ch.label}
                   <span className="ml-1 font-mono text-[10px] text-muted-foreground">{ch.channel}</span>
                 </span>
@@ -76,7 +98,17 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
                   className="rounded border border-border px-1.5 py-0.5 text-xs disabled:opacity-40"
                   disabled={present || !activeGroupExists}
                   title={present ? t('alreadyInWall') : t('add')}
-                  onClick={() => onChange(addChannel(layout, active.col, active.group, ch))}
+                  // Solo {channel, label} se persiste: station/isLive son del
+                  // catálogo del armador, meterlos en el layout guardaría
+                  // frescura vieja como si fuera parte del muro.
+                  onClick={() =>
+                    onChange(
+                      addChannel(layout, active.col, active.group, {
+                        channel: ch.channel,
+                        label: ch.label,
+                      })
+                    )
+                  }
                 >
                   {t('add')}
                 </button>

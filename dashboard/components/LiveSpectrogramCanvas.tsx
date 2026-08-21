@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useFormatter } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import { jet2 } from '@/lib/jet2-palette';
 import {
   historyMinutesForWidth,
@@ -59,6 +59,7 @@ export function LiveSpectrogramCanvas({
   // el toLocaleTimeString() sin locale dependía del runtime, no del idioma
   // elegido por el usuario.
   const format = useFormatter();
+  const tCommon = useTranslations('common');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
@@ -201,8 +202,11 @@ export function LiveSpectrogramCanvas({
       </div>
 
       {lastUpdate && (
+        /* El rótulo UTC no es decorativo: sin él el operador tiene que
+           adivinar la zona, y una hora mal atribuida correlaciona mal con
+           el catálogo de eventos (que también viene en UTC). */
         <div className="absolute bottom-1 left-2 z-10 bg-black/60 px-2 py-1 rounded text-[9px] text-gray-300">
-          {format.dateTime(new Date(lastUpdate), 'time')}
+          {format.dateTime(new Date(lastUpdate), 'time')} {tCommon('utcSuffix')}
         </div>
       )}
     </div>

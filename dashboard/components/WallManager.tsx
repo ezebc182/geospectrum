@@ -12,11 +12,11 @@ import useSWR from 'swr';
 import { seismicAPI } from '@/lib/api';
 import { ApiStatusError } from '@/lib/auth';
 import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
-import type { WallChannel, WallLayout } from '@/lib/types';
+import type { WallLayout } from '@/lib/types';
 import { createEmptyLayout } from '@/lib/wall-editor';
 import { createWall, deleteWall, listWalls, updateWall } from '@/lib/walls';
 import { SpectronetWall } from './SpectronetWall';
-import { WallBuilder } from './WallBuilder';
+import { WallBuilder, type CatalogItem } from './WallBuilder';
 
 const CITY_NAME_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c.name]));
 
@@ -38,9 +38,14 @@ export function WallManager() {
   const { data: globalWall } = useSWR('walls-global', () => seismicAPI.getGlobalWall(), {
     revalidateOnFocus: false,
   });
-  const { data: liveChannels } = useSWR('walls-catalog', () => seismicAPI.getLiveChannels(), {
-    revalidateOnFocus: false,
-  });
+  // Catálogo COMPLETO de subestaciones (PR-W3): las 75 candidatas que el
+  // ingestor ya recibe, no las 27 ganadoras del failover. Sin esto un
+  // usuario no puede comparar MT05 vs MT14 de Santiago.
+  const { data: stationCatalog } = useSWR(
+    'walls-catalog',
+    () => seismicAPI.getStationCatalog(),
+    { revalidateOnFocus: false }
+  );
 
   const [selectedId, setSelectedId] = useState<'new' | string>('new');
   const [name, setName] = useState('');
@@ -51,14 +56,27 @@ export function WallManager() {
 
   const noSession = walls === null;
 
-  const catalog: WallChannel[] = useMemo(
-    () =>
-      (liveChannels ?? []).map((c) => ({
-        channel: c.channel,
-        label: CITY_NAME_BY_ID.get(c.city_id) ?? c.city_id,
-      })),
-    [liveChannels]
-  );
+  // El label es lo que ve el usuario Y lo que se persiste en el muro, por eso
+  // incluye la estación: dos tiras de Santiago que dijeran solo "Santiago"
+  // serían indistinguibles. Orden: la primaria viva de cada ciudad arriba de
+  // todo (el usuario que solo quiere "la de Tokyo" no cambia de flujo), y
+  // después el resto respetando el orden del backend (primarias primero
+  // dentro de cada ciudad).
+  const catalog: CatalogItem[] = useMemo(() => {
+    const entries = (stationCatalog ?? []).map((entry) => {
+      const city = CITY_NAME_BY_ID.get(entry.city_id) ?? entry.city_id;
+      return {
+        channel: entry.channel,
+        label: entry.station ? `${city} · ${entry.station}` : city,
+        station: entry.station,
+        isLive: entry.is_live,
+        isPrimary: entry.is_primary,
+      };
+    });
+    const featured = entries.filter((e) => e.isPrimary && e.isLive);
+    const rest = entries.filter((e) => !(e.isPrimary && e.isLive));
+    return [...featured, ...rest];
+  }, [stationCatalog]);
 
   // Cargar el muro elegido en el editor (o resetear en "nuevo"). Ojo: NO
   // depende de `pendingDuplicate` — si dependiera, consumirlo (setearlo a

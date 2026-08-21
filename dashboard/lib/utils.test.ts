@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMagnitudeSeverity } from './utils';
+import { formatDateTimeCompact, getMagnitudeSeverity } from './utils';
 
 describe('getMagnitudeSeverity', () => {
   it('mapea mag=6 a critical', () => {
@@ -33,5 +33,29 @@ describe('getMagnitudeSeverity', () => {
 
   it('mapea magnitudes muy altas a critical', () => {
     expect(getMagnitudeSeverity(9.5)).toBe('critical');
+  });
+});
+
+describe('formatDateTimeCompact — siempre UTC', () => {
+  it('formatea en UTC, no en la zona del proceso', () => {
+    // 13:06 UTC debe salir 13:06 corra donde corra el test (TZ del CI puede
+    // ser cualquiera). Con getHours() local esto falla fuera de UTC.
+    expect(formatDateTimeCompact('2026-08-21T13:06:40.000Z')).toBe(
+      '2026-08-21 13:06:40',
+    );
+  });
+
+  it('no corre el día hacia atrás cerca de medianoche UTC', () => {
+    // El caso que delata la zona local: 00:30 UTC es "el día anterior 21:30"
+    // en Buenos Aires. La fecha debe seguir siendo la del 22.
+    expect(formatDateTimeCompact('2026-08-22T00:30:00.000Z')).toBe(
+      '2026-08-22 00:30:00',
+    );
+  });
+
+  it('acepta el formato de endtime de ObsPy (microsegundos)', () => {
+    expect(formatDateTimeCompact('2026-08-21T14:32:10.123456Z')).toBe(
+      '2026-08-21 14:32:10',
+    );
   });
 });
