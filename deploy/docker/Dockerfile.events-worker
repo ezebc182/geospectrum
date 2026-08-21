@@ -1,0 +1,77 @@
+# =============================================================================
+# Dockerfile para el worker de eventos sísmicos (Railway) — PR-W4
+#
+# Mismo build que deploy/docker/Dockerfile.seedlink y que la API: comparten
+# requirements y código fuente. Existe como archivo aparte por el mismo motivo
+# que el del seedlink — Railway elige el Dockerfile por servicio vía
+# RAILWAY_DOCKERFILE_PATH y la única diferencia real es el CMD final.
+#
+# Qué corre: src/services/events_ingestor.py, que escucha el WebSocket de EMSC
+# (push real en segundos) y pollea USGS cada 60 s, deduplica contra la tabla
+# seismic_events y publica en Redis lo que trae novedad.
+#
+# Sin EXPOSE ni healthcheck HTTP: este proceso no escucha ningún puerto.
+#
+# Config obligatoria en Railway (además de la compartida):
+#   REDIS_URL                     → dónde publicar
+#   TIMESCALEDB_HOST/USER/PASSWORD/DB → dónde persistir (sin esto NO arranca:
+#                                   publicar sin persistir es justo lo que el
+#                                   diseño evita)
+#   RUN_MIGRATIONS_ON_STARTUP=false → sólo el servicio api hace DDL; si cada
+#                                   proceso migrara competirían por el lock en
+#                                   cada deploy (settings.py:80-83)
+# =============================================================================
+
+FROM python:3.11-slim AS base
+
+# Sin esto Python bufferiza stdout cuando no escribe a una TTY —o sea, siempre
+# dentro de un contenedor— y los logs se pierden si el proceso muere antes de
+# llenar el buffer. Es la mitad del incidente del ingestor de SeedLink: deploy
+# verde y mudo a la vez.
+ENV PYTHONUNBUFFERED=1
+
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app && \
+    chown appuser:appuser /app
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libpq5 \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# Stage: dependencies
+# =============================================================================
+
+FROM base AS dependencies
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# =============================================================================
+# Stage: production
+# =============================================================================
+
+FROM base AS production
+
+COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=dependencies /usr/local/bin /usr/local/bin
+
+COPY --chown=appuser:appuser src /app/src
+COPY --chown=appuser:appuser .env.example /app/.env.example
+
+USER appuser
+
+CMD ["python", "-m", "src.services.events_ingestor"]
