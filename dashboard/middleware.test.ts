@@ -75,8 +75,22 @@ describe('middleware — allowlist de rutas públicas', () => {
     expect(isPassThrough(response)).toBe(true);
   });
 
-  it('una ruta de (app) sin cookie redirige a /login', async () => {
+  it('/globe sin cookie pasa (modo kiosk: la cartelera se comparte por URL)', async () => {
     const response = await middleware(makeRequest('/globe'));
+
+    expect(isPassThrough(response)).toBe(true);
+    expect(response.headers.get('location')).toBeNull();
+  });
+
+  it('/globe con cookie de firma inválida también pasa (es pública, no valida sesión)', async () => {
+    // Un kiosk con una cookie vieja/corrupta no debe rebotar a /login.
+    const response = await middleware(makeRequest('/globe', 'token-trucho'));
+
+    expect(isPassThrough(response)).toBe(true);
+  });
+
+  it('una ruta de (app) sin cookie redirige a /login', async () => {
+    const response = await middleware(makeRequest('/settings'));
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('http://localhost:3008/login');
@@ -84,7 +98,7 @@ describe('middleware — allowlist de rutas públicas', () => {
 
   it('una ruta de (app) con cookie de firma inválida redirige a /login', async () => {
     // Regresión: la allowlist no debe convertir un token trucho en sesión.
-    const response = await middleware(makeRequest('/globe', 'token-trucho'));
+    const response = await middleware(makeRequest('/settings', 'token-trucho'));
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('http://localhost:3008/login');
@@ -93,7 +107,7 @@ describe('middleware — allowlist de rutas públicas', () => {
   it('una ruta de (app) con cookie válida pasa', async () => {
     const token = await signSessionToken();
 
-    const response = await middleware(makeRequest('/globe', token));
+    const response = await middleware(makeRequest('/settings', token));
 
     expect(isPassThrough(response)).toBe(true);
     expect(response.headers.get('location')).toBeNull();
@@ -120,6 +134,13 @@ describe('middleware — allowlist de rutas públicas', () => {
     // isPublicPath matchea por segmento (`/invite` o `/invite/...`), no por
     // startsWith pelado: /inviteX debe seguir protegida.
     const response = await middleware(makeRequest('/invitaciones-fake'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3008/login');
+  });
+
+  it('rutas que empiezan parecido a /globe pero no son el prefijo NO pasan', async () => {
+    const response = await middleware(makeRequest('/globetrotter'));
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe('http://localhost:3008/login');
