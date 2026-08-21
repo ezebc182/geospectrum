@@ -8,6 +8,7 @@ Railway marcaba el deploy `SUCCESS` sobre un ingestor que no ingestaba nada, y
 sin PYTHONUNBUFFERED los logs se perdían en el buffer: silencio total.
 """
 
+import asyncio
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -15,7 +16,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from obspy import Trace
+from obspy import Trace, UTCDateTime
 
 from src.services.seedlink_ingestor import SeedLinkIngestor, channels_from_catalog
 
@@ -332,3 +333,160 @@ def test_compute_column_tiene_paridad_swarm():
     assert freqs.max() <= 25.0
     assert abs(freqs[int(power.argmax())] - 22.0) < 0.5
     assert power.max() > 60  # escala SWARM: counts de a miles viven en 60-120 dB
+
+
+# ---------------------------------------------------------------------------
+# Métricas por canal (PR-W3): el ingestor deriva RSAM/FI/pico/eventos de datos
+# que YA tiene en mano y los publica al lado de la columna. La publicación es
+# best-effort: un fallo de métricas JAMÁS puede frenar la ingesta de columnas.
+# ---------------------------------------------------------------------------
+
+
+def _make_trace(fs: float = 20.0, seconds: int = 60, amp: float = 100.0) -> Trace:
+    rng = np.random.default_rng(42)
+    data = (rng.normal(0.0, amp, int(fs * seconds))).astype(np.float64)
+    tr = Trace(data=data)
+    tr.stats.network, tr.stats.station = "IU", "MAJO"
+    tr.stats.location, tr.stats.channel = "00", "BHZ"
+    tr.stats.sampling_rate = fs
+    tr.stats.starttime = UTCDateTime("2026-08-21T12:00:00")
+    return tr
+
+
+class _RecordingBus:
+    """Captura (canal, payload) de publish sin Redis ni loop de verdad."""
+
+    def __init__(self):
+        self.published: list[tuple[str, dict]] = []
+
+    async def publish(self, channel: str, event: dict) -> None:
+        self.published.append((channel, event))
+
+
+class _RecordingStore:
+    def __init__(self):
+        self.snapshots: list[tuple[str, dict]] = []
+
+    async def set_snapshot(self, channel: str, metrics: dict, ttl_s: int = 60) -> None:
+        self.snapshots.append((channel, metrics))
+
+
+def _drive_on_data(ingestor, trace):
+    """Corre _on_data con un loop real y ESPERA a que las corutinas terminen.
+
+    Drenar con un sleep fijo dejaría el test verde por casualidad si alguna
+    publicación nunca se agenda; acá se interceptan los futures que devuelve
+    run_coroutine_threadsafe y se esperan uno por uno. Si una corutina deja
+    escapar una excepción, el .result() la re-levanta acá — que es lo que
+    convierte al test del best-effort en una verificación real.
+    """
+    import src.services.seedlink_ingestor as module
+
+    loop = asyncio.new_event_loop()
+    ingestor._loop = loop
+    futures = []
+    real_submit = asyncio.run_coroutine_threadsafe
+
+    def _tracking_submit(coro, target_loop):
+        future = real_submit(coro, target_loop)
+        futures.append(future)
+        return future
+
+    runner = threading.Thread(target=loop.run_forever, daemon=True)
+    runner.start()
+    try:
+        module.asyncio.run_coroutine_threadsafe = _tracking_submit
+        try:
+            ingestor._on_data(trace)
+        finally:
+            module.asyncio.run_coroutine_threadsafe = real_submit
+        for future in futures:
+            future.result(timeout=5)
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        runner.join(timeout=5)
+        loop.close()
+
+
+def test_on_data_publica_metricas_junto_con_la_columna():
+    bus = _RecordingBus()
+    store = _RecordingStore()
+    ingestor = SeedLinkIngestor(bus=bus, metrics_store=store)
+
+    _drive_on_data(ingestor, _make_trace())
+
+    channels = [c for c, _ in bus.published]
+    assert "spec:IU.MAJO.00.BHZ" in channels
+    assert "metrics:IU.MAJO.00.BHZ" in channels
+    metrics = next(p for c, p in bus.published if c.startswith("metrics:"))
+    assert set(metrics) == {
+        "channel",
+        "endtime",
+        "rsam",
+        "freq_hz",
+        "fi",
+        "peak_db",
+        "events_hour",
+    }
+    assert metrics["channel"] == "IU.MAJO.00.BHZ"
+    assert metrics["rsam"] is not None and metrics["rsam"] > 0
+    assert metrics["peak_db"] is not None
+    assert metrics["events_hour"] == 0  # ruido estacionario: sin eventos
+    assert store.snapshots and store.snapshots[0][0] == "IU.MAJO.00.BHZ"
+    assert store.snapshots[0][1] == metrics
+
+
+def test_la_columna_publicada_no_cambio_de_forma():
+    """El payload de spec:{canal} es contrato en producción (canvas del
+    dashboard + TimescaleDB): agregar métricas no puede tocarlo."""
+    bus = _RecordingBus()
+    ingestor = SeedLinkIngestor(bus=bus, metrics_store=_RecordingStore())
+
+    _drive_on_data(ingestor, _make_trace())
+
+    column = next(p for c, p in bus.published if c.startswith("spec:"))
+    assert set(column) == {"channel", "endtime", "freqs", "power_db"}
+    assert column["channel"] == "IU.MAJO.00.BHZ"
+    assert isinstance(column["freqs"], list) and isinstance(column["power_db"], list)
+
+
+def test_un_fallo_de_metricas_no_frena_la_columna():
+    class _BoomStore:
+        async def set_snapshot(self, channel, metrics, ttl_s=60):
+            raise RuntimeError("redis caido")
+
+    bus = _RecordingBus()
+    ingestor = SeedLinkIngestor(bus=bus, metrics_store=_BoomStore())
+
+    # _drive_on_data hace .result() de cada future: si _publish_metrics dejara
+    # escapar el RuntimeError, este llamado levantaría acá y el test fallaría.
+    _drive_on_data(ingestor, _make_trace())
+
+    # la columna salió igual; el fallo del snapshot quedó en un warning
+    assert any(c.startswith("spec:") for c, _ in bus.published)
+
+
+def test_un_fallo_calculando_metricas_no_frena_la_columna(monkeypatch):
+    """El cálculo corre en el hilo de ObsPy, ANTES de encolar nada: si
+    reventara ahí se llevaría puesto el callback entero, no solo las métricas."""
+
+    def _explota(_data):
+        raise RuntimeError("numpy explotó")
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.rsam_sample", _explota)
+    bus = _RecordingBus()
+    ingestor = SeedLinkIngestor(bus=bus, metrics_store=_RecordingStore())
+
+    _drive_on_data(ingestor, _make_trace())
+
+    assert any(c.startswith("spec:") for c, _ in bus.published)
+    assert not any(c.startswith("metrics:") for c, _ in bus.published)
+
+
+def test_sin_store_sigue_publicando_pubsub():
+    bus = _RecordingBus()
+    ingestor = SeedLinkIngestor(bus=bus)  # metrics_store default None
+
+    _drive_on_data(ingestor, _make_trace())
+
+    assert any(c.startswith("metrics:") for c, _ in bus.published)

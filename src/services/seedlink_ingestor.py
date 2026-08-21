@@ -30,7 +30,15 @@ from obspy.clients.seedlink.easyseedlink import create_client
 
 from src.config.settings import settings
 from src.services.channel_watchdog import ChannelWatchdog
-from src.services.swarm_spectra import swarm_bin_samples, swarm_column_db
+from src.services.metrics_store import MetricsStore
+from src.services.swarm_rsam import RsamAccumulator, rsam_sample
+from src.services.swarm_spectra import (
+    dominant_frequency_hz,
+    frequency_index,
+    peak_db,
+    swarm_bin_samples,
+    swarm_column_db,
+)
 from src.services.event_bus import EventBus, RedisPubSubBus
 from src.services.spectrogram_service import LIVE_CANDIDATES_BY_CITY
 from src.services.timescale_service import TimescaleColumnWriter
@@ -74,10 +82,13 @@ class SeedLinkIngestor:
         check_interval_s: float = CHECK_INTERVAL_SECONDS,
         give_up_after_s: float = GIVE_UP_AFTER_SECONDS,
         reconnect_delay_s: float = RECONNECT_DELAY_SECONDS,
+        metrics_store: Optional[MetricsStore] = None,
     ):
         self.bus = bus
         self.server = server
         self.column_writer = column_writer
+        self.metrics_store = metrics_store
+        self._rsam: dict[str, RsamAccumulator] = {}
         self.watchdog = ChannelWatchdog(stale_after_s=stale_after_s)
         self.check_interval_s = check_interval_s
         self.give_up_after_s = give_up_after_s
@@ -127,6 +138,14 @@ class SeedLinkIngestor:
             if self.column_writer is not None:
                 asyncio.run_coroutine_threadsafe(self.column_writer.add_column(column), self._loop)
 
+            # Métricas al final y a prueba de balas: la columna ya salió, así
+            # que nada de lo que pase acá puede frenarla.
+            metrics = self._compute_metrics(stream[0], channel_id, column, now)
+            if metrics is not None:
+                asyncio.run_coroutine_threadsafe(
+                    self._publish_metrics(channel_id, metrics), self._loop
+                )
+
     def _compute_column(self, trace: Trace, channel_id: str) -> Optional[dict]:
         """Calcula la última columna del espectrograma con paridad SWARM.
 
@@ -151,6 +170,56 @@ class SeedLinkIngestor:
                 "seedlink_ingestor: fallo calculando columna de %s", channel_id, exc_info=True
             )
             return None
+
+    def _compute_metrics(
+        self, trace: Trace, channel_id: str, column: dict, now: datetime
+    ) -> Optional[dict]:
+        """Métricas de dominio del tick — SOLO de datos ya en mano (anti-OOM PR #25).
+
+        RSAM muestrea el último tick del buffer; el resto sale de la columna
+        recién calculada (mismas listas que ve el frontend).
+
+        Corre en el hilo de ObsPy y DESPUÉS de publicar la columna: por eso
+        atrapa todo. Un numpy que reviente acá se llevaría puesto el callback
+        entero (y con él la ingesta), no solo las métricas.
+        """
+        try:
+            acc = self._rsam.setdefault(channel_id, RsamAccumulator())
+            tick = trace.slice(starttime=trace.stats.endtime - COLUMN_INTERVAL_SECONDS)
+            acc.add(rsam_sample(np.asarray(tick.data)), now)
+
+            rsam_value = acc.rsam(now)
+            fi_value = frequency_index(column["freqs"], column["power_db"])
+            freq_value = dominant_frequency_hz(column["freqs"], column["power_db"])
+            return {
+                "channel": channel_id,
+                "endtime": column["endtime"],
+                "rsam": round(rsam_value, 1) if rsam_value is not None else None,
+                "freq_hz": round(freq_value, 2) if freq_value is not None else None,
+                "fi": round(fi_value, 2) if fi_value is not None else None,
+                "peak_db": peak_db(column["power_db"]),
+                "events_hour": acc.events_last_hour(now),
+            }
+        except Exception:
+            logger.warning(
+                "seedlink_ingestor: fallo calculando métricas de %s",
+                channel_id,
+                exc_info=True,
+            )
+            return None
+
+    async def _publish_metrics(self, channel_id: str, metrics: dict) -> None:
+        """Best-effort: un fallo acá JAMÁS debe frenar la ingesta de columnas."""
+        try:
+            await self.bus.publish(f"metrics:{channel_id}", metrics)
+            if self.metrics_store is not None:
+                await self.metrics_store.set_snapshot(channel_id, metrics)
+        except Exception:
+            logger.warning(
+                "seedlink_ingestor: fallo publicando métricas de %s",
+                channel_id,
+                exc_info=True,
+            )
 
     def _watchdog_loop(self) -> None:
         """Hilo daemon: fuerza reconexión cuando hay canales mudos.
@@ -221,6 +290,22 @@ class SeedLinkIngestor:
                 asyncio.run_coroutine_threadsafe(
                     self.column_writer.connect(), self._loop
                 ).result()
+
+            if self.metrics_store is not None:
+                # Misma regla que el pool de asyncpg: el cliente de Redis nace
+                # en el loop donde se usa. Y es best-effort: sin Redis se pierden
+                # las métricas, no la ingesta de columnas.
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self.metrics_store.connect(), self._loop
+                    ).result()
+                except Exception:
+                    logger.warning(
+                        "seedlink_ingestor: MetricsStore no pudo conectar — "
+                        "sigo sin snapshots de métricas",
+                        exc_info=True,
+                    )
+                    self.metrics_store = None
 
             channel_keys = [f"{net}.{sta}.{cha}" for net, sta, cha in channels]
             threading.Thread(target=self._watchdog_loop, daemon=True).start()
@@ -348,7 +433,13 @@ if __name__ == "__main__":
                 "sin persistencia de historial, solo streaming en vivo por Redis"
             )
 
-        ingestor = SeedLinkIngestor(bus, column_writer=column_writer)
+        # No conectar acá, por la misma razón que el column_writer: el cliente
+        # de Redis se conecta dentro de run(), en el loop del ingestor.
+        metrics_store = MetricsStore(settings.redis_url)
+
+        ingestor = SeedLinkIngestor(
+            bus, column_writer=column_writer, metrics_store=metrics_store
+        )
         # run() es bloqueante y no-async: se corre en un hilo separado del
         # loop principal, que se queda vivo solo para mantener el proceso.
         thread = threading.Thread(target=ingestor.run, args=(DEFAULT_CHANNELS,), daemon=True)
@@ -361,6 +452,17 @@ if __name__ == "__main__":
             if column_writer is not None and ingestor._loop is not None:
                 # close() debe correr en el mismo loop donde vive el pool.
                 asyncio.run_coroutine_threadsafe(column_writer.close(), ingestor._loop).result()
+            # ingestor.metrics_store puede haber quedado en None si Redis no
+            # estaba al arrancar: cerrar lo que no se conectó no aporta nada.
+            if ingestor.metrics_store is not None and ingestor._loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        ingestor.metrics_store.close(), ingestor._loop
+                    ).result()
+                except Exception:
+                    logger.warning(
+                        "seedlink_ingestor: fallo cerrando el MetricsStore", exc_info=True
+                    )
 
         # El hilo es daemon y `run()` bloquea para siempre mientras todo va
         # bien: que hayamos salido del while significa que terminó, y eso
