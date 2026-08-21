@@ -32,7 +32,8 @@ export function pickSpotlight(
 
   const pool = ordered.slice(0, FOCUS_POOL_SIZE);
   const candidates = pool.length > 1 ? pool.filter((e) => e.id !== lastId) : pool;
-  return candidates[Math.floor(rand() * candidates.length)] ?? null;
+  const index = Math.min(Math.floor(rand() * candidates.length), candidates.length - 1);
+  return candidates[index] ?? null;
 }
 
 export function readFocusMode(search: string, stored: string | null): FocusMode {

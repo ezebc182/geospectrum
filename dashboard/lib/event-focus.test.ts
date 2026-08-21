@@ -34,6 +34,31 @@ describe('pickSpotlight modo random', () => {
     const only = [ev('solo', '2026-08-20T10:00:00Z')];
     expect(pickSpotlight('random', only, 'solo', () => 0)!.id).toBe('solo');
   });
+
+  it('mata mutación: filtra lastId aunque rand() lo seleccione directamente', () => {
+    // Pool de 3 eventos, si rand retorna 0.33 (índice 0 sin filtro)
+    // y e0 es lastId, el filtro lo saca y quedan 2 candidatos
+    // esperamos que NO devuelva e0
+    const eventos = [
+      ev('e0', '2026-08-20T03:00:00Z'),
+      ev('e1', '2026-08-20T02:00:00Z'),
+      ev('e2', '2026-08-20T01:00:00Z'),
+    ].sort((a, b) => (a.hora_utc < b.hora_utc ? 1 : -1));
+
+    const picked = pickSpotlight('random', eventos, 'e0', () => 0.33);
+    expect(picked).not.toBeNull();
+    expect(picked!.id).not.toBe('e0');
+  });
+
+  it('rand() = 1 no causa out-of-bounds', () => {
+    const eventos = [
+      ev('e0', '2026-08-20T02:00:00Z'),
+      ev('e1', '2026-08-20T01:00:00Z'),
+    ];
+    const picked = pickSpotlight('random', eventos, null, () => 1);
+    expect(picked).not.toBeNull();
+    expect([eventos[0]!.id, eventos[1]!.id]).toContain(picked!.id);
+  });
 });
 
 describe('pickSpotlight modo latest', () => {
