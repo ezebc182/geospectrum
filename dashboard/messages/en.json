@@ -275,6 +275,10 @@
         "random": "Random",
         "latest": "Latest event"
       },
+      "wallSelector": {
+        "label": "Wall",
+        "global": "Global"
+      },
       "topRegions": "Most active regions (24 h)",
       "hourlyActivity": "Hourly activity (24 h)",
       "now": "now",
@@ -333,7 +337,44 @@
       "livePill": "live",
       "emptyTitle": "No cities selected",
       "emptyHint": "Add cities to start monitoring their seismic activity",
-      "addCities": "Add Cities"
+      "addCities": "Add Cities",
+      "wall": {
+        "tabCards": "Cards",
+        "tabWall": "Wall",
+        "catalogTitle": "Available channels",
+        "searchPlaceholder": "Search channel or city",
+        "add": "Add",
+        "alreadyInWall": "Already in the wall",
+        "column": "Column {number}",
+        "addColumn": "Add column",
+        "removeColumn": "Remove column",
+        "addGroup": "Add group",
+        "newGroupTitle": "NEW GROUP",
+        "groupTitleLabel": "Group title",
+        "removeGroup": "Remove group",
+        "activeGroup": "Active group",
+        "selectGroup": "Select group",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "remove": "Remove",
+        "showMetrics": "Show metrics",
+        "channelsCount": "{count} channels",
+        "emptyGroup": "No channels — add them from the catalog",
+        "name": "Wall name",
+        "namePlaceholder": "My wall",
+        "save": "Save",
+        "saving": "Saving…",
+        "saved": "Saved",
+        "newWall": "New wall",
+        "duplicate": "Duplicate",
+        "delete": "Delete wall",
+        "nameTaken": "You already have a wall with that name",
+        "invalidLayout": "The server rejected the wall: check titles and channels",
+        "saveError": "The wall could not be saved",
+        "needSession": "Sign in to save walls",
+        "preview": "Preview",
+        "wallsTitle": "My walls"
+      }
     }
   },
   "settings": {

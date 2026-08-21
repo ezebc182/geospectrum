@@ -313,21 +313,61 @@ export interface AccountExport {
 export type LoginResult = { requiresTwoFactor: true } | { requiresTwoFactor: false; user: UserPublic };
 
 /**
- * Respuesta de `GET /walls/global` (spectronet-wall, Task 1) — muro default
- * "Global" estilo SPECTRONET, estático y generado del catálogo. `layout`
- * describe columnas de la grilla; cada columna trae grupos (regiones) con
- * encabezado y las tiras (canal + etiqueta) que le corresponden.
+ * Canal dentro de un grupo: identificador + etiqueta para la UI.
+ */
+export interface WallChannel {
+  channel: string;
+  label: string;
+}
+
+/**
+ * Grupo de canales (región): encabezado y lista de tiras.
+ */
+export interface WallGroup {
+  title: string;
+  channels: WallChannel[];
+}
+
+/**
+ * Columna de la grilla: contiene grupos.
+ */
+export interface WallColumn {
+  groups: WallGroup[];
+}
+
+/**
+ * Layout del muro: columnas de la grilla + bandera de métricas.
+ * Describe la estructura visual para `GET /walls/global` (spectronet-wall, Task 1)
+ * — muro default "Global" estilo SPECTRONET, estático y generado del catálogo.
+ */
+export interface WallLayout {
+  columns: WallColumn[];
+  showMetrics: boolean;
+}
+
+/**
+ * Respuesta de `GET /walls`, `POST /walls`, `PUT /walls/{id}`.
+ * Identificadores e datos estructurales del muro sin timestamps.
  */
 export interface WallResponse {
   id: string;
   name: string;
-  layout: {
-    columns: {
-      groups: {
-        title: string;
-        channels: { channel: string; label: string }[];
-      }[];
-    }[];
-    showMetrics: boolean;
-  };
+  layout: WallLayout;
+}
+
+/**
+ * Muro con timestamps (extensión de WallResponse para endpoints que retornan
+ * created_at y updated_at — típicamente GET /walls y PUT /walls/{id}).
+ */
+export interface Wall extends WallResponse {
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Payload para POST /walls y PUT /walls/{id} — los datos que el caller envía.
+ */
+export interface WallPayload {
+  name: string;
+  layout: WallLayout;
 }

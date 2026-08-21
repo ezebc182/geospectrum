@@ -4,11 +4,17 @@
  * disponible en las ciudades que src/services/seedlink_ingestor.py tiene
  * suscriptas (GET /spectrograms/live-channels); el resto muestra el
  * histórico estático de 24h (imagen FDSN vía matplotlib).
+ *
+ * Pestañas "Tarjetas"/"Muro" (PR-W2): la pestaña activa vive en la URL
+ * (?tab=cards|wall, patrón admin/access/page.tsx) para que los deep-links
+ * funcionen. useSearchParams exige un límite de Suspense en Next 15 (mismo
+ * patrón que globe/page.tsx).
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   DndContext,
@@ -20,6 +26,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable';
 import { SortableSpectrogramCard } from '@/components/SortableSpectrogramCard';
+import { WallManager } from '@/components/WallManager';
 import {
   HIGH_RISK_SEISMIC_CITIES,
   type SeismicCity,
@@ -31,6 +38,7 @@ import { Activity, Grid3x3, Plus, Search, X, MapPin, Loader2 } from 'lucide-reac
 
 type ViewMode = 'grid' | 'list';
 type GridSize = 2 | 3 | 4 | 6;
+type PageTab = 'cards' | 'wall';
 
 const STORAGE_KEY = 'spectrograms.selectedCities.v1';
 
@@ -46,8 +54,25 @@ function loadStoredCities(): SeismicCity[] | null {
   }
 }
 
+/** useSearchParams obliga a un límite de Suspense en Next 15 (patrón globe/page.tsx). */
 export default function SpectrogramsLivePage() {
+  return (
+    <Suspense fallback={null}>
+      <SpectrogramsLiveView />
+    </Suspense>
+  );
+}
+
+function SpectrogramsLiveView() {
   const t = useTranslations('charts.spectrogramsPage');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab: PageTab = searchParams.get('tab') === 'wall' ? 'wall' : 'cards';
+
+  function selectTab(next: PageTab) {
+    router.replace(`${pathname}?tab=${next}`, { scroll: false });
+  }
   const [selectedCities, setSelectedCities] = useState<SeismicCity[]>(
     HIGH_RISK_SEISMIC_CITIES.slice(0, 12)
   );
@@ -230,6 +255,40 @@ export default function SpectrogramsLivePage() {
         </div>
       </div>
 
+      {/* Pestañas Tarjetas/Muro (PR-W2): la pestaña activa vive en ?tab=. */}
+      <div role="tablist" className="mb-6 flex gap-1 border-b border-border">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'cards'}
+          onClick={() => selectTab('cards')}
+          className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            tab === 'cards'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {t('wall.tabCards')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'wall'}
+          onClick={() => selectTab('wall')}
+          className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            tab === 'wall'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {t('wall.tabWall')}
+        </button>
+      </div>
+
+      {tab === 'wall' && <WallManager />}
+
+      {tab === 'cards' && (
+        <>
       {/* Selector de Ciudades */}
       {showCitySelector && (
         <div className="mb-6 bg-card border border-border rounded-lg p-4">
@@ -351,6 +410,8 @@ export default function SpectrogramsLivePage() {
             {t('addCities')}
           </button>
         </div>
+      )}
+        </>
       )}
     </div>
   );

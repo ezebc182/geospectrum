@@ -31,11 +31,13 @@ import {
   topRegions,
 } from '@/lib/broadcast-stats';
 import { FOCUS_INTERVAL_MS, pickSpotlight, readFocusMode, type FocusMode } from '@/lib/event-focus';
+import { GLOBAL_WALL_ID, WALL_PARAM, WALL_STORAGE_KEY, readWallSelection, resolveWall } from '@/lib/wall-selection';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
 import { SpectronetWall } from '@/components/SpectronetWall';
 import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
+import { listWalls } from '@/lib/walls';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
 
@@ -165,9 +167,42 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
   // Muro SPECTRONET (Task 1): estático, generado del catálogo — no depende
   // de qué esté transmitiendo ahora, por eso no necesita refresco periódico.
-  const { data: wallData } = useSWR('broadcast-wall', () => seismicAPI.getGlobalWall(), {
+  const { data: globalWall } = useSWR('broadcast-wall', () => seismicAPI.getGlobalWall(), {
     revalidateOnFocus: false,
   });
+  // Muros propios del usuario (Task 4): sin sesión, listWalls resuelve null
+  // (401) y el selector queda solo con la opción Global.
+  const { data: userWalls } = useSWR('broadcast-user-walls', () => listWalls(), {
+    revalidateOnFocus: false,
+  });
+  // Selección del muro a mostrar en la cartelera (Task 8): query param gana
+  // sobre localStorage (kiosks por URL), default el muro Global.
+  const [wallId, setWallId] = useState<string>(() => {
+    if (typeof window === 'undefined') return GLOBAL_WALL_ID;
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(WALL_STORAGE_KEY);
+    } catch {
+      // storage bloqueado: queda el default
+    }
+    return readWallSelection(window.location.search, stored);
+  });
+  // id desconocido o muro borrado cae al Global: la cartelera nunca queda
+  // en blanco (resolveWall, Task 8).
+  const activeWall = resolveWall(wallId, userWalls, globalWall);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WALL_STORAGE_KEY, wallId);
+    } catch {
+      // storage bloqueado: la selección vive solo en la sesión
+    }
+    // history.replaceState, NUNCA router.replace: este último remonta el
+    // canvas WebGL del globo (mismo patrón que ?event= en globe/page.tsx).
+    const url = new URL(window.location.href);
+    if (wallId === GLOBAL_WALL_ID) url.searchParams.delete(WALL_PARAM);
+    else url.searchParams.set(WALL_PARAM, wallId);
+    window.history.replaceState(null, '', url.toString());
+  }, [wallId]);
   // Selección del usuario (agregar/quitar estaciones); sin selección se
   // muestran las primeras SPECTRO_STRIPS que estén en vivo.
   const [spectroSelection, setSpectroSelection] = useState<string[] | null>(loadSpectroSelection);
@@ -719,6 +754,28 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                 ))}
               </div>
 
+              {/* Selector de muro de la cartelera (Task 8): Global + los
+                  propios del usuario. <select> nativo porque son N muros
+                  (el radiogroup de foco solo sirve para 2 opciones fijas). */}
+              <div className="mt-2 mb-1 border-t border-border px-2 pt-2">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('wallSelector.label')}
+                </div>
+                <select
+                  aria-label={t('wallSelector.label')}
+                  className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                  value={wallId}
+                  onChange={(e) => setWallId(e.target.value)}
+                >
+                  <option value={GLOBAL_WALL_ID}>{t('wallSelector.global')}</option>
+                  {(userWalls ?? []).map((wall) => (
+                    <option key={wall.id} value={wall.id}>
+                      {wall.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Estaciones del stack de espectrogramas: agregar/quitar de
                   entre las que están transmitiendo ahora. */}
               {(liveChannels ?? []).length > 0 && (
@@ -797,8 +854,8 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             data-testid="billboard-wall"
             className={`flex-1 overflow-hidden ${slide === 'wall' ? 'flex' : 'hidden'}`}
           >
-            {wallData ? (
-              <SpectronetWall wall={wallData} stripWidth={SPECTRO_WIDTH} stripHeight={WALL_STRIP_HEIGHT} />
+            {activeWall ? (
+              <SpectronetWall wall={activeWall} stripWidth={SPECTRO_WIDTH} stripHeight={WALL_STRIP_HEIGHT} />
             ) : (
               <div className="flex flex-1 flex-wrap content-start justify-center gap-1.5 p-3">
                 {wallStrips.map((s) => (
