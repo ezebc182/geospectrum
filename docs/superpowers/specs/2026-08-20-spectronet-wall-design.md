@@ -98,11 +98,22 @@ Dos modos, seleccionables en la UI de broadcast y persistidos en `localStorage` 
 - Cuando el **foco automático** (random o latest) apunta a un evento, esa fila también se resalta — el sidebar siempre cuenta QUÉ está mirando la cámara.
 - Un solo estado compartido `focusedEventId` (contexto/estado del broadcast); el resaltado es un estilo de fila, no una re-consulta.
 
-## 5. Entrega
+## 5. Push de eventos (reemplaza el polling encadenado)
 
-1. **PR-W1** — Tiras + layout SPECTRONET en `/globe` con el muro default "Global" server-side + modos de foco de eventos.
+Hoy: frontend pollea 30 s → cache 30 s → USGS actualiza ~60 s ⇒ un evento tarda 1-2 min en verse ("Updated 1m 5s"). Conecta con la decisión de julio de persistir eventos con worker aparte.
+
+- **Worker de ingesta de eventos** (proceso aparte, patrón seedlink-ingestor): escucha el WebSocket de EMSC SeismicPortal (`wss://www.seismicportal.eu/standing_order/websocket`, push real en segundos) + pollea el feed GeoJSON de USGS cada 60 s server-side. Dedup por id de evento entre fuentes (mismo criterio de merge que /report).
+- Publica eventos nuevos en Redis (`events`) → el API los reenvía por WS nuevo `/ws/events` (mismo patrón que `/ws/spectrogram/{channel}`).
+- Frontend: sidebar y globo consumen `/ws/events` sin timer; el contador "Updated Xs" se reemplaza por un indicador "live" (verde = WS conectado, amarillo = reconectando, con fallback al polling actual si el WS cae).
+- El modo de foco `latest` (§4) se alimenta de este stream: la cámara se mueve a los segundos del evento real, no del próximo poll.
+- Resiliencia: reconexión con backoff, watchdog de silencio (patrón `channel_watchdog`), y el worker muere VISIBLE si queda mudo (lección del ingestor).
+
+## 6. Entrega
+
+1. **PR-W1** — Tiras + layout SPECTRONET en `/globe` con el muro default "Global" server-side + modos de foco de eventos + resaltado en sidebar.
 2. **PR-W2** — Tabla `walls` + migración + CRUD + armador manual en `/spectrograms` + selector de muro en `/globe`.
 3. **PR-W3** — `swarm_rsam.py` + métricas por canal (ingestor → Redis → API) + banda de métricas en tiras y tarjetas.
+4. **PR-W4** — Worker de push de eventos (EMSC WS + poll USGS) + `/ws/events` + indicador "live" en sidebar y globo.
 
 Después retoma el PR A del helicorder (plan ya escrito).
 
