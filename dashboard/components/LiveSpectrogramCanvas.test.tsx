@@ -8,11 +8,14 @@
  */
 
 import * as React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import es from '@/messages/es.json';
+// Los formats REALES de producción (no una copia): así el test verifica la
+// config que corre en la app, incluido el timeZone: 'UTC' del format 'time'.
+import { formats } from '@/i18n/request';
 import { LiveSpectrogramCanvas } from './LiveSpectrogramCanvas';
 
 /** Stub de WebSocket que registra cada instancia creada para poder
@@ -102,5 +105,41 @@ describe('LiveSpectrogramCanvas — cleanup de reconexión', () => {
     // Con el bug, acá se crea una segunda instancia (WebSocket huérfano que
     // nadie cierra). Con el fix, el timer se canceló en el cleanup.
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+});
+
+/**
+ * PR-W3 Task 11: el estándar del dominio sísmico es UTC y toda fuente
+ * (USGS, EMSC, ObsPy endtime) ya llega en UTC. Una hora sin rótulo obliga
+ * al operador a adivinar la zona — y si adivina mal, correlaciona mal.
+ */
+describe('LiveSpectrogramCanvas — hora en UTC', () => {
+  it('la hora de última actualización se muestra en UTC con su rótulo', async () => {
+    render(
+      <NextIntlClientProvider locale="es" messages={es} formats={formats}>
+        <LiveSpectrogramCanvas channel="IU.MAJO.00.BHZ" label="Tokyo" />
+      </NextIntlClientProvider>
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      MockWebSocket.instances[0]!.onmessage?.({
+        data: JSON.stringify({
+          channel: 'IU.MAJO.00.BHZ',
+          endtime: '2026-08-21T13:06:40.000000Z',
+          freqs: [1, 2],
+          power_db: [40, 50],
+        }),
+      });
+    });
+
+    // 13:06:40 UTC, no la hora local del runner (el script corre con
+    // TZ hostil: en Buenos Aires serían las 10:06, en Tokyo las 22:06).
+    expect(screen.getByText(/13:06:40/)).toBeTruthy();
+    expect(screen.getByText(/UTC/)).toBeTruthy();
   });
 });
