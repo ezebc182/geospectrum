@@ -74,3 +74,55 @@ def build_global_wall() -> dict:
             "showMetrics": False,
         },
     }
+
+
+import re
+
+# --- Validación de layouts de muros guardados (PR-W2, spec §2) ---
+
+MAX_WALL_COLUMNS = 8
+MAX_WALL_CHANNELS = 120
+MAX_WALL_TEXT_LEN = 40  # títulos de grupo y labels de tira
+
+# SCNL del catálogo real: NET 1-2, STA 1-5, LOC 0-2 (frecuentemente vacío), CHA 3
+_SCNL_RE = re.compile(r"^[A-Z0-9]{1,2}\.[A-Z0-9]{1,5}\.[A-Z0-9]{0,2}\.[A-Z0-9]{3}$")
+
+
+class InvalidWallLayoutError(ValueError):
+    """Layout que no cumple el contrato: forma, límites o canales no SCNL."""
+
+
+def _valid_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and len(value) <= MAX_WALL_TEXT_LEN
+
+
+def validate_wall_layout(layout: object) -> None:
+    if not isinstance(layout, dict):
+        raise InvalidWallLayoutError("layout debe ser un objeto")
+    columns = layout.get("columns")
+    if not isinstance(columns, list) or not columns:
+        raise InvalidWallLayoutError("layout.columns debe ser una lista no vacía")
+    if len(columns) > MAX_WALL_COLUMNS:
+        raise InvalidWallLayoutError(f"máximo {MAX_WALL_COLUMNS} columnas por muro")
+    if not isinstance(layout.get("showMetrics"), bool):
+        raise InvalidWallLayoutError("layout.showMetrics debe ser booleano")
+    total_channels = 0
+    for column in columns:
+        if not isinstance(column, dict) or not isinstance(column.get("groups"), list):
+            raise InvalidWallLayoutError("cada columna debe tener una lista groups")
+        for group in column["groups"]:
+            if not isinstance(group, dict) or not isinstance(group.get("channels"), list):
+                raise InvalidWallLayoutError("cada grupo debe tener una lista channels")
+            if not _valid_text(group.get("title")):
+                raise InvalidWallLayoutError("título de grupo inválido")
+            for channel in group["channels"]:
+                if not isinstance(channel, dict):
+                    raise InvalidWallLayoutError("cada canal debe ser un objeto {channel, label}")
+                scnl = channel.get("channel")
+                if not isinstance(scnl, str) or not _SCNL_RE.match(scnl):
+                    raise InvalidWallLayoutError(f"canal no SCNL: {scnl!r}")
+                if not _valid_text(channel.get("label")):
+                    raise InvalidWallLayoutError("label de canal inválido")
+                total_channels += 1
+    if total_channels > MAX_WALL_CHANNELS:
+        raise InvalidWallLayoutError(f"máximo {MAX_WALL_CHANNELS} canales por muro")
