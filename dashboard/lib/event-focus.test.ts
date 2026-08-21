@@ -74,6 +74,12 @@ describe('pickSpotlight modo latest', () => {
     const eventos = [ev('nuevo', '2026-08-20T23:00:00Z')];
     expect(pickSpotlight('latest', eventos, 'nuevo', () => 0)).toBeNull();
   });
+
+  it('descarta eventos sin coordenadas finitas aunque sean los más nuevos', () => {
+    const sinCoords = { ...ev('sin-coords', '2026-08-20T23:00:00Z'), lat: NaN };
+    const eventos = [ev('viejo', '2026-08-20T01:00:00Z'), sinCoords];
+    expect(pickSpotlight('latest', eventos, null, () => 0)!.id).toBe('viejo');
+  });
 });
 
 describe('readFocusMode', () => {

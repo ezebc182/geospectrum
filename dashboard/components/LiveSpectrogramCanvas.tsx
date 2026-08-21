@@ -75,6 +75,7 @@ export function LiveSpectrogramCanvas({
     let ws: WebSocket;
     let closedByUs = false;
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
     const drawColumn = (col: SpecColumn) => {
       // Corre todo el contenido 1px a la izquierda (efecto "cinta que avanza")
@@ -93,6 +94,7 @@ export function LiveSpectrogramCanvas({
     };
 
     const connect = () => {
+      if (cancelled) return;
       ws = new WebSocket(`${WS_BASE}/ws/spectrogram/${channel}`);
 
       ws.onopen = () => setStatus('connecting'); // pasa a 'live' con el primer dato
@@ -110,7 +112,7 @@ export function LiveSpectrogramCanvas({
       ws.onclose = () => {
         if (!closedByUs) {
           setStatus('error');
-          setTimeout(connect, 3000); // reconexión con backoff simple
+          reconnectTimer = setTimeout(connect, 3000); // reconexión con backoff simple
         }
       };
     };
@@ -141,6 +143,7 @@ export function LiveSpectrogramCanvas({
     return () => {
       cancelled = true;
       closedByUs = true;
+      clearTimeout(reconnectTimer);
       ws?.close();
     };
   }, [channel, width, height]);

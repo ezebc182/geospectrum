@@ -22,7 +22,9 @@ export function pickSpotlight(
   rand: () => number
 ): SeismicEvent | null {
   if (eventos.length === 0) return null;
-  const ordered = newestFirst(eventos);
+  const withCoords = eventos.filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.lon));
+  if (withCoords.length === 0) return null;
+  const ordered = newestFirst(withCoords);
 
   if (mode === 'latest') {
     const newest = ordered[0];
