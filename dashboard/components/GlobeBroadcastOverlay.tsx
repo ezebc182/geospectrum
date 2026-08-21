@@ -87,6 +87,11 @@ const SPECTRO_STRIPS = 8;
 // El ancho de la tira: el panel izquierdo mide w-72 (288px) menos p-3.
 const SPECTRO_WIDTH = 240;
 const SPECTRO_HEIGHT = 44;
+// Alto de tira del MURO de la cartelera (distinto del stack lateral del HUD,
+// que usa SPECTRO_HEIGHT=44): compartida entre SpectronetWall y su fallback
+// de wallStrips para que no diverjan y el muro no "salte" de tamaño al
+// resolver /walls/global (bug visto en la revisión de la Task 4).
+const WALL_STRIP_HEIGHT = 28;
 
 const CITY_NAME_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c.name]));
 
@@ -689,7 +694,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             className={`flex-1 overflow-hidden ${slide === 'wall' ? 'flex' : 'hidden'}`}
           >
             {wallData ? (
-              <SpectronetWall wall={wallData} stripWidth={SPECTRO_WIDTH} stripHeight={28} />
+              <SpectronetWall wall={wallData} stripWidth={SPECTRO_WIDTH} stripHeight={WALL_STRIP_HEIGHT} />
             ) : (
               <div className="flex flex-1 flex-wrap content-start justify-center gap-1.5 p-3">
                 {wallStrips.map((s) => (
@@ -698,7 +703,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                     channel={s.channel}
                     label={s.name}
                     width={SPECTRO_WIDTH}
-                    height={SPECTRO_HEIGHT}
+                    height={WALL_STRIP_HEIGHT}
                     variant="strip"
                   />
                 ))}
