@@ -13,7 +13,7 @@
  * ventana corta y al área activa del usuario.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
@@ -324,24 +324,66 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
   // Spotlight: decide QUÉ mirar pickSpotlight (Task 2); acá solo se coreografía
   // el timer y se aplica el resultado. En modo latest, null = "ya está
-  // enfocado" (no mover cámara); además reacciona apenas llega un evento
-  // nuevo, sin esperar al próximo tick del interval.
+  // enfocado" (no mover cámara).
+  //
+  // `eventos` cambia de referencia con cada poll de SWR (30s) aunque el
+  // contenido sea el mismo. Si el efecto del interval dependiera de
+  // `eventos`, CADA refetch desmontaría/remontaría el timer entero
+  // (clearInterval + pick inmediato + setInterval nuevo) — en AMBOS modos,
+  // no solo en latest. Eso corta la cadencia de FOCUS_INTERVAL_MS en modo
+  // random y mete un pick fuera de ritmo (bug reportado en code review,
+  // 2026-08-20). Por eso `eventos` vive en un ref, leído por el timer sin
+  // formar parte de sus deps: el interval de 20s queda estable y solo se
+  // reinicia si cambia `focusMode`.
+  const eventosRef = useRef<SeismicEvent[]>([]);
+
   const [spotlightEvent, setSpotlightEvent] = useState<SeismicEvent | null>(null);
-  useEffect(() => {
-    const pool = eventos ?? [];
+  const lastFocusedIdRef = useRef<string | null>(null);
+  const pickSpotlightNow = () => {
+    const pool = eventosRef.current;
     if (pool.length === 0) return;
-    let lastId: string | null = spotlightEvent?.id ?? null;
-    const pick = () => {
-      const elegido = pickSpotlight(focusMode, pool, lastId, Math.random);
-      if (elegido === null) return;
-      lastId = elegido.id;
-      setSpotlightEvent(elegido);
-    };
-    pick();
-    const timer = setInterval(pick, FOCUS_INTERVAL_MS);
+    const elegido = pickSpotlight(focusMode, pool, lastFocusedIdRef.current, Math.random);
+    if (elegido === null) return;
+    lastFocusedIdRef.current = elegido.id;
+    setSpotlightEvent(elegido);
+  };
+
+  useEffect(() => {
+    eventosRef.current = eventos ?? [];
+    // Primeros datos que llegan (SWR resuelve async, así que nunca están
+    // listos en el montaje): se dispara el pick inicial apenas hay pool, en
+    // AMBOS modos — si no, el spotlight quedaría vacío hasta el primer tick
+    // del interval de 20s. `lastFocusedIdRef` sigue null solo hasta el
+    // primer pick exitoso, así que esto corre una única vez; refetches
+    // posteriores (mismo pool ya poblado, otra referencia) no lo repiten en
+    // modo random — en latest lo cubre el efecto dedicado de más abajo.
+    if (lastFocusedIdRef.current === null && eventosRef.current.length > 0) {
+      pickSpotlightNow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventos]);
+
+  // Timer del spotlight: cadencia estable de FOCUS_INTERVAL_MS. Deps SOLO
+  // `[focusMode]` — `eventos` NO va acá (ver nota arriba): si dependiera de
+  // `eventos`, cada refetch de SWR (cada 30s, nueva referencia de array
+  // aunque el contenido sea el mismo) desmontaría/remontaría el timer
+  // entero, cortando la cadencia de 20s también en modo random (bug
+  // reportado en code review, 2026-08-20).
+  useEffect(() => {
+    const timer = setInterval(pickSpotlightNow, FOCUS_INTERVAL_MS);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusMode, eventos]);
+  }, [focusMode]);
+
+  // Solo en modo latest: apenas llega un evento nuevo (nueva referencia de
+  // `eventos` desde SWR) se re-evalúa el spotlight sin esperar el próximo
+  // tick del interval de 20s. En modo random esto NO debe disparar nada —
+  // ahí la cadencia la marca únicamente el interval de arriba.
+  useEffect(() => {
+    if (focusMode !== 'latest') return;
+    pickSpotlightNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventos, focusMode]);
 
   // Analíticas del HUD: una serie por gráfico, un solo tono, valores
   // directos — nada de leyendas ni dobles ejes en un panel de transmisión.

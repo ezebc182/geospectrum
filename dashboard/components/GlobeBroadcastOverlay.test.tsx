@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { SWRConfig } from 'swr';
 
@@ -25,6 +25,16 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/components/SeismicGlobe', () => ({
   SeismicGlobe: () => null,
 }));
+
+// pickSpotlight real (Task 2) envuelto en un spy: permite contar cuántas
+// veces el componente efectivamente "pickeó" sin mockear la decisión en sí
+// (mismo patrón de mock parcial que LocaleSync.test.tsx).
+vi.mock('@/lib/event-focus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/event-focus')>();
+  return { ...actual, pickSpotlight: vi.fn(actual.pickSpotlight) };
+});
+import { pickSpotlight } from '@/lib/event-focus';
+const pickSpotlightSpy = vi.mocked(pickSpotlight);
 
 function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
   return {
@@ -382,5 +392,78 @@ describe('foco de eventos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Configurar paneles' }));
     fireEvent.click(screen.getByRole('radio', { name: /latest/i }));
     expect(localStorage.getItem('globe.broadcast.focus.v1')).toBe('latest');
+  });
+
+  describe('cadencia del interval en modo random (regresión code review)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('un refetch de SWR (nueva referencia de eventos) NO reinicia el interval de FOCUS_INTERVAL_MS', async () => {
+      // Bug real: `eventos` en las deps del efecto del interval hacía que
+      // CADA refetch de SWR (cada REFRESH_SECONDS=30s, nueva referencia de
+      // array aunque el contenido sea el mismo) desmontara y remontara el
+      // timer entero — clearInterval + pick inmediato + setInterval nuevo —
+      // también en modo random, cortando la cadencia de FOCUS_INTERVAL_MS
+      // (20s). Si esa mutación (volver a poner `eventos` en las deps del
+      // interval) se reintroduce, el refetch de t=30s suma un pick extra
+      // ahí mismo y este test debe fallar.
+      //
+      // Cronología esperada con el fix (interval montado en t≈0, cadencia
+      // 20s; refetch de SWR en t=30s):
+      //   t=0   pick inicial (primeros datos)         → 1
+      //   t=15  (antes del interval real)              → sigue en 1
+      //   t=20  tick NATURAL del interval de foco       → 2
+      //   t=30  refetch de SWR (nueva referencia)       → sigue en 2 (el bug sumaría un 3er pick acá)
+      //   t=40  próximo tick natural del interval       → 3
+      searchEventsMock.mockResolvedValue([
+        makeEvento({ id: 'a' }),
+        makeEvento({ id: 'b' }),
+        makeEvento({ id: 'c' }),
+      ]);
+      window.history.replaceState(null, '', '?focus=random');
+      renderOverlay();
+
+      // Con fake timers, `waitFor` (que hace polling en tiempo real) no es
+      // confiable: se flushean microtasks a mano para dejar que el mock de
+      // searchEvents resuelva y los efectos posteriores corran.
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('broadcast-feed')).toBeTruthy();
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(1); // t=0: pick inicial
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000); // t=15s: antes del interval real
+      });
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(5_000); // t=20s: tick natural del interval
+      });
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(2);
+
+      // Refetch real de SWR en t=30s: nueva ronda de datos. Si el interval
+      // dependiera de `eventos`, este refetch por sí solo reiniciaría el
+      // timer y dispararía un pick inmediato — el conteo saltaría a 3 acá,
+      // 10s antes del próximo tick natural (t=40s).
+      await act(async () => {
+        vi.advanceTimersByTime(10_000); // t=30s: refetch de SWR
+      });
+      expect(searchEventsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        vi.advanceTimersByTime(10_000); // t=40s: próximo tick natural
+      });
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(3);
+
+      window.history.replaceState(null, '', '/');
+    });
   });
 });
