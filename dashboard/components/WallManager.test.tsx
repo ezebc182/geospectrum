@@ -102,4 +102,21 @@ describe('WallManager', () => {
       expect((screen.getByPlaceholderText('Mi muro') as HTMLInputElement).value).toBe('Global (copia)')
     );
   });
+
+  it('un fallo al borrar muestra el error y no resetea la selección', async () => {
+    arrange([{ id: 'w1', name: 'Andes', layout: LAYOUT, created_at: '', updated_at: '' }]);
+    wallsMock.deleteWall.mockRejectedValue(new ApiStatusError(500, 'boom'));
+    renderManager();
+    await waitFor(() => expect(screen.getByText('Andes')).toBeTruthy());
+    fireEvent.click(screen.getByText('Andes'));
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText('Mi muro') as HTMLInputElement).value).toBe('Andes')
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar muro' }));
+    await waitFor(() => expect(screen.getByText('No se pudo guardar el muro')).toBeTruthy());
+    // El muro sigue seleccionado: el botón Eliminar (solo visible con una
+    // selección != 'new') sigue en pantalla y listWalls no se revalidó.
+    expect(screen.getByRole('button', { name: 'Eliminar muro' })).toBeTruthy();
+    expect(wallsMock.listWalls).toHaveBeenCalledTimes(1);
+  });
 });

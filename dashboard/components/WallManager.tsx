@@ -111,9 +111,18 @@ export function WallManager() {
 
   const handleDelete = async () => {
     if (selectedId === 'new') return;
-    await deleteWall(selectedId);
-    setSelectedId('new');
-    await mutate();
+    try {
+      await deleteWall(selectedId);
+      setSelectedId('new');
+      await mutate();
+    } catch {
+      // Mismo criterio que handleSave: se reusa la clave genérica de error
+      // de guardado (no hay una dedicada a "no se pudo borrar") y NO se
+      // resetea la selección ni se revalida la lista — el muro sigue
+      // existiendo del lado del servidor, así que seguir mostrándolo
+      // seleccionado es lo correcto.
+      setOutcome('saveError');
+    }
   };
 
   const handleDuplicate = () => {
