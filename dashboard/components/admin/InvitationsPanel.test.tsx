@@ -15,7 +15,7 @@
 
 import * as React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '@/lib/test-intl';
 import { SWRConfig } from 'swr';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -61,9 +61,9 @@ function renderPanel() {
   mockedListInvitations.mockResolvedValue([]);
   render(
     <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-      <NextIntlClientProvider locale="es-AR" messages={es} timeZone="UTC">
+      <IntlTestProvider>
         <InvitationsPanel />
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </SWRConfig>,
   );
 }

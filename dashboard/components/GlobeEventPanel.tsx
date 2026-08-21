@@ -72,6 +72,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
   const t = useTranslations('globe.panel');
   const tShare = useTranslations('share');
+  const tCommon = useTranslations('common');
   const format = useFormatter();
   const [outcome, setOutcome] = useState<ShareOutcome | null>(null);
 
@@ -126,7 +127,9 @@ export function GlobeEventPanel({ evento, onClose }: GlobeEventPanelProps) {
             </Badge>
             <span className="text-base">{evento.lugar ?? t('unknownLocation')}</span>
           </SheetTitle>
-          <SheetDescription>{format.dateTime(new Date(evento.hora_utc), 'medium')}</SheetDescription>
+          <SheetDescription>
+            {format.dateTime(new Date(evento.hora_utc), 'medium')} {tCommon('utcSuffix')}
+          </SheetDescription>
         </SheetHeader>
 
         <dl className="px-4">

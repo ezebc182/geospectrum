@@ -100,6 +100,7 @@ export function AdvancedSeismicMap({
       preliminary: t('popup.preliminary'),
       source: t('popup.source'),
       notAvailable: tCommon('notAvailable'),
+      utcSuffix: tCommon('utcSuffix'),
     }),
     [t, tCommon],
   );
@@ -444,7 +445,7 @@ export function AdvancedSeismicMap({
                 <div class="text-sm">
                   <p class="font-bold text-lg">M${formatMagnitude(evento.mag)} ${sourceIcon}</p>
                   <p class="font-medium">${evento.lugar || popupLabels.unknownLocation}</p>
-                  <p class="text-xs text-gray-600 mt-1">${format.dateTime(new Date(evento.hora_utc), 'medium')}</p>
+                  <p class="text-xs text-gray-600 mt-1">${format.dateTime(new Date(evento.hora_utc), 'medium')} ${popupLabels.utcSuffix}</p>
                   <p class="text-xs">${popupLabels.depth}: ${evento.prof_km ? `${evento.prof_km.toFixed(1)} km` : popupLabels.notAvailable}</p>
                   <p class="text-xs">${popupLabels.coordinates}: ${evento.lat.toFixed(3)}°, ${evento.lon.toFixed(3)}°</p>
                   <p class="text-xs mt-1">

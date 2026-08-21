@@ -16,7 +16,7 @@
 
 import * as React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { NextIntlClientProvider } from 'next-intl';
+import { IntlTestProvider } from '@/lib/test-intl';
 import { SWRConfig } from 'swr';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -88,11 +88,12 @@ function renderPanel(users: UserListItem[], messages: typeof es = es, locale = '
   mockedListUsers.mockResolvedValue(users);
   render(
     <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-      {/* timeZone explícito: sin él next-intl avisa por cada fecha
-          formateada y el output del test se vuelve ilegible. */}
-      <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC">
+      {/* IntlTestProvider trae la config REAL de la app (formats + timeZone).
+          Antes acá había un timeZone="UTC" a mano que tapaba el warning y,
+          de paso, el bug: producción no tenía timeZone global. */}
+      <IntlTestProvider locale={locale} messages={messages}>
         <UsersPanel />
-      </NextIntlClientProvider>
+      </IntlTestProvider>
     </SWRConfig>,
   );
 }
@@ -261,9 +262,9 @@ describe('UsersPanel — errores del backend', () => {
     mockedListUsers.mockRejectedValue(new ApiStatusError(500, 'boom'));
     render(
       <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
-        <NextIntlClientProvider locale="es-AR" messages={es} timeZone="UTC">
+        <IntlTestProvider>
           <UsersPanel />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </SWRConfig>,
     );
 
@@ -446,9 +447,9 @@ describe('UsersPanel — error de CARGA de la lista: 401 vs 403', () => {
       <SWRConfig
         value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}
       >
-        <NextIntlClientProvider locale="es-AR" messages={es} timeZone="UTC">
+        <IntlTestProvider>
           <UsersPanel />
-        </NextIntlClientProvider>
+        </IntlTestProvider>
       </SWRConfig>,
     );
   }

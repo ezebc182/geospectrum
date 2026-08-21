@@ -228,6 +228,12 @@ export function EventsTable({
           columnas: con 6 columnas fijas la tabla no entraba en pantallas
           angostas sin scroll horizontal. Fuente/Estado quedan como iconos
           chicos opcionales (ver columnsToggle), no columnas propias. */}
+      {/* El rótulo de zona va UNA vez acá y no en cada fila: repetir "UTC" en
+          una lista de cientos de eventos es ruido, pero sin él las horas de
+          las filas se leen como locales. */}
+      <div className="shrink-0 border-b-2 border-border bg-muted/40 px-4 py-1.5 text-right font-data text-[10px] uppercase tracking-wider text-muted-foreground">
+        {t('timesInUtc')}
+      </div>
       <div className="min-h-0 flex-1 divide-y divide-border overflow-auto bg-card">
         {displayEvents.map((evento) => {
           const isSelected = evento.id === selectedEventId;

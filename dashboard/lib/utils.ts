@@ -63,19 +63,11 @@ export function formatDepth(prof_km: number | null | undefined): string {
   return `${prof_km.toFixed(1)} km`;
 }
 
-/**
- * Fecha+hora legible en el locale de FORMATO activo (es-AR/en-US, el que
- * expone `useLocale()` — Decision 2: el mapping app→formato vive solo en
- * i18n/request.ts, por eso acá el locale entra por parámetro y no hay ningún
- * 'es-AR' clavado). Los componentes prefieren `useFormatter().dateTime(...,
- * 'medium')`; esta función queda para call-sites que ya reciben el locale.
- */
-export function formatDateTime(isoString: string, locale: string): string {
-  return new Date(isoString).toLocaleString(locale, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  });
-}
+// formatDateTime se ELIMINÓ junto con components/SeismicMap.tsx, su único
+// call-site (un mapa legacy que ningún layout montaba). Formateaba con
+// toLocaleString SIN timeZone, o sea en la zona del navegador: era el último
+// resto del bug que este PR cierra. Para fecha+hora usá
+// `useFormatter().dateTime(d, 'medium')`, que hereda el UTC global.
 
 /**
  * "YYYY-MM-DD HH:MM:SS" en **UTC**, estilo USGS: una sola línea corta que

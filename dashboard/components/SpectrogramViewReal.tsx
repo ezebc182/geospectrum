@@ -32,6 +32,7 @@ export function SpectrogramViewReal({
   useRealData = true
 }: SpectrogramViewRealProps) {
   const t = useTranslations('charts.spectrogram');
+  const tCommon = useTranslations('common');
   const format = useFormatter();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<SpectrogramError | null>(null);
@@ -186,7 +187,9 @@ export function SpectrogramViewReal({
           </div>
           <div>
             {t('updated', {
-              time: format.dateTime(new Date(metadata.generated_at), 'time'),
+              // Mismo patrón que LiveSpectrogramCanvas: la hora sale en UTC,
+              // así que el rótulo va pegado y no se lee como hora local.
+              time: `${format.dateTime(new Date(metadata.generated_at), 'time')} ${tCommon('utcSuffix')}`,
             })}
           </div>
         </div>
