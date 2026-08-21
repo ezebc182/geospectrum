@@ -78,16 +78,22 @@ export function formatDateTime(isoString: string, locale: string): string {
 }
 
 /**
- * "YYYY-MM-DD HH:MM:SS", estilo USGS: una sola línea corta que sigue siendo
- * ordenable a simple vista (año primero), a diferencia de formatDateTime
- * ("5 ago 2026, 1:05:39 p. m.") que es más legible pero casi el doble de ancho.
+ * "YYYY-MM-DD HH:MM:SS" en **UTC**, estilo USGS: una sola línea corta que
+ * sigue siendo ordenable a simple vista (año primero), a diferencia de
+ * formatDateTime ("5 ago 2026, 1:05:39 p. m.") que es más legible pero casi
+ * el doble de ancho.
+ *
+ * UTC y no la zona del navegador a propósito: el estándar del dominio
+ * sísmico es UTC y todas las fuentes (USGS, EMSC, endtime de ObsPy) ya
+ * llegan en UTC. Renderizar en hora local corría el dato hasta 14 h y
+ * convivía con carteles que decían "UTC" al lado.
  */
 export function formatDateTimeCompact(isoString: string): string {
   const date = new Date(isoString);
   const pad = (n: number) => String(n).padStart(2, '0');
   return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
+    `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
   );
 }
 

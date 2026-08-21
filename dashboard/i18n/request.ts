@@ -14,13 +14,17 @@ const FORMAT_LOCALES = { es: 'es-AR', en: 'en-US' } as const;
 /**
  * Formats globales nombrados (Decision 6). `formatDateTimeCompact` de
  * lib/utils (YYYY-MM-DD HH:MM:SS estilo USGS) NO se localiza — es formato
- * técnico ordenable, deliberadamente fuera de esta tabla.
+ * técnico ordenable, deliberadamente fuera de esta tabla (pero también UTC).
+ *
+ * timeZone: 'UTC' en los tres: el dominio sísmico trabaja en UTC y todas
+ * las fuentes llegan en UTC. Fijarlo acá convierte a UTC TODOS los
+ * `format.dateTime(...)` de la app de una sola vez, sin tocar call-sites.
  */
 export const formats = {
   dateTime: {
-    medium: { dateStyle: 'medium', timeStyle: 'medium' },
-    short: { dateStyle: 'short', timeStyle: 'short' },
-    time: { timeStyle: 'medium' },
+    medium: { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' },
+    short: { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' },
+    time: { timeStyle: 'medium', timeZone: 'UTC' },
   },
 } as const;
 
