@@ -30,6 +30,7 @@ import {
   minutesSinceMag,
   topRegions,
 } from '@/lib/broadcast-stats';
+import { FOCUS_INTERVAL_MS, pickSpotlight, readFocusMode, type FocusMode } from '@/lib/event-focus';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
 import { SpectronetWall } from '@/components/SpectronetWall';
@@ -58,12 +59,9 @@ const FEED_SIZE = 50;
 const FRESH_MINUTES = 15;
 const TOP_REGIONS = 6;
 
-// Coreografía del spotlight (mismos tiempos que el hero de la landing):
-// cada tanto la cámara gira hacia uno de los sismos fuertes y abre su
-// infocard — es lo que hace que la transmisión se sienta viva.
-const SPOTLIGHT_INTERVAL_MS = 8_000;
-const SPOTLIGHT_FIRST_DELAY_MS = 2_500;
-const SPOTLIGHT_POOL_SIZE = 10;
+// Modo de foco del spotlight: 'random' rota entre los sismos recientes,
+// 'latest' sigue siempre al evento más nuevo (pickSpotlight decide, Task 2).
+const FOCUS_STORAGE_KEY = 'globe.broadcast.focus.v1';
 
 // Cartelera: capa maximizada con fondo difuso que rota entre "slides" como
 // una pantalla publicitaria (pedido del usuario, 2026-08-20). El muro
@@ -307,33 +305,43 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   const now = useNow({ updateInterval: 60_000 });
   const format = useFormatter();
 
-  // Spotlight rotativo sobre los sismos más fuertes (patrón del hero de la
-  // landing): al azar sin repetir el anterior, para que se lea como
-  // coreografía y no como "se colgó".
-  const pool = useMemo(() => {
-    return latestEvents(eventos ?? [], eventos?.length ?? 0)
-      .filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.lon))
-      .sort((a, b) => b.mag - a.mag)
-      .slice(0, SPOTLIGHT_POOL_SIZE);
-  }, [eventos]);
+  // Modo de foco: 'random' (default) rota entre los eventos recientes,
+  // 'latest' sigue siempre al más nuevo. Query param gana sobre localStorage.
+  const [focusMode, setFocusMode] = useState<FocusMode>(() =>
+    readFocusMode(
+      typeof window !== 'undefined' ? window.location.search : '',
+      typeof window !== 'undefined' ? window.localStorage.getItem(FOCUS_STORAGE_KEY) : null
+    )
+  );
+  const changeFocusMode = (mode: FocusMode) => {
+    setFocusMode(mode);
+    try {
+      window.localStorage.setItem(FOCUS_STORAGE_KEY, mode);
+    } catch {
+      // sin storage: el modo vive solo esta sesión
+    }
+  };
 
+  // Spotlight: decide QUÉ mirar pickSpotlight (Task 2); acá solo se coreografía
+  // el timer y se aplica el resultado. En modo latest, null = "ya está
+  // enfocado" (no mover cámara); además reacciona apenas llega un evento
+  // nuevo, sin esperar al próximo tick del interval.
   const [spotlightEvent, setSpotlightEvent] = useState<SeismicEvent | null>(null);
   useEffect(() => {
+    const pool = eventos ?? [];
     if (pool.length === 0) return;
-    let lastId: string | null = null;
+    let lastId: string | null = spotlightEvent?.id ?? null;
     const pick = () => {
-      const candidates = pool.filter((e) => e.id !== lastId);
-      const elegido = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0];
+      const elegido = pickSpotlight(focusMode, pool, lastId, Math.random);
+      if (elegido === null) return;
       lastId = elegido.id;
       setSpotlightEvent(elegido);
     };
-    const first = setTimeout(pick, SPOTLIGHT_FIRST_DELAY_MS);
-    const timer = setInterval(pick, SPOTLIGHT_INTERVAL_MS);
-    return () => {
-      clearTimeout(first);
-      clearInterval(timer);
-    };
-  }, [pool]);
+    pick();
+    const timer = setInterval(pick, FOCUS_INTERVAL_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMode, eventos]);
 
   // Analíticas del HUD: una serie por gráfico, un solo tono, valores
   // directos — nada de leyendas ni dobles ejes en un panel de transmisión.
@@ -614,6 +622,33 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                   {label}
                 </label>
               ))}
+
+              {/* Foco del spotlight: aleatorio (default) o siguiendo siempre
+                  al evento más nuevo. aria-label lleva el valor literal del
+                  modo (estable en cualquier idioma); el texto visible usa
+                  las claves i18n. */}
+              <div className="mt-2 mb-1 border-t border-border px-2 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('focus.label')}
+              </div>
+              <div role="radiogroup" aria-label={t('focus.label')} className="flex gap-1 px-2 pb-1">
+                {(['random', 'latest'] as FocusMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={focusMode === mode}
+                    aria-label={mode}
+                    onClick={() => changeFocusMode(mode)}
+                    className={`flex-1 rounded px-2 py-1 text-xs transition-colors ${
+                      focusMode === mode
+                        ? 'bg-accent text-foreground'
+                        : 'text-popover-foreground hover:bg-accent/50'
+                    }`}
+                  >
+                    {mode === 'random' ? t('focus.random') : t('focus.latest')}
+                  </button>
+                ))}
+              </div>
 
               {/* Estaciones del stack de espectrogramas: agregar/quitar de
                   entre las que están transmitiendo ahora. */}

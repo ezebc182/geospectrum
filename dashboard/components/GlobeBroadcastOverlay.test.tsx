@@ -343,3 +343,44 @@ describe('cartelera (billboard)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('foco de eventos', () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  // El testid `feed-row-focused` lo introduce Task 6 (RED esperado acá,
+  // ver task-5-brief.md): el sidebar todavía no marca la fila enfocada.
+  it('en modo latest el spotlight es el evento más nuevo', async () => {
+    const ahora = Date.now();
+    const NEWEST_MOCK_PLACE = 'Nuevo, Japón';
+    searchEventsMock.mockResolvedValue([
+      makeEvento({
+        id: 'viejo',
+        lugar: 'Viejo, Chile',
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: NEWEST_MOCK_PLACE,
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    window.history.replaceState(null, '', '?focus=latest');
+    renderOverlay();
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
+    });
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('el toggle de foco cambia el modo y lo persiste', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('broadcast-feed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar paneles' }));
+    fireEvent.click(screen.getByRole('radio', { name: /latest/i }));
+    expect(localStorage.getItem('globe.broadcast.focus.v1')).toBe('latest');
+  });
+});
