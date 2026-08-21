@@ -154,6 +154,38 @@ def resolve_live_catalog(
     return result
 
 
+def station_catalog(
+    candidates_by_city: Dict[str, List[str]], active_channels: Optional[set]
+) -> List[Dict[str, object]]:
+    """Catálogo COMPLETO de subestaciones: una entrada por candidata.
+
+    resolve_live_catalog devuelve la ganadora de cada ciudad (lo que el
+    dashboard consume por default); esto expone las 75 que el ingestor
+    realmente está ingestando, para que el usuario elija subestación como
+    en SWARM (comparar MT05 vs MT14 de Santiago, por ejemplo).
+
+    `is_live` es informativo: una candidata muda se ofrece igual, con el
+    badge en gris. active_channels=None ("no se pudo consultar la base",
+    misma semántica que resolve_live_catalog) no marca nada como vivo en
+    vez de mentir.
+    """
+    catalog: List[Dict[str, object]] = []
+    for city_id, candidates in candidates_by_city.items():
+        for index, channel in enumerate(candidates):
+            parts = channel.split(".")
+            catalog.append(
+                {
+                    "channel": channel,
+                    "city_id": city_id,
+                    "network": parts[0] if len(parts) > 0 else "",
+                    "station": parts[1] if len(parts) > 1 else "",
+                    "is_live": bool(active_channels) and channel in active_channels,
+                    "is_primary": index == 0,
+                }
+            )
+    return catalog
+
+
 class SpectrogramService:
     """Servicio para generar espectrogramas desde datos FDSN"""
 

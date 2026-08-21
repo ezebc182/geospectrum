@@ -69,6 +69,7 @@ from src.services.report_service import build_report, count_by_source, CANONICAL
 from src.services.spectrogram_service import (
     get_spectrogram_service,
     resolve_live_catalog,
+    station_catalog,
     LIVE_CANDIDATES_BY_CITY,
 )
 from src.services.event_bus import RedisPubSubBus
@@ -2184,6 +2185,30 @@ async def get_live_channels() -> list[dict]:
                 exc_info=True,
             )
     return resolve_live_catalog(LIVE_CANDIDATES_BY_CITY, active)
+
+
+@app.get("/spectrograms/station-catalog", tags=["spectrograms"])
+async def get_station_catalog() -> list[dict]:
+    """
+    Catálogo completo de subestaciones para el armador del muro (PR-W3).
+
+    Distinto de /live-channels: ese devuelve la ganadora por ciudad (27);
+    este devuelve TODAS las candidatas que el ingestor está ingestando (75)
+    con su estado de frescura, para que el usuario elija subestación como
+    en SWARM. Igual que /live-channels, si no hay base o la consulta falla
+    se ofrece el catálogo entero sin marcar nada como vivo.
+    """
+    active: Optional[set] = None
+    if column_writer is not None:
+        try:
+            active = set(await column_writer.fetch_active_channels(LIVE_FRESHNESS_MINUTES))
+        except Exception:
+            logger.warning(
+                "station-catalog: fallo consultando canales activos, "
+                "se devuelve el catálogo completo sin marcar frescura",
+                exc_info=True,
+            )
+    return station_catalog(LIVE_CANDIDATES_BY_CITY, active)
 
 
 @app.get("/spectrograms/{channel}/history", tags=["spectrograms"])
