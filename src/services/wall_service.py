@@ -6,6 +6,8 @@ ciudad = su canal primario (LIVE_CANDIDATES_BY_CITY[city][0]); el failover
 en vivo lo sigue resolviendo live-channels por debajo.
 """
 
+import re
+
 from src.services.spectrogram_service import LIVE_CANDIDATES_BY_CITY
 
 # city_id -> región (títulos en mayúsculas, como las etiquetas de SPECTRONET)
@@ -75,8 +77,6 @@ def build_global_wall() -> dict:
         },
     }
 
-
-import re
 
 # --- Validación de layouts de muros guardados (PR-W2, spec §2) ---
 
