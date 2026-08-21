@@ -73,6 +73,7 @@ from src.services.spectrogram_service import (
     LIVE_CANDIDATES_BY_CITY,
 )
 from src.services.event_bus import RedisPubSubBus
+from src.services.metrics_store import MetricsStore
 from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
     AccountDeactivatedError,
@@ -116,6 +117,7 @@ from src.services.invitation_service import (
     insert_invitation_row,
 )
 from src.api.routers import areas as areas_router
+from src.api.routers import stations as stations_router
 from src.api.routers import walls as walls_router
 from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
@@ -220,6 +222,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "hasta que Redis esté arriba y se reinicie el servicio",
             exc_info=True,
         )
+
+    # MetricsStore (PR-W3): best-effort como el event_bus — sin Redis el
+    # dashboard pierde las métricas pero la API sigue sirviendo todo lo demás.
+    metrics_store = MetricsStore(settings.redis_url)
+    try:
+        await metrics_store.connect()
+        app.state.metrics_store = metrics_store
+        logger.info("MetricsStore (Redis) conectado: %s", settings.redis_url)
+    except Exception:
+        logger.warning(
+            "MetricsStore: Redis no disponible, métricas deshabilitadas",
+            exc_info=True,
+        )
+        app.state.metrics_store = None
 
     # Rate-limiting de POST /auth/2fa/login-verify (account-settings, fix
     # post-verify) — best-effort, MISMO criterio que event_bus arriba: si
@@ -370,6 +386,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     await event_bus.close()
+    if getattr(app.state, "metrics_store", None) is not None:
+        await app.state.metrics_store.close()
     if column_writer is not None:
         await column_writer.close()
     await auth_service.close()
@@ -432,6 +450,7 @@ app.add_middleware(
 # la superficie de la API y no es parte de AOI-1.
 app.include_router(areas_router.router)
 app.include_router(walls_router.router)
+app.include_router(stations_router.router)
 
 
 # =============================================================================
