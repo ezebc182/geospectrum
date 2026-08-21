@@ -96,6 +96,12 @@ interface SeismicGlobeProps {
   height?: number;
   /** Se avisa al padre qué evento se clickeó, o null al deseleccionar. */
   onSelectEvent?: (evento: SeismicEvent | null) => void;
+  /**
+   * Se avisa al padre el id del evento clickeado (sin la semántica de
+   * deselección de `onSelectEvent`: siempre lleva el id, nunca null). Lo usa
+   * la cartelera para setear el spotlight al clickear un punto del globo.
+   */
+  onEventClick?: (eventId: string) => void;
   /** Id del evento enfocado. El globo gira hacia él y frena la rotación. */
   selectedEventId?: string | null;
   /**
@@ -156,6 +162,7 @@ export function SeismicGlobe({
   atmosphereAltitude = 0.15,
   height = 600,
   onSelectEvent,
+  onEventClick,
   selectedEventId = null,
   focusArea = null,
 }: SeismicGlobeProps) {
@@ -315,8 +322,9 @@ export function SeismicGlobe({
       if (!evento) return;
 
       onSelectEvent?.(id === selectedEventId ? null : evento);
+      onEventClick?.(id);
     },
-    [eventsById, onSelectEvent, selectedEventId],
+    [eventsById, onSelectEvent, onEventClick, selectedEventId],
   );
 
   // Zoom manual: reusa la posición actual de pointOfView() y sólo cambia la

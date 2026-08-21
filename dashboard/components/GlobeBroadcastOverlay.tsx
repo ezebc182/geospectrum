@@ -441,6 +441,15 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     };
   }, [spotlightEvent, t, format, now]);
 
+  // Lleva la fila enfocada del feed a la vista: el spotlight puede cambiar
+  // por el timer o por un clic en el globo, y en ambos casos el sidebar debe
+  // mostrar por qué evento va sin que el usuario tenga que scrollear a mano.
+  // 'nearest' evita el salto si la fila ya está visible.
+  useEffect(() => {
+    if (!spotlightEvent) return;
+    document.querySelector('[data-testid="feed-row-focused"]')?.scrollIntoView({ block: 'nearest' });
+  }, [spotlightEvent]);
+
   // Portal a <body>: el layout de (app) tiene ancestros con transform
   // (SidebarInset, indicadores) que convierten `fixed` en "fixed relativo
   // al ancestro" — el overlay quedaba DEBAJO del navbar de la app en vez
@@ -461,6 +470,17 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             // default (2.5) el globo flotaba chico en un mar de fondo vacío.
             initialAltitude={1.35}
             spotlight={spotlight}
+            // Clic en un punto: enfoca ese evento como spotlight y mantiene
+            // el ref de "último enfocado" coherente, igual que hace
+            // pickSpotlightNow — si no, en modo latest el próximo tick del
+            // interval podría re-elegir el mismo evento y disparar un pick
+            // de más.
+            onEventClick={(id) => {
+              const target = (eventos ?? []).find((e) => e.id === id);
+              if (!target) return;
+              lastFocusedIdRef.current = target.id;
+              setSpotlightEvent(target);
+            }}
           />
         )}
       </div>
@@ -546,8 +566,15 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
         <ul data-testid="broadcast-feed" className="divide-y divide-border/60">
           {feed.map((evento) => {
             const severity = getMagnitudeSeverity(evento.mag);
+            const isFocused = evento.id === spotlightEvent?.id;
             return (
-              <li key={evento.id} className="flex items-start gap-3 px-3 py-2">
+              <li
+                key={evento.id}
+                data-testid={isFocused ? 'feed-row-focused' : undefined}
+                className={`flex items-start gap-3 px-3 py-2 ${
+                  isFocused ? 'bg-teal-950/60 ring-1 ring-teal-500/60' : ''
+                }`}
+              >
                 <span
                   className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-data text-xs font-bold ${SEVERITY_CHIP[severity]}`}
                 >

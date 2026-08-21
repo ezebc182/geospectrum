@@ -21,9 +21,15 @@ vi.mock('@/lib/api', () => ({
 }));
 
 // SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
-// del repo, la lógica del globo se testea en lib/globe-data.test.ts).
+// del repo, la lógica del globo se testea en lib/globe-data.test.ts). Se
+// capturan las props recibidas (Task 6: invocar onEventClick a mano desde
+// el test, como si fuera un clic real sobre un punto del globo).
+let capturedGlobeProps: Record<string, unknown> = {};
 vi.mock('@/components/SeismicGlobe', () => ({
-  SeismicGlobe: () => null,
+  SeismicGlobe: (props: Record<string, unknown>) => {
+    capturedGlobeProps = props;
+    return null;
+  },
 }));
 
 // pickSpotlight real (Task 2) envuelto en un spy: permite contar cuántas
@@ -76,9 +82,14 @@ function renderOverlay(onClose = vi.fn()) {
   return onClose;
 }
 
+// jsdom no implementa scrollIntoView: el useEffect que resalta la fila
+// enfocada lo llama al montar/actualizar, y sin el stub el test explota.
+Element.prototype.scrollIntoView = vi.fn();
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  capturedGlobeProps = {};
 });
 
 describe('GlobeBroadcastOverlay', () => {
@@ -359,8 +370,8 @@ describe('foco de eventos', () => {
     window.localStorage.clear();
   });
 
-  // El testid `feed-row-focused` lo introduce Task 6 (RED esperado acá,
-  // ver task-5-brief.md): el sidebar todavía no marca la fila enfocada.
+  // El testid `feed-row-focused` lo introduce Task 6: el sidebar marca con
+  // esta fila cuál evento es el spotlight actual.
   it('en modo latest el spotlight es el evento más nuevo', async () => {
     const ahora = Date.now();
     const NEWEST_MOCK_PLACE = 'Nuevo, Japón';
@@ -382,6 +393,22 @@ describe('foco de eventos', () => {
       expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
     });
     window.history.replaceState(null, '', '/');
+  });
+
+  it('el clic en un evento del globo lo enfoca y resalta en el sidebar', async () => {
+    const CLICKED_PLACE = 'Nuevo, Japón';
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'viejo', lugar: 'Viejo, Chile' }),
+      makeEvento({ id: 'nuevo', lugar: CLICKED_PLACE }),
+    ]);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('broadcast-feed')).toBeTruthy());
+
+    act(() => (capturedGlobeProps.onEventClick as ((id: string) => void) | undefined)?.('nuevo'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(CLICKED_PLACE);
+    });
   });
 
   it('el toggle de foco cambia el modo y lo persiste', async () => {
