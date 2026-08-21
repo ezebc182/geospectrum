@@ -124,6 +124,7 @@ async def db_pool(_migrated):
     finally:
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM invitations")
+            await conn.execute("DELETE FROM walls")
             await conn.execute("DELETE FROM areas_of_interest WHERE NOT is_system")
             await conn.execute("DELETE FROM users")
         await pool.close()
