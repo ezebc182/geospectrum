@@ -32,6 +32,7 @@ import {
 } from '@/lib/broadcast-stats';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { SpectronetWall } from '@/components/SpectronetWall';
 import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
@@ -158,6 +159,12 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     () => seismicAPI.getLiveChannels(),
     { refreshInterval: 5 * 60_000 }
   );
+
+  // Muro SPECTRONET (Task 1): estático, generado del catálogo — no depende
+  // de qué esté transmitiendo ahora, por eso no necesita refresco periódico.
+  const { data: wallData } = useSWR('broadcast-wall', () => seismicAPI.getGlobalWall(), {
+    revalidateOnFocus: false,
+  });
   // Selección del usuario (agregar/quitar estaciones); sin selección se
   // muestran las primeras SPECTRO_STRIPS que estén en vivo.
   const [spectroSelection, setSpectroSelection] = useState<string[] | null>(loadSpectroSelection);
@@ -673,23 +680,30 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
           {/* El muro queda MONTADO (oculto) mientras rota otro slide: cada
               tira es 1 WebSocket + 1 fetch de historial, y desmontar/montar
-              ~74 en cada rotación era una tormenta de reconexiones. */}
+              ~74 en cada rotación era una tormenta de reconexiones. Layout
+              SPECTRONET (columnas + grupos) mientras carga /walls/global;
+              wallStrips queda de fallback para que el muro NUNCA esté en
+              blanco durante esa espera. */}
           <div
             data-testid="billboard-wall"
-            className={`flex-1 flex-wrap content-start justify-center gap-1.5 overflow-hidden p-3 ${
-              slide === 'wall' ? 'flex' : 'hidden'
-            }`}
+            className={`flex-1 overflow-hidden ${slide === 'wall' ? 'flex' : 'hidden'}`}
           >
-            {wallStrips.map((s) => (
-              <LiveSpectrogramCanvas
-                key={s.channel}
-                channel={s.channel}
-                label={s.name}
-                width={SPECTRO_WIDTH}
-                height={SPECTRO_HEIGHT}
-                variant="strip"
-              />
-            ))}
+            {wallData ? (
+              <SpectronetWall wall={wallData} stripWidth={SPECTRO_WIDTH} stripHeight={28} />
+            ) : (
+              <div className="flex flex-1 flex-wrap content-start justify-center gap-1.5 p-3">
+                {wallStrips.map((s) => (
+                  <LiveSpectrogramCanvas
+                    key={s.channel}
+                    channel={s.channel}
+                    label={s.name}
+                    width={SPECTRO_WIDTH}
+                    height={SPECTRO_HEIGHT}
+                    variant="strip"
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {slide === 'analytics' && (

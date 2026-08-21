@@ -7,12 +7,17 @@ import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
 
-const { searchEventsMock, getLiveChannelsMock } = vi.hoisted(() => ({
+const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock } = vi.hoisted(() => ({
   searchEventsMock: vi.fn(),
   getLiveChannelsMock: vi.fn(),
+  getGlobalWallMock: vi.fn(),
 }));
 vi.mock('@/lib/api', () => ({
-  seismicAPI: { searchEvents: searchEventsMock, getLiveChannels: getLiveChannelsMock },
+  seismicAPI: {
+    searchEvents: searchEventsMock,
+    getLiveChannels: getLiveChannelsMock,
+    getGlobalWall: getGlobalWallMock,
+  },
 }));
 
 // SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
@@ -41,6 +46,13 @@ function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
 function renderOverlay(onClose = vi.fn()) {
   if (getLiveChannelsMock.getMockImplementation() === undefined) {
     getLiveChannelsMock.mockResolvedValue([]);
+  }
+  if (getGlobalWallMock.getMockImplementation() === undefined) {
+    getGlobalWallMock.mockResolvedValue({
+      id: 'global',
+      name: 'Global',
+      layout: { columns: [], showMetrics: false },
+    });
   }
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
@@ -237,14 +249,47 @@ describe('cartelera (billboard)', () => {
   it('el botón cartelera abre el muro con TODAS las estaciones vivas', async () => {
     searchEventsMock.mockResolvedValue([]);
     getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    getGlobalWallMock.mockResolvedValue({
+      id: 'global',
+      name: 'Global',
+      layout: {
+        columns: [
+          {
+            groups: [
+              {
+                title: 'ASIA-PACÍFICO',
+                channels: NUEVE_CANALES.slice(0, 6).map((c) => ({
+                  channel: c.channel,
+                  label: c.city_id,
+                })),
+              },
+            ],
+          },
+          {
+            groups: [
+              {
+                title: 'AMÉRICA',
+                channels: NUEVE_CANALES.slice(6).map((c) => ({
+                  channel: c.channel,
+                  label: c.city_id,
+                })),
+              },
+            ],
+          },
+        ],
+        showMetrics: false,
+      },
+    });
     renderOverlay();
     await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
     const muro = screen.getByTestId('billboard-wall');
-    // El muro no recorta: las 9, incluida la que el stack dejó afuera.
-    expect(within(muro).getByText('Anchorage')).toBeTruthy();
-    expect(within(muro).getByText('Tokyo')).toBeTruthy();
+    // El muro llega con layout SPECTRONET: encabezados de grupo por región...
+    await waitFor(() => expect(within(muro).getByText('ASIA-PACÍFICO')).toBeTruthy());
+    expect(within(muro).getByText('AMÉRICA')).toBeTruthy();
+    // ...y una tira por cada uno de los 9 canales, sin recortar.
+    expect(within(muro).getAllByText(/tokyo|seattle|lima|osaka|taipei|guam|quito|santiago|anchorage/i)).toHaveLength(9);
   });
 
   it('rota manualmente entre muro y analíticas', async () => {
