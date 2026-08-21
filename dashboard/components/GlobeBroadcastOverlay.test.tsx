@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { SWRConfig } from 'swr';
 
@@ -7,19 +7,40 @@ import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
 
-const { searchEventsMock, getLiveChannelsMock } = vi.hoisted(() => ({
+const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock } = vi.hoisted(() => ({
   searchEventsMock: vi.fn(),
   getLiveChannelsMock: vi.fn(),
+  getGlobalWallMock: vi.fn(),
 }));
 vi.mock('@/lib/api', () => ({
-  seismicAPI: { searchEvents: searchEventsMock, getLiveChannels: getLiveChannelsMock },
+  seismicAPI: {
+    searchEvents: searchEventsMock,
+    getLiveChannels: getLiveChannelsMock,
+    getGlobalWall: getGlobalWallMock,
+  },
 }));
 
 // SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
-// del repo, la lógica del globo se testea en lib/globe-data.test.ts).
+// del repo, la lógica del globo se testea en lib/globe-data.test.ts). Se
+// capturan las props recibidas (Task 6: invocar onEventClick a mano desde
+// el test, como si fuera un clic real sobre un punto del globo).
+let capturedGlobeProps: Record<string, unknown> = {};
 vi.mock('@/components/SeismicGlobe', () => ({
-  SeismicGlobe: () => null,
+  SeismicGlobe: (props: Record<string, unknown>) => {
+    capturedGlobeProps = props;
+    return null;
+  },
 }));
+
+// pickSpotlight real (Task 2) envuelto en un spy: permite contar cuántas
+// veces el componente efectivamente "pickeó" sin mockear la decisión en sí
+// (mismo patrón de mock parcial que LocaleSync.test.tsx).
+vi.mock('@/lib/event-focus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/event-focus')>();
+  return { ...actual, pickSpotlight: vi.fn(actual.pickSpotlight) };
+});
+import { pickSpotlight } from '@/lib/event-focus';
+const pickSpotlightSpy = vi.mocked(pickSpotlight);
 
 function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
   return {
@@ -42,6 +63,13 @@ function renderOverlay(onClose = vi.fn()) {
   if (getLiveChannelsMock.getMockImplementation() === undefined) {
     getLiveChannelsMock.mockResolvedValue([]);
   }
+  if (getGlobalWallMock.getMockImplementation() === undefined) {
+    getGlobalWallMock.mockResolvedValue({
+      id: 'global',
+      name: 'Global',
+      layout: { columns: [], showMetrics: false },
+    });
+  }
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
       {/* Caché de SWR fresco por test: la clave 'broadcast-events' es la
@@ -54,9 +82,14 @@ function renderOverlay(onClose = vi.fn()) {
   return onClose;
 }
 
+// jsdom no implementa scrollIntoView: el useEffect que resalta la fila
+// enfocada lo llama al montar/actualizar, y sin el stub el test explota.
+Element.prototype.scrollIntoView = vi.fn();
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  capturedGlobeProps = {};
 });
 
 describe('GlobeBroadcastOverlay', () => {
@@ -237,14 +270,47 @@ describe('cartelera (billboard)', () => {
   it('el botón cartelera abre el muro con TODAS las estaciones vivas', async () => {
     searchEventsMock.mockResolvedValue([]);
     getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
+    getGlobalWallMock.mockResolvedValue({
+      id: 'global',
+      name: 'Global',
+      layout: {
+        columns: [
+          {
+            groups: [
+              {
+                title: 'ASIA-PACÍFICO',
+                channels: NUEVE_CANALES.slice(0, 6).map((c) => ({
+                  channel: c.channel,
+                  label: c.city_id,
+                })),
+              },
+            ],
+          },
+          {
+            groups: [
+              {
+                title: 'AMÉRICA',
+                channels: NUEVE_CANALES.slice(6).map((c) => ({
+                  channel: c.channel,
+                  label: c.city_id,
+                })),
+              },
+            ],
+          },
+        ],
+        showMetrics: false,
+      },
+    });
     renderOverlay();
     await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
     const muro = screen.getByTestId('billboard-wall');
-    // El muro no recorta: las 9, incluida la que el stack dejó afuera.
-    expect(within(muro).getByText('Anchorage')).toBeTruthy();
-    expect(within(muro).getByText('Tokyo')).toBeTruthy();
+    // El muro llega con layout SPECTRONET: encabezados de grupo por región...
+    await waitFor(() => expect(within(muro).getByText('ASIA-PACÍFICO')).toBeTruthy());
+    expect(within(muro).getByText('AMÉRICA')).toBeTruthy();
+    // ...y una tira por cada uno de los 9 canales, sin recortar.
+    expect(within(muro).getAllByText(/tokyo|seattle|lima|osaka|taipei|guam|quito|santiago|anchorage/i)).toHaveLength(9);
   });
 
   it('rota manualmente entre muro y analíticas', async () => {
@@ -296,5 +362,135 @@ describe('cartelera (billboard)', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('foco de eventos', () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  // El testid `feed-row-focused` lo introduce Task 6: el sidebar marca con
+  // esta fila cuál evento es el spotlight actual.
+  it('en modo latest el spotlight es el evento más nuevo', async () => {
+    const ahora = Date.now();
+    const NEWEST_MOCK_PLACE = 'Nuevo, Japón';
+    searchEventsMock.mockResolvedValue([
+      makeEvento({
+        id: 'viejo',
+        lugar: 'Viejo, Chile',
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: NEWEST_MOCK_PLACE,
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    window.history.replaceState(null, '', '?focus=latest');
+    renderOverlay();
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
+    });
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('el clic en un evento del globo lo enfoca y resalta en el sidebar', async () => {
+    const CLICKED_PLACE = 'Nuevo, Japón';
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'viejo', lugar: 'Viejo, Chile' }),
+      makeEvento({ id: 'nuevo', lugar: CLICKED_PLACE }),
+    ]);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('broadcast-feed')).toBeTruthy());
+
+    act(() => (capturedGlobeProps.onEventClick as ((id: string) => void) | undefined)?.('nuevo'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(CLICKED_PLACE);
+    });
+  });
+
+  it('el toggle de foco cambia el modo y lo persiste', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+    await waitFor(() => expect(screen.getByTestId('broadcast-feed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar paneles' }));
+    fireEvent.click(screen.getByRole('radio', { name: /latest/i }));
+    expect(localStorage.getItem('globe.broadcast.focus.v1')).toBe('latest');
+  });
+
+  describe('cadencia del interval en modo random (regresión code review)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('un refetch de SWR (nueva referencia de eventos) NO reinicia el interval de FOCUS_INTERVAL_MS', async () => {
+      // Bug real: `eventos` en las deps del efecto del interval hacía que
+      // CADA refetch de SWR (cada REFRESH_SECONDS=30s, nueva referencia de
+      // array aunque el contenido sea el mismo) desmontara y remontara el
+      // timer entero — clearInterval + pick inmediato + setInterval nuevo —
+      // también en modo random, cortando la cadencia de FOCUS_INTERVAL_MS
+      // (20s). Si esa mutación (volver a poner `eventos` en las deps del
+      // interval) se reintroduce, el refetch de t=30s suma un pick extra
+      // ahí mismo y este test debe fallar.
+      //
+      // Cronología esperada con el fix (interval montado en t≈0, cadencia
+      // 20s; refetch de SWR en t=30s):
+      //   t=0   pick inicial (primeros datos)         → 1
+      //   t=15  (antes del interval real)              → sigue en 1
+      //   t=20  tick NATURAL del interval de foco       → 2
+      //   t=30  refetch de SWR (nueva referencia)       → sigue en 2 (el bug sumaría un 3er pick acá)
+      //   t=40  próximo tick natural del interval       → 3
+      searchEventsMock.mockResolvedValue([
+        makeEvento({ id: 'a' }),
+        makeEvento({ id: 'b' }),
+        makeEvento({ id: 'c' }),
+      ]);
+      window.history.replaceState(null, '', '?focus=random');
+      renderOverlay();
+
+      // Con fake timers, `waitFor` (que hace polling en tiempo real) no es
+      // confiable: se flushean microtasks a mano para dejar que el mock de
+      // searchEvents resuelva y los efectos posteriores corran.
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('broadcast-feed')).toBeTruthy();
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(1); // t=0: pick inicial
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000); // t=15s: antes del interval real
+      });
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(5_000); // t=20s: tick natural del interval
+      });
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(2);
+
+      // Refetch real de SWR en t=30s: nueva ronda de datos. Si el interval
+      // dependiera de `eventos`, este refetch por sí solo reiniciaría el
+      // timer y dispararía un pick inmediato — el conteo saltaría a 3 acá,
+      // 10s antes del próximo tick natural (t=40s).
+      await act(async () => {
+        vi.advanceTimersByTime(10_000); // t=30s: refetch de SWR
+      });
+      expect(searchEventsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        vi.advanceTimersByTime(10_000); // t=40s: próximo tick natural
+      });
+      expect(pickSpotlightSpy).toHaveBeenCalledTimes(3);
+
+      window.history.replaceState(null, '', '/');
+    });
   });
 });

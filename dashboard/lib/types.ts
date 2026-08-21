@@ -311,3 +311,23 @@ export interface AccountExport {
  * manejar mostrando el segundo paso del login.
  */
 export type LoginResult = { requiresTwoFactor: true } | { requiresTwoFactor: false; user: UserPublic };
+
+/**
+ * Respuesta de `GET /walls/global` (spectronet-wall, Task 1) — muro default
+ * "Global" estilo SPECTRONET, estático y generado del catálogo. `layout`
+ * describe columnas de la grilla; cada columna trae grupos (regiones) con
+ * encabezado y las tiras (canal + etiqueta) que le corresponden.
+ */
+export interface WallResponse {
+  id: string;
+  name: string;
+  layout: {
+    columns: {
+      groups: {
+        title: string;
+        channels: { channel: string; label: string }[];
+      }[];
+    }[];
+    showMetrics: boolean;
+  };
+}

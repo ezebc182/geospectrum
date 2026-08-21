@@ -16,8 +16,10 @@ interface LiveSpectrogramCanvasProps {
   width?: number;
   /** 'strip': tira fina apilable (estilo RaspberryShake) — tag chiquito con
    * el nombre, sin código de canal ni hora, para que el dato sea el
-   * protagonista y no el cartel. */
-  variant?: 'default' | 'strip';
+   * protagonista y no el cartel.
+   * 'bare': tira desnuda para el muro SPECTRONET — solo el canvas + punto de
+   * estado, sin tag; la etiqueta vive en SpectronetStrip. */
+  variant?: 'default' | 'strip' | 'bare';
 }
 
 interface SpecColumn {
@@ -73,6 +75,7 @@ export function LiveSpectrogramCanvas({
     let ws: WebSocket;
     let closedByUs = false;
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
     const drawColumn = (col: SpecColumn) => {
       // Corre todo el contenido 1px a la izquierda (efecto "cinta que avanza")
@@ -91,6 +94,7 @@ export function LiveSpectrogramCanvas({
     };
 
     const connect = () => {
+      if (cancelled) return;
       ws = new WebSocket(`${WS_BASE}/ws/spectrogram/${channel}`);
 
       ws.onopen = () => setStatus('connecting'); // pasa a 'live' con el primer dato
@@ -108,7 +112,7 @@ export function LiveSpectrogramCanvas({
       ws.onclose = () => {
         if (!closedByUs) {
           setStatus('error');
-          setTimeout(connect, 3000); // reconexión con backoff simple
+          reconnectTimer = setTimeout(connect, 3000); // reconexión con backoff simple
         }
       };
     };
@@ -139,9 +143,28 @@ export function LiveSpectrogramCanvas({
     return () => {
       cancelled = true;
       closedByUs = true;
+      clearTimeout(reconnectTimer);
       ws?.close();
     };
   }, [channel, width, height]);
+
+  if (variant === 'bare') {
+    // Tira desnuda para el muro SPECTRONET: la etiqueta vive FUERA, en
+    // SpectronetStrip. El punto de estado se conserva (spec §1: una estación
+    // caída se ve negra CON punto rojo, y el muro no salta).
+    return (
+      <div className="relative overflow-hidden bg-black" style={{ width, height }}>
+        <canvas ref={canvasRef} width={width} height={height} className="block" />
+        {status !== 'live' && (
+          <span
+            className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${
+              status === 'error' ? 'bg-red-500' : 'bg-yellow-400'
+            }`}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (variant === 'strip') {
     // Tira apilable: el dato manda. Solo un tag mínimo con el nombre, como

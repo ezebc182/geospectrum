@@ -3,7 +3,7 @@
  */
 
 import type { AppLocale } from './locale';
-import type { BetaSignup, MonitorReport, SeismicEvent, Alert } from './types';
+import type { BetaSignup, MonitorReport, SeismicEvent, Alert, WallResponse } from './types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -129,6 +129,13 @@ class SeismicAPI {
    */
   async getLiveChannels(): Promise<{ city_id: string; channel: string }[]> {
     return this.fetchJSON('/spectrograms/live-channels');
+  }
+
+  /**
+   * Muro default "Global" estilo SPECTRONET (estático, generado del catálogo).
+   */
+  async getGlobalWall(): Promise<WallResponse> {
+    return this.fetchJSON<WallResponse>('/walls/global');
   }
 }
 

@@ -270,6 +270,11 @@
       "billboardNext": "Next panel",
       "billboardPrev": "Previous panel",
       "billboardWallTitle": "Spectrogram wall",
+      "focus": {
+        "label": "Focus",
+        "random": "Random",
+        "latest": "Latest event"
+      },
       "topRegions": "Most active regions (24 h)",
       "hourlyActivity": "Hourly activity (24 h)",
       "now": "now",

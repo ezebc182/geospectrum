@@ -2198,6 +2198,14 @@ async def get_spectrogram_history(
     return {"channel": channel, "columns": columns}
 
 
+@app.get("/walls/global", tags=["walls"])
+async def get_global_wall() -> dict:
+    """Muro default "Global" estilo SPECTRONET (estático, generado del catálogo)."""
+    from src.services.wall_service import build_global_wall
+
+    return build_global_wall()
+
+
 # =============================================================================
 # Spectrograms
 # =============================================================================

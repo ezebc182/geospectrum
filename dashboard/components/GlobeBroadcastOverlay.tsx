@@ -13,7 +13,7 @@
  * ventana corta y al área activa del usuario.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
@@ -30,8 +30,10 @@ import {
   minutesSinceMag,
   topRegions,
 } from '@/lib/broadcast-stats';
+import { FOCUS_INTERVAL_MS, pickSpotlight, readFocusMode, type FocusMode } from '@/lib/event-focus';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { SpectronetWall } from '@/components/SpectronetWall';
 import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
@@ -57,12 +59,9 @@ const FEED_SIZE = 50;
 const FRESH_MINUTES = 15;
 const TOP_REGIONS = 6;
 
-// Coreografía del spotlight (mismos tiempos que el hero de la landing):
-// cada tanto la cámara gira hacia uno de los sismos fuertes y abre su
-// infocard — es lo que hace que la transmisión se sienta viva.
-const SPOTLIGHT_INTERVAL_MS = 8_000;
-const SPOTLIGHT_FIRST_DELAY_MS = 2_500;
-const SPOTLIGHT_POOL_SIZE = 10;
+// Modo de foco del spotlight: 'random' rota entre los sismos recientes,
+// 'latest' sigue siempre al evento más nuevo (pickSpotlight decide, Task 2).
+const FOCUS_STORAGE_KEY = 'globe.broadcast.focus.v1';
 
 // Cartelera: capa maximizada con fondo difuso que rota entre "slides" como
 // una pantalla publicitaria (pedido del usuario, 2026-08-20). El muro
@@ -86,6 +85,11 @@ const SPECTRO_STRIPS = 8;
 // El ancho de la tira: el panel izquierdo mide w-72 (288px) menos p-3.
 const SPECTRO_WIDTH = 240;
 const SPECTRO_HEIGHT = 44;
+// Alto de tira del MURO de la cartelera (distinto del stack lateral del HUD,
+// que usa SPECTRO_HEIGHT=44): compartida entre SpectronetWall y su fallback
+// de wallStrips para que no diverjan y el muro no "salte" de tamaño al
+// resolver /walls/global (bug visto en la revisión de la Task 4).
+const WALL_STRIP_HEIGHT = 28;
 
 const CITY_NAME_BY_ID = new Map(HIGH_RISK_SEISMIC_CITIES.map((c) => [c.id, c.name]));
 
@@ -158,6 +162,12 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     () => seismicAPI.getLiveChannels(),
     { refreshInterval: 5 * 60_000 }
   );
+
+  // Muro SPECTRONET (Task 1): estático, generado del catálogo — no depende
+  // de qué esté transmitiendo ahora, por eso no necesita refresco periódico.
+  const { data: wallData } = useSWR('broadcast-wall', () => seismicAPI.getGlobalWall(), {
+    revalidateOnFocus: false,
+  });
   // Selección del usuario (agregar/quitar estaciones); sin selección se
   // muestran las primeras SPECTRO_STRIPS que estén en vivo.
   const [spectroSelection, setSpectroSelection] = useState<string[] | null>(loadSpectroSelection);
@@ -295,33 +305,85 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   const now = useNow({ updateInterval: 60_000 });
   const format = useFormatter();
 
-  // Spotlight rotativo sobre los sismos más fuertes (patrón del hero de la
-  // landing): al azar sin repetir el anterior, para que se lea como
-  // coreografía y no como "se colgó".
-  const pool = useMemo(() => {
-    return latestEvents(eventos ?? [], eventos?.length ?? 0)
-      .filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.lon))
-      .sort((a, b) => b.mag - a.mag)
-      .slice(0, SPOTLIGHT_POOL_SIZE);
-  }, [eventos]);
+  // Modo de foco: 'random' (default) rota entre los eventos recientes,
+  // 'latest' sigue siempre al más nuevo. Query param gana sobre localStorage.
+  const [focusMode, setFocusMode] = useState<FocusMode>(() =>
+    readFocusMode(
+      typeof window !== 'undefined' ? window.location.search : '',
+      typeof window !== 'undefined' ? window.localStorage.getItem(FOCUS_STORAGE_KEY) : null
+    )
+  );
+  const changeFocusMode = (mode: FocusMode) => {
+    setFocusMode(mode);
+    try {
+      window.localStorage.setItem(FOCUS_STORAGE_KEY, mode);
+    } catch {
+      // sin storage: el modo vive solo esta sesión
+    }
+  };
+
+  // Spotlight: decide QUÉ mirar pickSpotlight (Task 2); acá solo se coreografía
+  // el timer y se aplica el resultado. En modo latest, null = "ya está
+  // enfocado" (no mover cámara).
+  //
+  // `eventos` cambia de referencia con cada poll de SWR (30s) aunque el
+  // contenido sea el mismo. Si el efecto del interval dependiera de
+  // `eventos`, CADA refetch desmontaría/remontaría el timer entero
+  // (clearInterval + pick inmediato + setInterval nuevo) — en AMBOS modos,
+  // no solo en latest. Eso corta la cadencia de FOCUS_INTERVAL_MS en modo
+  // random y mete un pick fuera de ritmo (bug reportado en code review,
+  // 2026-08-20). Por eso `eventos` vive en un ref, leído por el timer sin
+  // formar parte de sus deps: el interval de 20s queda estable y solo se
+  // reinicia si cambia `focusMode`.
+  const eventosRef = useRef<SeismicEvent[]>([]);
 
   const [spotlightEvent, setSpotlightEvent] = useState<SeismicEvent | null>(null);
-  useEffect(() => {
+  const lastFocusedIdRef = useRef<string | null>(null);
+  const pickSpotlightNow = () => {
+    const pool = eventosRef.current;
     if (pool.length === 0) return;
-    let lastId: string | null = null;
-    const pick = () => {
-      const candidates = pool.filter((e) => e.id !== lastId);
-      const elegido = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0];
-      lastId = elegido.id;
-      setSpotlightEvent(elegido);
-    };
-    const first = setTimeout(pick, SPOTLIGHT_FIRST_DELAY_MS);
-    const timer = setInterval(pick, SPOTLIGHT_INTERVAL_MS);
-    return () => {
-      clearTimeout(first);
-      clearInterval(timer);
-    };
-  }, [pool]);
+    const elegido = pickSpotlight(focusMode, pool, lastFocusedIdRef.current, Math.random);
+    if (elegido === null) return;
+    lastFocusedIdRef.current = elegido.id;
+    setSpotlightEvent(elegido);
+  };
+
+  useEffect(() => {
+    eventosRef.current = eventos ?? [];
+    // Primeros datos que llegan (SWR resuelve async, así que nunca están
+    // listos en el montaje): se dispara el pick inicial apenas hay pool, en
+    // AMBOS modos — si no, el spotlight quedaría vacío hasta el primer tick
+    // del interval de 20s. `lastFocusedIdRef` sigue null solo hasta el
+    // primer pick exitoso, así que esto corre una única vez; refetches
+    // posteriores (mismo pool ya poblado, otra referencia) no lo repiten en
+    // modo random — en latest lo cubre el efecto dedicado de más abajo.
+    if (lastFocusedIdRef.current === null && eventosRef.current.length > 0) {
+      pickSpotlightNow();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventos]);
+
+  // Timer del spotlight: cadencia estable de FOCUS_INTERVAL_MS. Deps SOLO
+  // `[focusMode]` — `eventos` NO va acá (ver nota arriba): si dependiera de
+  // `eventos`, cada refetch de SWR (cada 30s, nueva referencia de array
+  // aunque el contenido sea el mismo) desmontaría/remontaría el timer
+  // entero, cortando la cadencia de 20s también en modo random (bug
+  // reportado en code review, 2026-08-20).
+  useEffect(() => {
+    const timer = setInterval(pickSpotlightNow, FOCUS_INTERVAL_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMode]);
+
+  // Solo en modo latest: apenas llega un evento nuevo (nueva referencia de
+  // `eventos` desde SWR) se re-evalúa el spotlight sin esperar el próximo
+  // tick del interval de 20s. En modo random esto NO debe disparar nada —
+  // ahí la cadencia la marca únicamente el interval de arriba.
+  useEffect(() => {
+    if (focusMode !== 'latest') return;
+    pickSpotlightNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventos, focusMode]);
 
   // Analíticas del HUD: una serie por gráfico, un solo tono, valores
   // directos — nada de leyendas ni dobles ejes en un panel de transmisión.
@@ -379,6 +441,15 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     };
   }, [spotlightEvent, t, format, now]);
 
+  // Lleva la fila enfocada del feed a la vista: el spotlight puede cambiar
+  // por el timer o por un clic en el globo, y en ambos casos el sidebar debe
+  // mostrar por qué evento va sin que el usuario tenga que scrollear a mano.
+  // 'nearest' evita el salto si la fila ya está visible.
+  useEffect(() => {
+    if (!spotlightEvent) return;
+    document.querySelector('[data-testid="feed-row-focused"]')?.scrollIntoView({ block: 'nearest' });
+  }, [spotlightEvent]);
+
   // Portal a <body>: el layout de (app) tiene ancestros con transform
   // (SidebarInset, indicadores) que convierten `fixed` en "fixed relativo
   // al ancestro" — el overlay quedaba DEBAJO del navbar de la app en vez
@@ -399,6 +470,17 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             // default (2.5) el globo flotaba chico en un mar de fondo vacío.
             initialAltitude={1.35}
             spotlight={spotlight}
+            // Clic en un punto: enfoca ese evento como spotlight y mantiene
+            // el ref de "último enfocado" coherente, igual que hace
+            // pickSpotlightNow — si no, en modo latest el próximo tick del
+            // interval podría re-elegir el mismo evento y disparar un pick
+            // de más.
+            onEventClick={(id) => {
+              const target = (eventos ?? []).find((e) => e.id === id);
+              if (!target) return;
+              lastFocusedIdRef.current = target.id;
+              setSpotlightEvent(target);
+            }}
           />
         )}
       </div>
@@ -484,8 +566,15 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
         <ul data-testid="broadcast-feed" className="divide-y divide-border/60">
           {feed.map((evento) => {
             const severity = getMagnitudeSeverity(evento.mag);
+            const isFocused = evento.id === spotlightEvent?.id;
             return (
-              <li key={evento.id} className="flex items-start gap-3 px-3 py-2">
+              <li
+                key={evento.id}
+                data-testid={isFocused ? 'feed-row-focused' : undefined}
+                className={`flex items-start gap-3 px-3 py-2 ${
+                  isFocused ? 'bg-teal-950/60 ring-1 ring-teal-500/60' : ''
+                }`}
+              >
                 <span
                   className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-data text-xs font-bold ${SEVERITY_CHIP[severity]}`}
                 >
@@ -603,6 +692,33 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
                 </label>
               ))}
 
+              {/* Foco del spotlight: aleatorio (default) o siguiendo siempre
+                  al evento más nuevo. aria-label lleva el valor literal del
+                  modo (estable en cualquier idioma); el texto visible usa
+                  las claves i18n. */}
+              <div className="mt-2 mb-1 border-t border-border px-2 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('focus.label')}
+              </div>
+              <div role="radiogroup" aria-label={t('focus.label')} className="flex gap-1 px-2 pb-1">
+                {(['random', 'latest'] as FocusMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={focusMode === mode}
+                    aria-label={mode}
+                    onClick={() => changeFocusMode(mode)}
+                    className={`flex-1 rounded px-2 py-1 text-xs transition-colors ${
+                      focusMode === mode
+                        ? 'bg-accent text-foreground'
+                        : 'text-popover-foreground hover:bg-accent/50'
+                    }`}
+                  >
+                    {mode === 'random' ? t('focus.random') : t('focus.latest')}
+                  </button>
+                ))}
+              </div>
+
               {/* Estaciones del stack de espectrogramas: agregar/quitar de
                   entre las que están transmitiendo ahora. */}
               {(liveChannels ?? []).length > 0 && (
@@ -673,23 +789,30 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
           {/* El muro queda MONTADO (oculto) mientras rota otro slide: cada
               tira es 1 WebSocket + 1 fetch de historial, y desmontar/montar
-              ~74 en cada rotación era una tormenta de reconexiones. */}
+              ~74 en cada rotación era una tormenta de reconexiones. Layout
+              SPECTRONET (columnas + grupos) mientras carga /walls/global;
+              wallStrips queda de fallback para que el muro NUNCA esté en
+              blanco durante esa espera. */}
           <div
             data-testid="billboard-wall"
-            className={`flex-1 flex-wrap content-start justify-center gap-1.5 overflow-hidden p-3 ${
-              slide === 'wall' ? 'flex' : 'hidden'
-            }`}
+            className={`flex-1 overflow-hidden ${slide === 'wall' ? 'flex' : 'hidden'}`}
           >
-            {wallStrips.map((s) => (
-              <LiveSpectrogramCanvas
-                key={s.channel}
-                channel={s.channel}
-                label={s.name}
-                width={SPECTRO_WIDTH}
-                height={SPECTRO_HEIGHT}
-                variant="strip"
-              />
-            ))}
+            {wallData ? (
+              <SpectronetWall wall={wallData} stripWidth={SPECTRO_WIDTH} stripHeight={WALL_STRIP_HEIGHT} />
+            ) : (
+              <div className="flex flex-1 flex-wrap content-start justify-center gap-1.5 p-3">
+                {wallStrips.map((s) => (
+                  <LiveSpectrogramCanvas
+                    key={s.channel}
+                    channel={s.channel}
+                    label={s.name}
+                    width={SPECTRO_WIDTH}
+                    height={WALL_STRIP_HEIGHT}
+                    variant="strip"
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {slide === 'analytics' && (
