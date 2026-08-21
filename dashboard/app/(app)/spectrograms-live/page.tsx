@@ -13,7 +13,7 @@
 
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -34,6 +34,7 @@ import {
 } from '@/lib/seismic-cities';
 import { searchPlace, type GeocodingResult } from '@/lib/geocoding';
 import { seismicAPI } from '@/lib/api';
+import { useStationMetrics } from '@/lib/use-station-metrics';
 import { Activity, Grid3x3, Plus, Search, X, MapPin, Loader2 } from 'lucide-react';
 
 type ViewMode = 'grid' | 'list';
@@ -81,6 +82,18 @@ function SpectrogramsLiveView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCitySelector, setShowCitySelector] = useState(false);
   const [liveChannelsByCity, setLiveChannelsByCity] = useState<Record<string, string>>({});
+
+  // Métricas de dominio (PR-W3): solo los canales de las tarjetas EN PANTALLA
+  // — pedir las 27 ciudades del catálogo cuando el usuario tiene 12 tarjetas
+  // sería tráfico por nada. El polling se apaga fuera del tab de tarjetas.
+  const visibleLiveChannels = useMemo(
+    () =>
+      selectedCities
+        .map((city) => liveChannelsByCity[city.id])
+        .filter((channel): channel is string => Boolean(channel)),
+    [selectedCities, liveChannelsByCity]
+  );
+  const metricsByChannel = useStationMetrics(visibleLiveChannels, tab === 'cards');
 
   const [placeQuery, setPlaceQuery] = useState('');
   const [placeResults, setPlaceResults] = useState<GeocodingResult[]>([]);
@@ -386,14 +399,18 @@ function SpectrogramsLiveView() {
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={selectedCities.map((c) => c.id)} strategy={rectSortingStrategy}>
             <div className={`grid ${gridColsClass[gridCols]} gap-4`}>
-              {selectedCities.map((city) => (
-                <SortableSpectrogramCard
-                  key={city.id}
-                  city={city}
-                  liveChannel={liveChannelsByCity[city.id]}
-                  onRemove={removeCity}
-                />
-              ))}
+              {selectedCities.map((city) => {
+                const liveChannel = liveChannelsByCity[city.id];
+                return (
+                  <SortableSpectrogramCard
+                    key={city.id}
+                    city={city}
+                    liveChannel={liveChannel}
+                    metrics={liveChannel ? metricsByChannel[liveChannel] : undefined}
+                    onRemove={removeCity}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         </DndContext>

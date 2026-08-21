@@ -318,6 +318,15 @@
         "extreme": "Extreme",
         "high": "High",
         "moderate": "Moderate"
+      },
+      "metrics": {
+        "rsam": "RSAM",
+        "freqDominant": "dom f",
+        "fi": "FI",
+        "peakDb": "peak",
+        "eventsHour": "ev/h",
+        "latency": "lat",
+        "tooltip": "RSAM (10 min moving average) · dominant frequency · Frequency Index (− fluids / + fracture) · peak dB (fixed 20-120 scale) · events per hour · latency"
       }
     },
     "spectrogramsPage": {
