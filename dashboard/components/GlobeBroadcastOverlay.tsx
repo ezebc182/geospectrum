@@ -38,6 +38,7 @@ import { SpectronetWall } from '@/components/SpectronetWall';
 import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
 import { listWalls } from '@/lib/walls';
+import { useStationMetrics } from '@/lib/use-station-metrics';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
 
@@ -249,6 +250,24 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   );
 
   const [billboard, setBillboard] = useState(false);
+
+  // Canales del muro activo, para pedirles las métricas en un solo batch.
+  const wallChannels = useMemo(
+    () =>
+      activeWall
+        ? activeWall.layout.columns.flatMap((c) =>
+            c.groups.flatMap((g) => g.channels.map((ch) => ch.channel))
+          )
+        : [],
+    [activeWall]
+  );
+  // El polling se apaga si la cartelera está cerrada o si el muro no pide
+  // métricas: sin este gate serían ~74 canales cada 15 s para nada.
+  const wallMetrics = useStationMetrics(
+    wallChannels,
+    billboard && (activeWall?.layout.showMetrics ?? false)
+  );
+
   const [slideIndex, setSlideIndex] = useState(0);
   // Epoch de navegación MANUAL: prev/next lo suben para re-armar el timer
   // (cambiar a mano y que a los 2s rote solo se siente como un glitch).
@@ -855,7 +874,12 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             className={`flex-1 overflow-hidden ${slide === 'wall' ? 'flex' : 'hidden'}`}
           >
             {activeWall ? (
-              <SpectronetWall wall={activeWall} stripWidth={SPECTRO_WIDTH} stripHeight={WALL_STRIP_HEIGHT} />
+              <SpectronetWall
+                wall={activeWall}
+                stripWidth={SPECTRO_WIDTH}
+                stripHeight={WALL_STRIP_HEIGHT}
+                metrics={wallMetrics}
+              />
             ) : (
               <div className="flex flex-1 flex-wrap content-start justify-center gap-1.5 p-3">
                 {wallStrips.map((s) => (

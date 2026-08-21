@@ -1,16 +1,31 @@
 'use client';
 
 import type { WallResponse } from '@/lib/types';
+import { formatWallMetricsLine, type StationMetrics } from '@/lib/station-metrics';
 import { SpectronetStrip } from './SpectronetStrip';
 
 interface SpectronetWallProps {
   wall: WallResponse;
   stripWidth: number;
   stripHeight: number;
+  /** Métricas por canal (PR-W3); solo se muestran si el muro lo pide. */
+  metrics?: Record<string, StationMetrics>;
+  /** Inyectable para tests; en la app es el instante del render. */
+  nowMs?: number;
 }
 
 /** Muro estilo SPECTRONET: columnas verticales, grupos por región, tiras sin gap. */
-export function SpectronetWall({ wall, stripWidth, stripHeight }: SpectronetWallProps) {
+export function SpectronetWall({
+  wall,
+  stripWidth,
+  stripHeight,
+  metrics,
+  nowMs,
+}: SpectronetWallProps) {
+  // El flag lo persiste el armador (W2) y acá por fin hace algo.
+  const showMetrics = wall.layout.showMetrics;
+  const now = nowMs ?? Date.now();
+
   return (
     <div className="flex h-full justify-center gap-3 overflow-hidden p-3">
       {wall.layout.columns.map((column, ci) => (
@@ -21,15 +36,23 @@ export function SpectronetWall({ wall, stripWidth, stripHeight }: SpectronetWall
                 {group.title}
               </div>
               <div data-testid={`wall-group-${group.title}`} className="flex flex-col gap-0">
-                {group.channels.map((ch) => (
-                  <SpectronetStrip
-                    key={ch.channel}
-                    channel={ch.channel}
-                    label={ch.label}
-                    width={stripWidth}
-                    height={stripHeight}
-                  />
-                ))}
+                {group.channels.map((ch) => {
+                  const channelMetrics = metrics?.[ch.channel];
+                  return (
+                    <SpectronetStrip
+                      key={ch.channel}
+                      channel={ch.channel}
+                      label={ch.label}
+                      width={stripWidth}
+                      height={stripHeight}
+                      metricsLine={
+                        showMetrics && channelMetrics
+                          ? formatWallMetricsLine(channelMetrics, now)
+                          : null
+                      }
+                    />
+                  );
+                })}
               </div>
             </div>
           ))}
