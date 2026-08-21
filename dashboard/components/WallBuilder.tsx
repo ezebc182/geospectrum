@@ -104,13 +104,29 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
             </div>
             {column.groups.map((group, gi) => {
               const isActive = active.col === ci && active.group === gi;
+              const selectThisGroup = () => setActive({ col: ci, group: gi });
               return (
                 <div
                   key={gi}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isActive}
+                  aria-label={t('selectGroup')}
                   className={`mb-2 rounded border p-1.5 ${isActive ? 'border-teal-500' : 'border-border'}`}
-                  onClick={() => setActive({ col: ci, group: gi })}
+                  onClick={selectThisGroup}
+                  onKeyDown={(e) => {
+                    // Solo el contenedor mismo activa el grupo con teclado — un
+                    // Enter/Espacio dentro del input de título o de los botones
+                    // internos NO debe re-disparar la selección (evita el mismo
+                    // problema de bubbling que el click).
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      selectThisGroup();
+                    }
+                  }}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <input
                       aria-label={t('groupTitleLabel')}
                       className="w-full bg-transparent font-mono text-xs font-bold uppercase"
@@ -134,7 +150,7 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
                   {group.channels.length === 0 && (
                     <div className="py-1 text-[11px] text-muted-foreground">{t('emptyGroup')}</div>
                   )}
-                  <ul>
+                  <ul onClick={(e) => e.stopPropagation()}>
                     {group.channels.map((ch, chi) => (
                       <li
                         key={ch.channel}

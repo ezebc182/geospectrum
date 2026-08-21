@@ -82,4 +82,59 @@ describe('WallBuilder', () => {
     const withGroup = onChange.mock.calls[1][0] as WallLayout;
     expect(withGroup.columns[0].groups).toHaveLength(2);
   });
+
+  it('el selector de grupo es accesible por teclado (foco + Enter activa el grupo)', () => {
+    const layout: WallLayout = {
+      columns: [
+        {
+          groups: [
+            { title: 'ASIA', channels: [] },
+            { title: 'AMÉRICA', channels: [] },
+          ],
+        },
+      ],
+      showMetrics: false,
+    };
+    const onChange = renderBuilder(layout);
+    // El armador arranca con { col: 0, group: 0 } activo — enfocar y activar
+    // por teclado el segundo grupo (AMÉRICA) y confirmar que "Agregar" desde
+    // el catálogo cae ahí, no en el grupo por defecto.
+    const groupSelectors = screen.getAllByRole('button', { name: 'Elegir grupo' });
+    expect(groupSelectors).toHaveLength(2);
+    groupSelectors[1].focus();
+    fireEvent.keyDown(groupSelectors[1], { key: 'Enter' });
+
+    const limaRow = screen.getByText('Lima').closest('li')!;
+    fireEvent.click(within(limaRow).getByRole('button'));
+    const next = onChange.mock.calls[0][0] as WallLayout;
+    expect(next.columns[0].groups[1].channels).toEqual([LIMA]);
+    expect(next.columns[0].groups[0].channels).toEqual([]);
+  });
+
+  it('operar los controles de un grupo no activo no lo selecciona (click no burbujea)', () => {
+    const layout: WallLayout = {
+      columns: [
+        {
+          groups: [
+            { title: 'ASIA', channels: [] },
+            { title: 'AMÉRICA', channels: [] },
+          ],
+        },
+      ],
+      showMetrics: false,
+    };
+    const onChange = renderBuilder(layout);
+    // Grupo activo por defecto: { col: 0, group: 0 } (ASIA). Clickear el
+    // input de título del segundo grupo (AMÉRICA, no activo) es un click
+    // real que burbujea por el DOM hasta el selector del grupo si no se
+    // corta — no debe cambiar la selección: el "Agregar" siguiente debe
+    // seguir cayendo en ASIA.
+    fireEvent.click(screen.getByDisplayValue('AMÉRICA'));
+
+    const limaRow = screen.getByText('Lima').closest('li')!;
+    fireEvent.click(within(limaRow).getByRole('button'));
+    const afterAdd = onChange.mock.calls[0][0] as WallLayout;
+    expect(afterAdd.columns[0].groups[0].channels).toEqual([LIMA]);
+    expect(afterAdd.columns[0].groups[1].channels).toEqual([]);
+  });
 });
