@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useFormatter } from 'next-intl';
+import { jet2 } from '@/lib/jet2-palette';
 import {
   historyMinutesForWidth,
-  scaleFromHistory,
+  powerDbToT,
   sliceToWidth,
-  updateScale,
-  type SpectrogramScale,
 } from '@/lib/spectrogram-scale';
 
 interface LiveSpectrogramCanvasProps {
@@ -36,42 +35,10 @@ const WS_BASE = API_BASE.replace(/^http/, 'ws');
 // fijos para una tira de 240px tiraba 3/4 del payload, y con ~74 tiras
 // montadas en el muro de la cartelera eso se multiplica.
 
-// El piso de ruido en dB varía mucho por estación (ver min/max reales medidos:
-// IU.MAJO iba de -34.8 a 56.4, UW.LON de -16.3 a 38.4); umbrales fijos dejaban
-// casi todo del mismo color. La escala se calcula global sobre el historial y
-// deriva lenta (ver lib/spectrogram-scale.ts) — normalizar por columna hacía
-// que el ruido de fondo brillara igual que un sismo.
-const VIRIDIS_STOPS: [number, string][] = [
-  [0.0, '#440154'],
-  [0.25, '#3b528b'],
-  [0.5, '#21918c'],
-  [0.75, '#5ec962'],
-  [1.0, '#fde725'],
-];
-
-function viridis(t: number): string {
-  const clamped = Math.max(0, Math.min(1, t));
-  for (let i = 0; i < VIRIDIS_STOPS.length - 1; i++) {
-    const [t0, c0] = VIRIDIS_STOPS[i];
-    const [t1, c1] = VIRIDIS_STOPS[i + 1];
-    if (clamped >= t0 && clamped <= t1) {
-      const localT = (clamped - t0) / (t1 - t0);
-      return lerpColor(c0, c1, localT);
-    }
-  }
-  return VIRIDIS_STOPS[VIRIDIS_STOPS.length - 1][1];
-}
-
-function lerpColor(hexA: string, hexB: string, t: number): string {
-  const a = parseInt(hexA.slice(1), 16);
-  const b = parseInt(hexB.slice(1), 16);
-  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
-  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
-  const r = Math.round(ar + (br - ar) * t);
-  const g = Math.round(ag + (bg - ag) * t);
-  const bl = Math.round(ab + (bb - ab) * t);
-  return `rgb(${r},${g},${bl})`;
-}
+// Escala FIJA 20-120 dB (paridad SWARM): el backend calcula los dB igual que
+// SWARM (swarm_spectra.py), así que los valores absolutos son comparables
+// entre estaciones y el rojo queda reservado para energía real — ver
+// lib/spectrogram-scale.ts para el porqué de la muerte de la escala adaptativa.
 
 /**
  * Espectrograma en vivo real: consume columnas nuevas por WebSocket
@@ -106,20 +73,11 @@ export function LiveSpectrogramCanvas({
     let ws: WebSocket;
     let closedByUs = false;
     let cancelled = false;
-    // Escala compartida entre historial y vivo. Vive en el closure del efecto
-    // (no en un ref del componente) para que un cambio de canal la resetee.
-    let scale: SpectrogramScale | null = null;
 
     const drawColumn = (col: SpecColumn) => {
       // Corre todo el contenido 1px a la izquierda (efecto "cinta que avanza")
       const img = ctx.getImageData(1, 0, width - 1, height);
       ctx.putImageData(img, 0, 0);
-
-      // Sin historial (base caída o canal recién estrenado) la primera
-      // columna en vivo inicializa la escala; de ahí en más solo deriva.
-      scale = scale === null ? scaleFromHistory([col.power_db]) : updateScale(scale, col.power_db);
-      if (scale === null) return;
-      const range = scale.vmax - scale.vmin || 1;
 
       // Pinta la columna nueva en el borde derecho: cada bin de frecuencia
       // ocupa una franja vertical proporcional, grave abajo / agudo arriba.
@@ -127,8 +85,7 @@ export function LiveSpectrogramCanvas({
       for (let i = 0; i < n; i++) {
         const y = height - Math.round(((i + 1) / n) * height);
         const rowHeight = Math.max(1, Math.ceil(height / n));
-        const t = (col.power_db[i] - scale.vmin) / range;
-        ctx.fillStyle = viridis(t);
+        ctx.fillStyle = jet2(powerDbToT(col.power_db[i]));
         ctx.fillRect(width - 1, y, 1, rowHeight);
       }
     };
@@ -164,11 +121,8 @@ export function LiveSpectrogramCanvas({
         const data: { columns: SpecColumn[] } = await res.json();
         if (cancelled) return;
         // A 1px por columna, las que exceden el ancho saldrían del canvas
-        // apenas pintadas. La escala se inicializa con TODO el recorte antes
-        // de dibujar: si no, las primeras columnas se pintan contra una
-        // escala a medio construir.
+        // apenas pintadas.
         const columns = sliceToWidth(data.columns, width);
-        scale = scaleFromHistory(columns.map((c) => c.power_db));
         for (const col of columns) {
           drawColumn(col);
           setLastUpdate(col.endtime);

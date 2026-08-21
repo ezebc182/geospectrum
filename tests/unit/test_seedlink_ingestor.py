@@ -310,3 +310,25 @@ def test_channels_from_catalog_incluye_respaldos_y_deduplica():
         ("CI", "PLM", "BHZ"),
         ("UW", "LON", "HHZ"),
     ]
+
+
+def test_compute_column_tiene_paridad_swarm():
+    # Un seno de 22 Hz: el pipeline viejo (bandpass 0.1-20 + mascara a 20)
+    # lo borraba. Con paridad SWARM (sin filtro, banda a 25 Hz, 20*log10 de
+    # la FFT cruda) tiene que aparecer como pico dominante.
+    fs = 100.0
+    t = np.arange(int(fs * 10)) / fs
+    tr = Trace(
+        data=(1000.0 * np.sin(2 * np.pi * 22.0 * t)),
+        header={"network": "UW", "station": "LON", "channel": "HHZ", "sampling_rate": fs},
+    )
+    ingestor = _ingestor_rapido()
+
+    column = ingestor._compute_column(tr, "UW.LON..HHZ")
+
+    assert column is not None
+    freqs = np.array(column["freqs"])
+    power = np.array(column["power_db"])
+    assert freqs.max() <= 25.0
+    assert abs(freqs[int(power.argmax())] - 22.0) < 0.5
+    assert power.max() > 60  # escala SWARM: counts de a miles viven en 60-120 dB

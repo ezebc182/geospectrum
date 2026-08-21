@@ -18,7 +18,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # Backend sin GUI
 import matplotlib.pyplot as plt
-from scipy import signal
+from src.services.swarm_spectra import MAX_POWER_DB, MIN_POWER_DB, swarm_spectrogram_db
 
 logger = logging.getLogger(__name__)
 
@@ -508,33 +508,12 @@ class SpectrogramService:
             # Usamos el más largo para maximizar la ventana de señal continua.
             trace = max(stream, key=lambda tr: tr.stats.npts)
 
-            # Preprocesamiento
-            trace.detrend("demean")
-            trace.filter("bandpass", freqmin=fmin, freqmax=fmax, corners=2, zerophase=True)
-
-            # Calcular espectrograma
+            # Cálculo con paridad SWARM (Kaiser beta=5, 20*log10 de la FFT
+            # cruda, sin bandpass): la escala fija 20-120 dB aplica tal cual.
+            # max_columns limita las posiciones temporales a lo que la imagen
+            # puede mostrar sin cambiar los dB de cada bin.
             fs = trace.stats.sampling_rate
-            data = trace.data
-
-            # Parámetros para la FFT
-            nperseg = int(fs * 60)  # Ventana de 60 segundos
-            noverlap = int(nperseg * 0.5)  # 50% overlap (suficiente resolución temporal)
-
-            f, t, Sxx = signal.spectrogram(
-                data, fs=fs, window="hann", nperseg=nperseg, noverlap=noverlap, scaling="density"
-            )
-
-            # Convertir a dB
-            Sxx_db = 10 * np.log10(Sxx + 1e-10)
-
-            # Reducir columnas de tiempo a lo que la imagen puede mostrar:
-            # graficar miles de columnas en un ancho de pocos cientos de px
-            # con shading='gouraud' es el cuello de botella real de matplotlib.
-            max_time_bins = width * 2
-            if Sxx_db.shape[1] > max_time_bins:
-                step = Sxx_db.shape[1] // max_time_bins
-                Sxx_db = Sxx_db[:, ::step]
-                t = t[::step]
+            f, t, Sxx_db = swarm_spectrogram_db(trace.data, fs, max_columns=width * 2)
 
             # Crear figura
             fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
@@ -544,10 +523,10 @@ class SpectrogramService:
                 t / 3600,  # Convertir a horas
                 f,
                 Sxx_db,
-                cmap="viridis",
+                cmap="jet",  # paleta estilo SWARM (Jet2); ver dashboard/lib/jet2-palette.ts
                 shading="auto",
-                vmin=np.percentile(Sxx_db, 5),
-                vmax=np.percentile(Sxx_db, 95),
+                vmin=MIN_POWER_DB,  # escala fija de SWARM: el rojo es 120 dB
+                vmax=MAX_POWER_DB,  # reales, no "el 5% más alto de la imagen"
             )
 
             # Configurar ejes
@@ -594,8 +573,9 @@ class SpectrogramService:
             freq_bins = 100  # 100 bins de frecuencia (0.1 a 20 Hz)
 
             # Crear matriz de espectrograma sintético
-            # Simular ruido de fondo con variación día/noche
-            Sxx = np.random.randn(freq_bins, time_blocks) * 5
+            # Simular ruido de fondo con variación día/noche, centrado en la
+            # zona de ruido típica de la escala SWARM (20-120 dB)
+            Sxx = 60 + np.random.randn(freq_bins, time_blocks) * 5
 
             # Añadir ruido océano (frecuencias bajas, constante)
             Sxx[0:10, :] += 20 + np.random.randn(10, time_blocks) * 3
@@ -626,10 +606,10 @@ class SpectrogramService:
                 t,
                 f,
                 Sxx,
-                cmap="viridis",
+                cmap="jet",  # paleta estilo SWARM (Jet2); ver dashboard/lib/jet2-palette.ts
                 shading="gouraud",
-                vmin=np.percentile(Sxx, 5),
-                vmax=np.percentile(Sxx, 95),
+                vmin=MIN_POWER_DB,
+                vmax=MAX_POWER_DB,
             )
 
             # Configurar ejes
