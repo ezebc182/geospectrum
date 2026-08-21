@@ -1,80 +1,31 @@
 import { describe, it, expect } from 'vitest';
 import {
-  percentile,
-  scaleFromHistory,
-  updateScale,
+  SWARM_MAX_POWER_DB,
+  SWARM_MIN_POWER_DB,
+  powerDbToT,
   sliceToWidth,
   historyMinutesForWidth,
 } from './spectrogram-scale';
 
-describe('percentile', () => {
-  it('interpola linealmente sobre un array ordenado', () => {
-    expect(percentile([0, 10], 0.5)).toBe(5);
-    expect(percentile([0, 10, 20, 30, 40], 0.25)).toBe(10);
+describe('escala fija SWARM', () => {
+  it('usa el rango 20-120 dB de WaveDefaults.config de SWARM', () => {
+    // Paridad con el backend (src/services/swarm_spectra.py): el rojo del
+    // colormap significa 120 dB reales, no "el 5% más alto de la imagen".
+    expect(SWARM_MIN_POWER_DB).toBe(20);
+    expect(SWARM_MAX_POWER_DB).toBe(120);
   });
 
-  it('en los extremos devuelve min y max', () => {
-    expect(percentile([3, 7, 9], 0)).toBe(3);
-    expect(percentile([3, 7, 9], 1)).toBe(9);
-  });
-});
-
-describe('scaleFromHistory', () => {
-  it('sin columnas devuelve null', () => {
-    expect(scaleFromHistory([])).toBeNull();
-    expect(scaleFromHistory([[]])).toBeNull();
+  it('mapea dB al [0,1] de la paleta linealmente', () => {
+    expect(powerDbToT(20)).toBe(0);
+    expect(powerDbToT(70)).toBe(0.5);
+    expect(powerDbToT(120)).toBe(1);
   });
 
-  it('calcula percentiles GLOBALES, no por columna', () => {
-    // Una columna calma (todo -100) y una fuerte (todo 0): la escala global
-    // abarca ambas. Normalizando por columna, las dos darían el mismo rango
-    // y se verían idénticas — que es el bug que motivó este módulo.
-    const scale = scaleFromHistory([Array(100).fill(-100), Array(100).fill(0)]);
-    expect(scale).not.toBeNull();
-    expect(scale!.vmin).toBeCloseTo(-100, 0);
-    expect(scale!.vmax).toBeCloseTo(0, 0);
-  });
-
-  it('con la escala global, la columna calma queda oscura y la fuerte brillante', () => {
-    const quiet = Array(100).fill(-100);
-    const loud = Array(100).fill(0);
-    const scale = scaleFromHistory([quiet, loud])!;
-    const range = scale.vmax - scale.vmin;
-    const tQuiet = (quiet[0] - scale.vmin) / range;
-    const tLoud = (loud[0] - scale.vmin) / range;
-    expect(tQuiet).toBeLessThan(0.1);
-    expect(tLoud).toBeGreaterThan(0.9);
-  });
-});
-
-describe('updateScale', () => {
-  it('deriva lento hacia la columna nueva sin saltar', () => {
-    const scale = { vmin: -100, vmax: -50 };
-    const updated = updateScale(scale, Array(100).fill(0), 0.02);
-    // Con alpha 0.02 el techo se mueve apenas 2% del salto: un sismo no se
-    // come su propio contraste recalibrando la escala de golpe.
-    expect(updated.vmax).toBeCloseTo(-49, 0);
-    expect(updated.vmax).toBeLessThan(-45);
-  });
-
-  it('no muta la escala original', () => {
-    const scale = { vmin: -100, vmax: -50 };
-    updateScale(scale, [0, 0, 0]);
-    expect(scale).toEqual({ vmin: -100, vmax: -50 });
-  });
-
-  it('columna vacía deja la escala como estaba', () => {
-    const scale = { vmin: -100, vmax: -50 };
-    expect(updateScale(scale, [])).toEqual(scale);
-  });
-
-  it('tras muchas columnas converge al rango nuevo', () => {
-    let scale = { vmin: -100, vmax: -50 };
-    for (let i = 0; i < 500; i++) {
-      scale = updateScale(scale, [-80, -70, -60, -50, -40, -30, -20, -10]);
-    }
-    expect(scale.vmin).toBeGreaterThan(-90);
-    expect(scale.vmax).toBeGreaterThan(-20);
+  it('fuera de rango satura en los extremos de la paleta', () => {
+    // El piso de ruido de un canal calmo (< 20 dB) queda plano en el azul
+    // marino; un evento saturado (> 120 dB) queda plano en el rojo oscuro.
+    expect(powerDbToT(-40)).toBe(0);
+    expect(powerDbToT(150)).toBe(1);
   });
 });
 

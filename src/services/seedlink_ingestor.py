@@ -27,19 +27,15 @@ from typing import Optional
 import numpy as np
 from obspy import Stream, Trace
 from obspy.clients.seedlink.easyseedlink import create_client
-from scipy.signal import spectrogram as scipy_spectrogram
 
 from src.config.settings import settings
 from src.services.channel_watchdog import ChannelWatchdog
+from src.services.swarm_spectra import swarm_bin_samples, swarm_column_db
 from src.services.event_bus import EventBus, RedisPubSubBus
 from src.services.spectrogram_service import LIVE_CANDIDATES_BY_CITY
 from src.services.timescale_service import TimescaleColumnWriter
 
 logger = logging.getLogger(__name__)
-
-# Banda de interés para el espectrograma (coincide con el resto del proyecto)
-FMIN_HZ = 0.1
-FMAX_HZ = 20.0
 
 # Ventana rodante que se mantiene en memoria por canal, en segundos.
 # Debe ser >= la ventana de FFT (WINDOW_SECONDS abajo) más margen.
@@ -132,26 +128,22 @@ class SeedLinkIngestor:
                 asyncio.run_coroutine_threadsafe(self.column_writer.add_column(column), self._loop)
 
     def _compute_column(self, trace: Trace, channel_id: str) -> Optional[dict]:
-        """Calcula la última columna del espectrograma (instante más reciente)."""
+        """Calcula la última columna del espectrograma con paridad SWARM.
+
+        Sin bandpass y con 20*log10 de la FFT cruda (ver swarm_spectra):
+        así la escala fija 20-120 dB de SWARM aplica tal cual.
+        """
         try:
-            tr = trace.copy()
-            tr.detrend("linear")
-            tr.filter("bandpass", freqmin=FMIN_HZ, freqmax=FMAX_HZ, corners=4, zerophase=True)
+            fs = trace.stats.sampling_rate
+            if trace.stats.npts < swarm_bin_samples(fs):
+                return None  # todavía no hay suficiente señal para un bin
 
-            fs = tr.stats.sampling_rate
-            if tr.stats.npts < int(fs * 4):
-                return None  # todavía no hay suficiente señal para una ventana de FFT
-
-            f, _t, sxx = scipy_spectrogram(
-                tr.data, fs=fs, nperseg=int(fs * 4), noverlap=int(fs * 3)
-            )
-            mask = (f >= FMIN_HZ) & (f <= FMAX_HZ)
-            power_db = 10 * np.log10(sxx[mask, -1] + 1e-12)
+            freqs, power_db = swarm_column_db(trace.data, fs)
 
             return {
                 "channel": channel_id,
-                "endtime": str(tr.stats.endtime),
-                "freqs": f[mask].round(2).tolist(),
+                "endtime": str(trace.stats.endtime),
+                "freqs": freqs.round(2).tolist(),
                 "power_db": power_db.round(1).tolist(),
             }
         except Exception:

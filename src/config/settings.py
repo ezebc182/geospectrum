@@ -60,7 +60,10 @@ class Settings(BaseSettings):
 
     # Caché TTL (segundos). 0 = deshabilitado.
     cache_ttl_seconds: int = 30
-    spectrogram_cache_ttl_seconds: int = 45
+    # 15 min: la imagen resume 24 h — regenerarla cada 45 s recalculaba TODO
+    # una vez por minuto por ciudad y fue la causa de los OOM en Railway
+    # (2026-08-20) cuando el muro creció a 30 ciudades.
+    spectrogram_cache_ttl_seconds: int = 900
 
     # Rate limiting
     rate_limit_enabled: bool = False
