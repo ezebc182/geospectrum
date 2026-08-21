@@ -7,10 +7,11 @@ import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
 
-const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock } = vi.hoisted(() => ({
+const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock } = vi.hoisted(() => ({
   searchEventsMock: vi.fn(),
   getLiveChannelsMock: vi.fn(),
   getGlobalWallMock: vi.fn(),
+  listWallsMock: vi.fn(),
 }));
 vi.mock('@/lib/api', () => ({
   seismicAPI: {
@@ -18,6 +19,9 @@ vi.mock('@/lib/api', () => ({
     getLiveChannels: getLiveChannelsMock,
     getGlobalWall: getGlobalWallMock,
   },
+}));
+vi.mock('@/lib/walls', () => ({
+  listWalls: listWallsMock,
 }));
 
 // SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
@@ -69,6 +73,9 @@ function renderOverlay(onClose = vi.fn()) {
       name: 'Global',
       layout: { columns: [], showMetrics: false },
     });
+  }
+  if (listWallsMock.getMockImplementation() === undefined) {
+    listWallsMock.mockResolvedValue([]);
   }
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
@@ -362,6 +369,55 @@ describe('cartelera (billboard)', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('selector de muro', () => {
+  const USER_WALL = {
+    id: 'w1',
+    name: 'Andes',
+    layout: {
+      columns: [{ groups: [{ title: 'MI GRUPO', channels: [{ channel: 'II.NNA.00.BHZ', label: 'Lima' }] }] }],
+      showMetrics: false,
+    },
+    created_at: '',
+    updated_at: '',
+  };
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('?wall= renderiza el muro del usuario en la cartelera', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    listWallsMock.mockResolvedValue([USER_WALL]);
+    window.history.replaceState(null, '', '?wall=w1');
+    renderOverlay();
+    fireEvent.click(await screen.findByRole('button', { name: 'Modo cartelera' }));
+    await waitFor(() => expect(screen.getByText('MI GRUPO')).toBeTruthy());
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('un wall id desconocido cae al muro Global', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    listWallsMock.mockResolvedValue([USER_WALL]);
+    window.history.replaceState(null, '', '?wall=fantasma');
+    renderOverlay();
+    fireEvent.click(await screen.findByRole('button', { name: 'Modo cartelera' }));
+    // el muro global mockeado por getGlobalWallMock sigue en pantalla
+    await waitFor(() => expect(screen.getByTestId('billboard-wall')).toBeTruthy());
+    expect(screen.queryByText('MI GRUPO')).toBeNull();
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('elegir un muro en la config lo persiste en localStorage', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    listWallsMock.mockResolvedValue([USER_WALL]);
+    renderOverlay();
+    fireEvent.click(await screen.findByRole('button', { name: 'Configurar paneles' }));
+    const select = await screen.findByRole('combobox', { name: 'Muro' });
+    fireEvent.change(select, { target: { value: 'w1' } });
+    await waitFor(() => expect(localStorage.getItem('globe.broadcast.wall.v1')).toBe('w1'));
   });
 });
 

@@ -275,6 +275,10 @@
         "random": "Random",
         "latest": "Latest event"
       },
+      "wallSelector": {
+        "label": "Wall",
+        "global": "Global"
+      },
       "topRegions": "Most active regions (24 h)",
       "hourlyActivity": "Hourly activity (24 h)",
       "now": "now",

@@ -275,6 +275,10 @@
         "random": "Aleatorio",
         "latest": "Último evento"
       },
+      "wallSelector": {
+        "label": "Muro",
+        "global": "Global"
+      },
       "topRegions": "Regiones más activas (24 h)",
       "hourlyActivity": "Actividad por hora (24 h)",
       "now": "ahora",
