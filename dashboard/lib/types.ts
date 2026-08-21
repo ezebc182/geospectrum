@@ -321,6 +321,23 @@ export interface WallChannel {
 }
 
 /**
+ * Entrada del catálogo completo de subestaciones (PR-W3).
+ *
+ * A diferencia de /spectrograms/live-channels (la ganadora del failover por
+ * ciudad, 27), esto trae las 75 candidatas que el ingestor ya está
+ * ingestando: el armador debe poder comparar MT05 vs MT14 de Santiago.
+ * `is_live` es informativo — una candidata muda se ofrece igual, en gris.
+ */
+export interface StationCatalogEntry {
+  channel: string;
+  city_id: string;
+  network: string;
+  station: string;
+  is_live: boolean;
+  is_primary: boolean;
+}
+
+/**
  * Grupo de canales (región): encabezado y lista de tiras.
  */
 export interface WallGroup {

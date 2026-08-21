@@ -9,6 +9,11 @@ import { WallBuilder } from './WallBuilder';
 const TOKYO = { channel: 'IU.MAJO.00.BHZ', label: 'Tokyo' };
 const LIMA = { channel: 'II.NNA.00.BHZ', label: 'Lima' };
 
+// El catálogo del armador (PR-W3) agrega estación y frescura; el layout
+// persistido sigue guardando SOLO {channel, label}.
+const TOKYO_ENTRY = { ...TOKYO, station: 'MAJO', isLive: true };
+const LIMA_ENTRY = { ...LIMA, station: 'NNA', isLive: false };
+
 const LAYOUT: WallLayout = {
   columns: [{ groups: [{ title: 'ASIA', channels: [TOKYO] }] }],
   showMetrics: false,
@@ -17,7 +22,7 @@ const LAYOUT: WallLayout = {
 function renderBuilder(layout: WallLayout = LAYOUT, onChange = vi.fn()) {
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
-      <WallBuilder layout={layout} onChange={onChange} catalog={[TOKYO, LIMA]} />
+      <WallBuilder layout={layout} onChange={onChange} catalog={[TOKYO_ENTRY, LIMA_ENTRY]} />
     </NextIntlClientProvider>
   );
   return onChange;
@@ -47,11 +52,37 @@ describe('WallBuilder', () => {
 
   it('la búsqueda filtra el catálogo por label y por canal', () => {
     renderBuilder();
-    fireEvent.change(screen.getByPlaceholderText('Buscar canal o ciudad'), {
+    fireEvent.change(screen.getByPlaceholderText('Buscar ciudad, estación o canal'), {
       target: { value: 'NNA' },
     });
     const catalog = within(screen.getByTestId('wall-catalog'));
     expect(catalog.queryByText('Tokyo')).toBeNull();
+    expect(catalog.getByText('Lima')).toBeTruthy();
+  });
+
+  it('la búsqueda encuentra por código de estación aunque el label no lo diga', () => {
+    // El label lo arma WallManager como "Ciudad · ESTACIÓN", pero el filtro
+    // NO puede depender de eso: si mañana el label cambia (o la estación no
+    // entra en él, como cuando el SCNL viene sin código), el usuario que
+    // escribe "NNA" tiene que seguir encontrando su subestación. Este caso
+    // solo lo satisface el match contra `station`.
+    render(
+      <NextIntlClientProvider locale="es-AR" messages={es}>
+        <WallBuilder
+          layout={LAYOUT}
+          onChange={vi.fn()}
+          catalog={[
+            { channel: 'IU.MAJO.00.BHZ', label: 'Tokio', station: 'MAJO', isLive: true },
+            { channel: 'SIN.PUNTOS', label: 'Lima', station: 'NNA', isLive: false },
+          ]}
+        />
+      </NextIntlClientProvider>
+    );
+    fireEvent.change(screen.getByPlaceholderText('Buscar ciudad, estación o canal'), {
+      target: { value: 'NNA' },
+    });
+    const catalog = within(screen.getByTestId('wall-catalog'));
+    expect(catalog.queryByText('Tokio')).toBeNull();
     expect(catalog.getByText('Lima')).toBeTruthy();
   });
 
