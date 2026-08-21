@@ -31,12 +31,17 @@ const LOGIN_PATH = '/login';
 // /invite (la página de aceptación de invitaciones: por definición la abre
 // alguien que TODAVÍA no tiene cuenta — redirigirla a /login haría el link
 // del email inservible). El match por prefijo de `isPublicPath()` cubre
-// /invite/{token}. Todo lo demás bajo app/ consume datos vía la API pública
-// pero la UI del dashboard en sí requiere sesión (ver design.md: distinto
-// de la decisión de dejar /report, /events, /alerts públicos en el backend).
+// /invite/{token}. /globe es el modo kiosk: la cartelera se comparte por
+// URL (`?wall=<id>`) a pantallas sin sesión; todo lo que consume ya es
+// público en el backend (/report, /events, espectrogramas, /walls/global) y
+// los muros propios degradan a Global sin sesión (resolveWall). Todo lo
+// demás bajo app/ consume datos vía la API pública pero la UI del dashboard
+// en sí requiere sesión (ver design.md: distinto de la decisión de dejar
+// /report, /events, /alerts públicos en el backend).
 const LANDING_PATH = '/landing';
 const INVITE_PATH = '/invite';
-const PUBLIC_PATHS = [LOGIN_PATH, LANDING_PATH, INVITE_PATH];
+const GLOBE_PATH = '/globe';
+const PUBLIC_PATHS = [LOGIN_PATH, LANDING_PATH, INVITE_PATH, GLOBE_PATH];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
