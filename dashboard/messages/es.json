@@ -838,5 +838,16 @@
       "errorGeneric": "No se pudo crear la cuenta. Intentá de nuevo en unos segundos.",
       "googleHint": "Usá la cuenta de Google de <mono>{email}</mono> — la invitación está atada a ese email."
     }
+  },
+  "station": {
+    "title": "Detalle de estación",
+    "timeChunk": "Franja por fila",
+    "comingSoon": "próximamente",
+    "tabs": {
+      "helicorder": "Helicorder",
+      "spectrogram": "Espectrograma",
+      "wave": "Onda + Espectro",
+      "rsam": "RSAM"
+    }
   }
 }

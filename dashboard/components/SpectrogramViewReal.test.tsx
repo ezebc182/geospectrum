@@ -129,3 +129,42 @@ describe('SpectrogramViewReal — refresco', () => {
     expect(imagenActual()).toBeNull();
   });
 });
+
+describe('SpectrogramViewReal — link al detalle de estación', () => {
+  it('el SCNL enlaza a /stations con el canal escapado', async () => {
+    getSpectrogramMock.mockResolvedValue({
+      success: true,
+      image: 'IMG',
+      metadata: {
+        network: 'IU',
+        station: 'MAJO',
+        channel: 'BHZ',
+        generated_at: '2026-08-18T10:00:00Z',
+      },
+    });
+
+    renderCard();
+    await act(async () => {});
+
+    const link = screen.getByRole('link', { name: /IU\.MAJO/ });
+    // Location vacío (doble punto): el endpoint lo resuelve con `*`.
+    expect(link.getAttribute('href')).toBe('/stations/IU.MAJO..BHZ');
+  });
+
+  it('sin channel en el metadata no enlaza — no hay estación que abrir', async () => {
+    // El espectrograma sintético no trae `channel`: mostrar un link roto sería
+    // peor que no mostrarlo.
+    getSpectrogramMock.mockResolvedValue(okResponse('IMG'));
+
+    renderCard();
+
+    // El archivo corre con fake timers: `findBy*` esperaría con timers reales
+    // y se colgaría. `act` deja que la promesa del fetch mockeado se resuelva.
+    await act(async () => {});
+
+    // El SCNL se muestra igual (hay más de un lugar donde aparece), pero
+    // ninguno de ellos es un link.
+    expect(screen.getAllByText(/IU\.MAJO/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+});

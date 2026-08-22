@@ -32,7 +32,7 @@
 **Interfaces:**
 - Produces: `decimate_minmax(data: np.ndarray, target_pairs: int) -> tuple[np.ndarray, np.ndarray]` — devuelve `(mins, maxs)`, cada uno de largo `min(target_pairs, len(data))`. Task 3 la consume.
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 ```python
 # tests/unit/test_station_waveform.py
@@ -72,12 +72,12 @@ def test_min_nunca_supera_al_max():
     assert np.all(mins <= maxs)
 ```
 
-- [ ] **Step 2: Verificar que falla**
+- [x] **Step 2: Verificar que falla**
 
 Run: `./venv/bin/python -m pytest tests/unit/test_station_waveform.py -q --no-cov`
 Expected: FAIL con `ModuleNotFoundError: No module named 'src.services.station_waveform'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # src/services/station_waveform.py
@@ -105,12 +105,12 @@ def decimate_minmax(data: np.ndarray, target_pairs: int) -> tuple[np.ndarray, np
     return mins, maxs
 ```
 
-- [ ] **Step 4: Verificar que pasa**
+- [x] **Step 4: Verificar que pasa**
 
 Run: `./venv/bin/python -m pytest tests/unit/test_station_waveform.py -q --no-cov`
 Expected: 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/station_waveform.py tests/unit/test_station_waveform.py
@@ -128,7 +128,7 @@ git commit -m "feat(estaciones): decimación min/max por bloque para waveform"
 **Interfaces:**
 - Produces: `butterworth_bandpass(data: np.ndarray, fs: float) -> np.ndarray` — orden 4, 1–10 Hz, zero-phase (`filtfilt`). Task 3 la consume cuando `filter=bp`.
 
-- [ ] **Step 1: Agregar los tests que fallan**
+- [x] **Step 1: Agregar los tests que fallan**
 
 ```python
 # agregar a tests/unit/test_station_waveform.py
@@ -161,12 +161,12 @@ def test_bandpass_es_zero_phase():
     assert lag == 0
 ```
 
-- [ ] **Step 2: Verificar que falla**
+- [x] **Step 2: Verificar que falla**
 
 Run: `./venv/bin/python -m pytest tests/unit/test_station_waveform.py -q --no-cov`
 Expected: FAIL con `ImportError: cannot import name 'butterworth_bandpass'`
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```python
 # agregar a src/services/station_waveform.py
@@ -185,12 +185,12 @@ def butterworth_bandpass(data: np.ndarray, fs: float) -> np.ndarray:
     return filtfilt(sos_b, sos_a, np.asarray(data, dtype=np.float64))
 ```
 
-- [ ] **Step 4: Verificar que pasa**
+- [x] **Step 4: Verificar que pasa**
 
 Run: `./venv/bin/python -m pytest tests/unit/test_station_waveform.py -q --no-cov`
 Expected: 5 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/station_waveform.py tests/unit/test_station_waveform.py
@@ -209,7 +209,7 @@ git commit -m "feat(estaciones): Butterworth 1-10 Hz zero-phase paridad SWARM"
 - Consumes: `decimate_minmax`, `butterworth_bandpass` (Tasks 1-2); `get_spectrogram_service().get_waveform_data(network, station, location, channel, duration_hours)` (existente, devuelve Stream ObsPy o None); `cache` y `settings.spectrogram_cache_ttl_seconds` (patrón de `main.py:2218`).
 - Produces: respuesta JSON `{channel, sampling_rate, starttime, endtime, mins: [...], maxs: [...]}` que Task 5 consume. El path param `channel` es el SCNL completo `NET.STA.LOC.CHA` (LOC puede ser vacío: `IU.MAJO..BHZ`).
 
-- [ ] **Step 1: Escribir el test que falla** (la lógica pura de armado de respuesta se separa en `station_waveform.py` para testear sin app)
+- [x] **Step 1: Escribir el test que falla** (la lógica pura de armado de respuesta se separa en `station_waveform.py` para testear sin app)
 
 ```python
 # agregar a tests/unit/test_station_waveform.py
@@ -245,12 +245,12 @@ def test_build_waveform_response_con_filtro_mata_offset_y_deriva():
     assert max(abs(min(resp["mins"])), abs(max(resp["maxs"]))) < 100.0
 ```
 
-- [ ] **Step 2: Verificar que falla**
+- [x] **Step 2: Verificar que falla**
 
 Run: `./venv/bin/python -m pytest tests/unit/test_station_waveform.py -q --no-cov`
 Expected: FAIL con `ImportError: cannot import name 'build_waveform_response'`
 
-- [ ] **Step 3: Implementar la lógica pura + el endpoint**
+- [x] **Step 3: Implementar la lógica pura + el endpoint**
 
 ```python
 # agregar a src/services/station_waveform.py
@@ -322,12 +322,12 @@ async def get_station_waveform(
 
 Nota: verificar los nombres reales de `cache.set` (buscar `cache.set` en `main.py` y copiar la firma exacta que usa el endpoint de espectrogramas; si el cache guarda con `(key, value, ttl)` u otro orden, seguir el patrón existente).
 
-- [ ] **Step 4: Verificar que pasa + suite completa**
+- [x] **Step 4: Verificar que pasa + suite completa**
 
 Run: `./venv/bin/python -m pytest tests/unit/test_station_waveform.py -q --no-cov && ./venv/bin/python -m pytest tests/unit -q 2>&1 | tail -1`
 Expected: todo passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/station_waveform.py src/main.py tests/unit/test_station_waveform.py
@@ -352,7 +352,7 @@ git commit -m "feat(estaciones): endpoint de waveform decimado min/max con cache
   - `majorTickMinutes(timeChunkMinutes: number): number` — heurística SWARM.
   - `clampToClip(value: number, clipValue: number): { v: number; clipped: boolean }`
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 ```typescript
 // dashboard/lib/helicorder-layout.test.ts
@@ -413,12 +413,12 @@ describe('clipping', () => {
 });
 ```
 
-- [ ] **Step 2: Verificar que falla**
+- [x] **Step 2: Verificar que falla**
 
 Run: `cd dashboard && npx vitest run lib/helicorder-layout.test.ts`
 Expected: FAIL — módulo inexistente
 
-- [ ] **Step 3: Implementación mínima**
+- [x] **Step 3: Implementación mínima**
 
 ```typescript
 // dashboard/lib/helicorder-layout.ts
@@ -466,12 +466,12 @@ export function clampToClip(value: number, clipValue: number): { v: number; clip
 }
 ```
 
-- [ ] **Step 4: Verificar que pasa**
+- [x] **Step 4: Verificar que pasa**
 
 Run: `cd dashboard && npx vitest run lib/helicorder-layout.test.ts`
 Expected: PASS (7 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add dashboard/lib/helicorder-layout.ts dashboard/lib/helicorder-layout.test.ts
@@ -490,7 +490,7 @@ git commit -m "feat(estaciones): lib pura de geometría del helicorder (paridad 
 - Consumes: Task 4 completa; endpoint de Task 3 (`GET ${API_BASE}/stations/{channel}/waveform?minutes=1440&points=N`).
 - Produces: `<HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />` — Task 6 lo monta.
 
-- [ ] **Step 1: Escribir el test que falla** (patrón de mocks del proyecto: `vi.stubGlobal('fetch', ...)`; el jsdom no rasteriza — se testea que pida el endpoint correcto y pinte sin tirar; referencia: `GlobeBroadcastOverlay.test.tsx`)
+- [x] **Step 1: Escribir el test que falla** (patrón de mocks del proyecto: `vi.stubGlobal('fetch', ...)`; el jsdom no rasteriza — se testea que pida el endpoint correcto y pinte sin tirar; referencia: `GlobeBroadcastOverlay.test.tsx`)
 
 ```tsx
 // dashboard/components/HelicorderCanvas.test.tsx
@@ -536,12 +536,12 @@ describe('HelicorderCanvas', () => {
 });
 ```
 
-- [ ] **Step 2: Verificar que falla**
+- [x] **Step 2: Verificar que falla**
 
 Run: `cd dashboard && npx vitest run components/HelicorderCanvas.test.tsx`
 Expected: FAIL — módulo inexistente
 
-- [ ] **Step 3: Implementación**
+- [x] **Step 3: Implementación**
 
 ```tsx
 // dashboard/components/HelicorderCanvas.tsx
@@ -700,12 +700,12 @@ export function HelicorderCanvas({ channel, timeChunkMinutes, width, height }: H
 
 Nota: `points` pedido = filas × 800 (48 × 800 = 38.400, el default del endpoint) — ~800 pares por fila, 1 por píxel útil.
 
-- [ ] **Step 4: Verificar que pasa + suite del dashboard**
+- [x] **Step 4: Verificar que pasa + suite del dashboard**
 
 Run: `cd dashboard && npx vitest run components/HelicorderCanvas.test.tsx && npx vitest run 2>&1 | tail -2`
 Expected: PASS todo
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add dashboard/components/HelicorderCanvas.tsx dashboard/components/HelicorderCanvas.test.tsx
@@ -726,7 +726,7 @@ git commit -m "feat(estaciones): canvas de helicorder 24h con paridad visual SWA
 - Consumes: `<HelicorderCanvas>` (Task 5).
 - Produces: ruta `/stations/{SCNL}` navegable; pestañas Espectrograma/Onda/RSAM deshabilitadas con etiqueta "próximamente" (las habilitan los PRs B-D).
 
-- [ ] **Step 1: Escribir el test que falla** (seguir el patrón de tests de página existente en `dashboard/app/(app)/explore/explore-area.test.tsx`: mock de next-intl y next/navigation con referencias ESTABLES — lección de memoria: un mock de useRouter con identidad inestable cuelga vitest)
+- [x] **Step 1: Escribir el test que falla** (seguir el patrón de tests de página existente en `dashboard/app/(app)/explore/explore-area.test.tsx`: mock de next-intl y next/navigation con referencias ESTABLES — lección de memoria: un mock de useRouter con identidad inestable cuelga vitest)
 
 ```tsx
 // dashboard/app/(app)/stations/station-page.test.tsx
@@ -762,12 +762,12 @@ describe('StationPage', () => {
 });
 ```
 
-- [ ] **Step 2: Verificar que falla**
+- [x] **Step 2: Verificar que falla**
 
 Run: `cd dashboard && npx vitest run app/\(app\)/stations/station-page.test.tsx`
 Expected: FAIL — página inexistente
 
-- [ ] **Step 3: Implementar la página, el link del muro y las claves i18n**
+- [x] **Step 3: Implementar la página, el link del muro y las claves i18n**
 
 ```tsx
 // dashboard/app/(app)/stations/[channel]/page.tsx
@@ -855,12 +855,12 @@ Claves i18n (mismas en `es.json` y `en.json`, traducidas):
 }
 ```
 
-- [ ] **Step 4: Verificar que pasa + suites completas**
+- [x] **Step 4: Verificar que pasa + suites completas**
 
 Run: `cd dashboard && npx vitest run 2>&1 | tail -2 && cd .. && ./venv/bin/python -m pytest tests/unit -q 2>&1 | tail -1`
 Expected: todo passed
 
-- [ ] **Step 5: Commit + PR**
+- [x] **Step 5: Commit + PR**
 
 ```bash
 git add dashboard/app/\(app\)/stations dashboard/components/SpectrogramViewReal.tsx dashboard/messages/es.json dashboard/messages/en.json
@@ -873,5 +873,5 @@ gh pr create --title "feat(estaciones): detalle de estación con helicorder 24h 
 
 ## Verificación final del PR
 
-- [ ] QA visual: levantar stack local (`uvicorn` + `next dev --port 3008`), navegar a `/stations/IU.MAJO..BHZ` y verificar contra la guía de SWARM: fondo blanco, filas azules alternadas, hora local izquierda / UTC derecha, clipping rojo solo en picos.
-- [ ] Verificación por mutación: invertir el ciclo de colores o romper el wrap modular en `helicorder-layout.ts` y confirmar que los tests lo cazan.
+- [~] QA visual (PARCIAL 2026-08-22: backend contra FDSN real OK, página renderiza 200 sin errores ni claves i18n faltantes; falta la revisión a ojo del dibujo — la extensión de navegador no conectaba). Levantar stack local (`uvicorn` + `next dev --port 3008`), navegar a `/stations/IU.MAJO..BHZ` y verificar contra la guía de SWARM: fondo blanco, filas azules alternadas, hora local izquierda / UTC derecha, clipping rojo solo en picos.
+- [x] Verificación por mutación: invertir el ciclo de colores o romper el wrap modular en `helicorder-layout.ts` y confirmar que los tests lo cazan.

@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useFormatter, useTranslations } from 'next-intl';
 import type { SeismicCity } from '@/lib/seismic-cities';
 import { Activity, AlertCircle, RefreshCw } from 'lucide-react';
@@ -122,7 +123,20 @@ export function SpectrogramViewReal({
           <Activity className="h-3 w-3 text-green-400 shrink-0" />
           <span className="text-white font-semibold shrink-0">{city.name}</span>
           <span className="text-gray-400 truncate">{city.country}</span>
-          {metadata && metadata.network !== 'SYNTHETIC' && (
+          {/* El SCNL lleva al detalle de estación. Sólo con datos reales: el
+              metadata sintético no trae `channel` y no hay estación que ver.
+              El location code va vacío — el endpoint lo resuelve con `*`. */}
+          {metadata && metadata.network !== 'SYNTHETIC' && metadata.channel && (
+            <Link
+              href={`/stations/${encodeURIComponent(
+                `${metadata.network}.${metadata.station}..${metadata.channel}`,
+              )}`}
+              className="text-xs text-blue-400 ml-1 shrink-0 hover:text-blue-300 hover:underline"
+            >
+              [{metadata.network}.{metadata.station}]
+            </Link>
+          )}
+          {metadata && metadata.network !== 'SYNTHETIC' && !metadata.channel && (
             <span className="text-xs text-blue-400 ml-1 shrink-0">
               [{metadata.network}.{metadata.station}]
             </span>
