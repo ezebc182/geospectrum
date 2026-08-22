@@ -2,8 +2,13 @@
 
 import numpy as np
 import pytest
+from obspy import Trace
 
-from src.services.station_waveform import butterworth_bandpass, decimate_minmax
+from src.services.station_waveform import (
+    build_waveform_response,
+    butterworth_bandpass,
+    decimate_minmax,
+)
 
 
 def test_decimacion_preserva_los_extremos():
@@ -58,3 +63,46 @@ def test_bandpass_es_zero_phase():
     center = slice(int(fs * 10), int(fs * 20))
     lag = np.argmax(np.correlate(out[center], sine[center], "full")) - (len(sine[center]) - 1)
     assert lag == 0
+
+
+def _trace(data, fs=100.0):
+    return Trace(
+        data=np.asarray(data, dtype=np.float64),
+        header={"network": "IU", "station": "MAJO", "channel": "BHZ", "sampling_rate": fs},
+    )
+
+
+def test_build_waveform_response_demeanea_y_decima():
+    fs = 100.0
+    data = 1000.0 + _sine(5.0, fs, 120.0, amp=50.0)  # offset DC de 1000
+
+    resp = build_waveform_response(_trace(data, fs), "IU.MAJO..BHZ", target_pairs=400, apply_filter=False)
+
+    assert resp["channel"] == "IU.MAJO..BHZ"
+    assert resp["sampling_rate"] == fs
+    assert len(resp["mins"]) == len(resp["maxs"]) == 400
+    # El demean sacó el offset: la señal queda centrada en ~0
+    assert abs(np.mean(resp["mins"]) + np.mean(resp["maxs"])) < 5.0
+
+
+def test_build_waveform_response_con_filtro_mata_offset_y_deriva():
+    fs = 100.0
+    data = np.linspace(0, 5000, int(fs * 120)) + _sine(5.0, fs, 120.0, amp=50.0)
+
+    resp = build_waveform_response(_trace(data, fs), "IU.MAJO..BHZ", target_pairs=400, apply_filter=True)
+
+    assert max(abs(min(resp["mins"])), abs(max(resp["maxs"]))) < 100.0
+
+
+def test_build_waveform_response_es_json_serializable():
+    """Los tipos de numpy revientan `json.dumps`: la respuesta tiene que salir
+    en tipos nativos. Un `np.float64` suelto pasa cualquier assert numérico y
+    después tira 500 al serializar en FastAPI."""
+    import json
+
+    resp = build_waveform_response(_trace(_sine(5.0, 100.0, 60.0)), "IU.MAJO..BHZ", 200, False)
+
+    json.dumps(resp)  # revienta si quedó algún tipo de numpy
+    assert all(type(v) is float for v in resp["mins"])
+    assert type(resp["sampling_rate"]) is float
+    assert isinstance(resp["starttime"], str)

@@ -2375,6 +2375,55 @@ async def get_spectrogram_history(
     return {"channel": channel, "columns": columns}
 
 
+@app.get("/stations/{channel}/waveform", tags=["stations"])
+async def get_station_waveform(
+    channel: str,
+    minutes: int = Query(1440, ge=1, le=1440, description="Ventana hacia atrás"),
+    points: int = Query(38400, ge=100, le=50000, description="Pares min/max a devolver"),
+    filter: str = Query("none", pattern="^(none|bp)$", description="bp = Butterworth 1-10 Hz"),
+) -> dict:
+    """Forma de onda decimada min/max para el detalle de estación (helicorder).
+
+    `channel` es el SCNL completo, ej. "IU.MAJO.00.BHZ" (location puede ser vacío).
+
+    La decimación es server-side a propósito: 24 h de un canal de 20-40 Hz son
+    millones de muestras, y mandarlas crudas al navegador no tiene sentido
+    cuando el canvas tiene ~2000 píxeles de ancho. Nunca se serializa el array
+    completo.
+    """
+    from src.services.station_waveform import build_waveform_response
+
+    parts = channel.split(".")
+    if len(parts) != 4:
+        raise HTTPException(status_code=422, detail="channel debe ser NET.STA.LOC.CHA")
+    net, sta, loc, cha = parts
+
+    ttl = settings.spectrogram_cache_ttl_seconds
+    cache_key = f"waveform:{channel}:{minutes}:{points}:{filter}"
+    if ttl > 0:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    service = get_spectrogram_service()
+    stream = await service.get_waveform_data(
+        network=net,
+        station=sta,
+        location=loc or "*",
+        channel=cha,
+        duration_hours=max(1, minutes // 60),
+    )
+    if stream is None or len(stream) == 0:
+        raise HTTPException(status_code=404, detail=f"Sin datos FDSN para {channel}")
+
+    # Un stream puede venir partido por gaps: usar el trace más largo
+    trace = max(stream, key=lambda tr: tr.stats.npts)
+    result = build_waveform_response(trace, channel, points, apply_filter=(filter == "bp"))
+    if ttl > 0:
+        cache.set(cache_key, result, ttl)
+    return result
+
+
 # =============================================================================
 # Spectrograms
 # =============================================================================
