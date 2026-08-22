@@ -63,7 +63,11 @@ export default function AnalyticsPage() {
         <h2 className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
           {t('fullEventsTable')}
         </h2>
-        <EventsTable eventos={eventos} filterable />
+        {/* Paginada: esta es la tabla COMPLETA del reporte y sin paginar
+            renderizaba las 600+ filas de una, en un solo .map(). El dashboard
+            usa `limit` en cambio, que es otra cosa: asomarse a los últimos 10
+            con el mapa al lado. */}
+        <EventsTable eventos={eventos} filterable paginated />
       </div>
     </AreaRefreshIndicator>
   );

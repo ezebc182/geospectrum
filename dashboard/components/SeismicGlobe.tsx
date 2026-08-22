@@ -59,6 +59,26 @@ interface SeismicGlobeProps {
    */
   autoRotate?: boolean;
   /**
+   * Política de rotación (pedido del usuario 2026-08-22).
+   *
+   * - 'continuous': gira siempre (comportamiento histórico, y el de la
+   *   landing donde el globo es escenografía).
+   * - 'on-event': queda QUIETO y gira sólo un momento cuando llega un sismo
+   *   nuevo, como reacción visible. Así el movimiento pasa a significar algo
+   *   —"acaba de entrar un evento"— en vez de ser decoración permanente que
+   *   además arrastra fuera de la vista lo que uno está mirando.
+   *
+   * Default: 'continuous' para no cambiarle el comportamiento a la landing
+   * ni a los llamadores existentes; /globe lo pone en 'on-event'.
+   */
+  rotationPolicy?: 'continuous' | 'on-event';
+  /**
+   * Cambia cada vez que llega un sismo nuevo (basta con un contador o el id
+   * del último evento). Sólo se usa con `rotationPolicy: 'on-event'`: cada
+   * cambio de este valor dispara un pulso de rotación.
+   */
+  eventPulse?: string | number | null;
+  /**
    * Zoom con la rueda del mouse / pinch. Default: true. La landing lo apaga:
    * con enableZoom activo OrbitControls hace preventDefault del wheel sobre
    * el canvas, y como ahí el globo ocupa toda la pantalla, la página queda
@@ -121,6 +141,15 @@ interface SeismicGlobeProps {
 const AUTO_ROTATE_SPEED = 0.35;
 
 /**
+ * Cuánto gira el globo al llegar un sismo, con `rotationPolicy: 'on-event'`.
+ *
+ * 4 s a AUTO_ROTATE_SPEED es poco más de un grado y medio de arco: alcanza
+ * para que el ojo registre "algo se movió" sin que la escena se vaya de
+ * lugar. Más largo y vuelve a ser la rotación continua que este modo evita.
+ */
+const EVENT_ROTATION_PULSE_MS = 4_000;
+
+/**
  * Duración del giro hacia un evento, en ms.
  *
  * Se anima en vez de saltar: un corte seco a la otra punta del globo hace
@@ -154,6 +183,8 @@ export function SeismicGlobe({
   showPlates = true,
   showControls = true,
   autoRotate = true,
+  rotationPolicy = 'continuous',
+  eventPulse = null,
   enableZoom = true,
   initialAltitude,
   pointScale = 1,
@@ -217,6 +248,9 @@ export function SeismicGlobe({
   // pointOfView; no hay callback de "terminó" en react-globe.gl.
   const [isAreaAnimating, setIsAreaAnimating] = useState(false);
 
+  // Pulso de rotación en curso (sólo con rotationPolicy: 'on-event').
+  const [isPulsing, setIsPulsing] = useState(false);
+
   // Los controles de órbita viven fuera de React: se configuran sobre la
   // instancia imperativa que expone react-globe.gl.
   //
@@ -229,11 +263,48 @@ export function SeismicGlobe({
     if (!globe) return;
 
     const controls = globe.controls();
-    controls.autoRotate = autoRotate && selectedEventId === null && !isAreaAnimating;
+    // Con 'on-event' el reposo es NO girar: sólo rota durante el pulso que
+    // dispara un sismo nuevo. Con 'continuous' manda el comportamiento
+    // histórico. En los dos casos el foco y la animación de área frenan la
+    // rotación, para no llevarse de la vista justo lo que se quiso mirar.
+    const wantsRotation =
+      rotationPolicy === 'on-event' ? isPulsing : true;
+    controls.autoRotate =
+      autoRotate && wantsRotation && selectedEventId === null && !isAreaAnimating;
     controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
     controls.enableDamping = true;
     controls.enableZoom = enableZoom;
-  }, [width, selectedEventId, isAreaAnimating, autoRotate, enableZoom]);
+  }, [
+    width,
+    selectedEventId,
+    isAreaAnimating,
+    autoRotate,
+    enableZoom,
+    rotationPolicy,
+    isPulsing,
+  ]);
+
+  // Pulso de rotación al llegar un sismo (rotationPolicy: 'on-event').
+  //
+  // `isPulsing` es ESTADO y no un ref: el efecto de los controles de arriba
+  // tiene que volver a correr cuando el pulso arranca y cuando termina, y un
+  // ref no dispara re-render. Es la trampa documentada del proyecto —un
+  // efecto que lee un ref sin tenerlo en deps corre una vez y nunca más—,
+  // acá evitada publicando el pulso como estado.
+  useEffect(() => {
+    if (rotationPolicy !== 'on-event') return;
+    // Sin evento todavía (montaje) no se pulsa: el globo arranca quieto.
+    if (eventPulse === null || eventPulse === undefined) return;
+
+    setIsPulsing(true);
+    const timer = setTimeout(() => setIsPulsing(false), EVENT_ROTATION_PULSE_MS);
+    return () => {
+      clearTimeout(timer);
+      // Si llega otro sismo antes de que termine el pulso anterior, este
+      // cleanup corre y el efecto vuelve a arrancarlo: el pulso se extiende
+      // en vez de cortarse a la mitad.
+    };
+  }, [eventPulse, rotationPolicy]);
 
   // Los labels del canvas se arman en lib pura con los strings YA traducidos
   // por parámetro (Decision 5): `t` en las deps regenera los puntos —y sus

@@ -11,6 +11,8 @@ import { KPICard } from '@/components/KPICard';
 import { EventsTable } from '@/components/EventsTable';
 import { AdvancedSeismicMap } from '@/components/AdvancedSeismicMap';
 import { AreaRefreshIndicator } from '@/components/AreaRefreshIndicator';
+import { LiveIndicator } from '@/components/LiveIndicator';
+import { useLiveEvents } from '@/hooks/use-live-events';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -20,7 +22,6 @@ import {
   Users,
   MapPin,
   Clock,
-  RefreshCw,
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react';
@@ -40,13 +41,23 @@ export default function DashboardPage() {
   // congelaba, porque sólo se re-evaluaba si SWR devolvía un timestamp nuevo
   // —y un dashboard que dice "hace 2 minutos" durante veinte miente.
   const now = useNow({ updateInterval: 30000 });
-  // Fusión de Dashboard + En Vivo (2026-08-05): antes eran dos páginas casi
-  // iguales por debajo, con un mapa más pobre en /live (SeismicMapWithCities,
-  // sin capas ni sync tabla→mapa). El control de cadencia de refresco de
-  // /live se trae acá; /live queda como redirect.
-  const [refreshInterval, setRefreshInterval] = useState(30000); // 30s por defecto
+  // Estado del stream de eventos (PR-W4): compartido con el sidebar y el
+  // globo, una sola conexión para toda la app.
+  const { status: liveStatus, isLive } = useLiveEvents();
+
+  // El selector de cadencia ("Refresh every 30s") y el botón de refrescar se
+  // ELIMINARON: con el push por WebSocket no hay ciclo que elegir ni nada que
+  // forzar — los eventos llegan solos en segundos. Eran controles que le
+  // pedían al usuario administrar una latencia que ya no existe.
+  //
+  // El polling queda como fallback automático: 30 s mientras el WS esté caído,
+  // 0 cuando esté vivo. Mismo criterio que GlobeBroadcastOverlay.
+  // `mutate` sigue haciendo falta aunque el botón de refrescar ya no exista:
+  // lo usa useAreaRefresh para recargar el reporte al cambiar de área. Eso es
+  // refresco por cambio de contexto, no polling, y el push no lo cubre — el
+  // backend recorta /report por el área activa.
   const { data, error, isLoading, mutate } = useSWR('/report', reportFetcher, {
-    refreshInterval,
+    refreshInterval: isLive ? 0 : 30000,
     revalidateOnFocus: true,
   });
 
@@ -173,28 +184,20 @@ export default function DashboardPage() {
           {t('title')}
         </h1>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            <span className="font-data">
-              {t('updated', { ago: format.relativeTime(new Date(timestamp_utc_generacion), now) })}
-            </span>
-          </div>
-          <select
-            value={refreshInterval}
-            onChange={(e) => setRefreshInterval(Number(e.target.value))}
-            className="rounded-lg border-2 border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
-          >
-            <option value={10000}>{t('refreshEvery', { seconds: 10 })}</option>
-            <option value={30000}>{t('refreshEvery', { seconds: 30 })}</option>
-            <option value={60000}>{t('refreshEvery', { seconds: 60 })}</option>
-          </select>
-          <button
-            onClick={() => mutate()}
-            className="flex items-center gap-2 rounded-lg bg-seismic-600 px-4 py-2 text-sm text-white transition-colors hover:bg-seismic-700"
-          >
-            <RefreshCw className="h-4 w-4" />
-            {t('refreshNow')}
-          </button>
+          {/* Con el stream vivo, el indicador reemplaza al "Actualizado hace
+              X": el dato llega empujado y la antigüedad del último reporte
+              deja de ser lo que le importa al usuario. Si el WS cae, vuelve el
+              cartel de antigüedad, que ahí sí informa cuán viejo es lo que ve. */}
+          {isLive ? (
+            <LiveIndicator status={liveStatus} className="font-data" />
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span className="font-data">
+                {t('updated', { ago: format.relativeTime(new Date(timestamp_utc_generacion), now) })}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

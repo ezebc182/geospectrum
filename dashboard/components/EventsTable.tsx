@@ -15,7 +15,14 @@ import {
   getMagnitudeColor,
   cn,
 } from '@/lib/utils';
-import { CheckCircle, MapPin, SlidersHorizontal, Users } from 'lucide-react';
+import {
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react';
 import { EventFiltersBar } from '@/components/EventFiltersBar';
 import {
   EMPTY_FILTERS,
@@ -46,6 +53,17 @@ interface EventsTableProps {
    * Default: undefined.
    */
   onFilteredEventsChange?: (eventos: SeismicEvent[]) => void;
+  /**
+   * Parte la lista en páginas con controles de navegación. Default: false,
+   * para no cambiarles el aspecto a los usos que ya existían.
+   *
+   * Excluyente con `limit` en la práctica: `limit` recorta a los N primeros
+   * sin forma de ver el resto (el asomo del dashboard), y esto recorre todo.
+   * Si se pasan los dos, gana la paginación.
+   */
+  paginated?: boolean;
+  /** Filas por página cuando `paginated`. Default: 50. */
+  pageSize?: number;
 }
 
 /** Columnas opcionales: Tiempo/Magnitud/Ubicación son siempre visibles (lo
@@ -83,14 +101,29 @@ export function EventsTable({
   selectedEventId,
   filterable = false,
   onFilteredEventsChange,
+  paginated = false,
+  pageSize = 50,
 }: EventsTableProps) {
   const t = useTranslations('events');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
 
   // Al cambiar de área los filtros se limpian: un "Chile" tecleado antes de
   // elegir Japón dejaría la tabla vacía y parecería que la app se rompió,
   // cuando lo que sobrevive es un filtro que ya no aplica.
-  useAreaRefresh(() => setFilters(EMPTY_FILTERS));
+  useAreaRefresh(() => {
+    setFilters(EMPTY_FILTERS);
+    setPage(1);
+  });
+
+  // Volver a la página 1 cuando cambian los filtros: quedarse en la 8 con un
+  // filtro que dejó 20 resultados muestra una tabla vacía y parece que el
+  // filtro no encontró nada. El clamp de `currentPage` cubre el render, pero
+  // sin esto el estado `page` queda desfasado y "Siguiente" salta raro.
+  const handleFiltersChange = (next: typeof filters) => {
+    setFilters(next);
+    setPage(1);
+  };
 
   // Arranca vacío (sin columnas opcionales) y se hidrata en un efecto, no en
   // el useState inicial: leer localStorage durante el render de SSR daría un
@@ -142,8 +175,28 @@ export function EventsTable({
     [filterable, eventos]
   );
 
-  const displayEvents = limit ? filteredEvents.slice(0, limit) : filteredEvents;
   const isFiltered = filterable && hasActiveFilters(filters);
+
+  // Paginación (pedido del usuario 2026-08-22): /analytics no pasa `limit` y
+  // renderizaba TODAS las filas del reporte en un solo .map() — con 600+
+  // eventos la página se arrastraba y no había forma de recorrerla.
+  //
+  // Convive con `limit` en vez de reemplazarlo: son dos necesidades
+  // distintas. `limit` es "asomate a los 10 más recientes" (el dashboard, con
+  // el mapa al lado); la paginación es "recorré todo el catálogo".
+  const totalPages = paginated
+    ? Math.max(1, Math.ceil(filteredEvents.length / pageSize))
+    : 1;
+  // El clamp evita quedar en una página que ya no existe: al filtrar estando
+  // en la página 8, `filteredEvents` puede caer a 20 filas y sin esto la
+  // tabla se veía vacía con el filtro puesto.
+  const currentPage = Math.min(page, totalPages);
+
+  const displayEvents = paginated
+    ? filteredEvents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    : limit
+      ? filteredEvents.slice(0, limit)
+      : filteredEvents;
 
   const columnsToggle = (
     <div className="relative flex justify-end">
@@ -192,7 +245,7 @@ export function EventsTable({
     <>
       <EventFiltersBar
         filters={filters}
-        onChange={setFilters}
+        onChange={handleFiltersChange}
         sources={sources}
         dateRange={dateRange}
         matched={filteredEvents.length}
@@ -309,13 +362,51 @@ export function EventsTable({
       </div>
         {/* El total del pie es el de los eventos FILTRADOS: decir "10 de 224"
             cuando el filtro dejó 12 sería mentir sobre lo que hay para ver. */}
-        {limit && filteredEvents.length > limit && (
+        {limit && !paginated && filteredEvents.length > limit && (
           <div className="border-t-2 border-border bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground">
             {/* Dos claves en vez de concatenar " filtrados": en inglés el
                 adjetivo va antes del sustantivo, no al final de la frase. */}
             {isFiltered
               ? t('showingFiltered', { shown: limit, total: filteredEvents.length })
               : t('showing', { shown: limit, total: filteredEvents.length })}
+          </div>
+        )}
+
+        {/* Navegación entre páginas. Se muestra incluso con una sola página
+            (con los botones deshabilitados) porque el contador "X-Y de Z" es
+            información útil por sí solo: sin él la lista no dice cuánto hay. */}
+        {paginated && (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t-2 border-border bg-muted/40 px-4 py-2">
+            <span className="font-data text-xs text-muted-foreground">
+              {t('pagination.range', {
+                from: filteredEvents.length === 0 ? 0 : (currentPage - 1) * pageSize + 1,
+                to: Math.min(currentPage * pageSize, filteredEvents.length),
+                total: filteredEvents.length,
+              })}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                aria-label={t('pagination.previous')}
+                className="rounded-md border-2 border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="px-2 font-data text-xs text-muted-foreground">
+                {t('pagination.page', { current: currentPage, total: totalPages })}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                aria-label={t('pagination.next')}
+                className="rounded-md border-2 border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>
