@@ -145,6 +145,7 @@ function loadPanelConfig(): PanelConfig {
 
 const SEVERITY_CHIP: Record<ReturnType<typeof getMagnitudeSeverity>, string> = {
   low: 'bg-severity-low/15 text-severity-low',
+  light: 'bg-severity-light/15 text-severity-light',
   moderate: 'bg-severity-moderate/15 text-severity-moderate',
   high: 'bg-severity-high/15 text-severity-high',
   critical: 'bg-severity-critical/15 text-severity-critical',

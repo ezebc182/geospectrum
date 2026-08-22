@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTimeCompact, getMagnitudeSeverity } from './utils';
+import { formatDateTimeCompact, getMagnitudeCategory, getMagnitudeSeverity } from './utils';
 
 describe('getMagnitudeSeverity', () => {
   it('mapea mag=6 a critical', () => {
@@ -22,13 +22,49 @@ describe('getMagnitudeSeverity', () => {
     expect(getMagnitudeSeverity(4)).toBe('moderate');
   });
 
-  it('mapea mag=3.9 a low (justo debajo del umbral moderate)', () => {
-    expect(getMagnitudeSeverity(3.9)).toBe('low');
+  it('mapea mag=3.9 a light (justo debajo del umbral moderate)', () => {
+    expect(getMagnitudeSeverity(3.9)).toBe('light');
+  });
+
+  it('mapea mag=3 a light', () => {
+    expect(getMagnitudeSeverity(3)).toBe('light');
+  });
+
+  it('mapea mag=2.9 a low (justo debajo del umbral light)', () => {
+    expect(getMagnitudeSeverity(2.9)).toBe('low');
   });
 
   it('mapea magnitudes muy bajas a low', () => {
     expect(getMagnitudeSeverity(0)).toBe('low');
     expect(getMagnitudeSeverity(-1)).toBe('low');
+  });
+
+  /**
+   * El chip de la lista y el punto del globo tienen que coincidir: un M3.9
+   * salía amarillo en el globo (magnitudeColor: >=3) y verde en el chip
+   * (getMagnitudeSeverity: <4 = low). Mismo sismo, dos colores.
+   *
+   * Los cortes de las tres funciones son EL MISMO contrato — el comentario de
+   * getMagnitudeCategory ya lo declaraba ("mismos cortes que
+   * getMagnitudeColor"); getMagnitudeSeverity era la que se había quedado sin
+   * el tramo 3-4.
+   */
+  it('comparte los cortes con getMagnitudeCategory en todos los tramos', () => {
+    const equivalencias: Array<[number, ReturnType<typeof getMagnitudeSeverity>, string]> = [
+      [2.9, 'low', 'micro'],
+      [3, 'light', 'leve'],
+      [3.9, 'light', 'leve'],
+      [4, 'moderate', 'moderado'],
+      [4.9, 'moderate', 'moderado'],
+      [5, 'high', 'fuerte'],
+      [5.9, 'high', 'fuerte'],
+      [6, 'critical', 'mayor'],
+    ];
+
+    for (const [mag, severity, categoria] of equivalencias) {
+      expect(getMagnitudeSeverity(mag), `severidad de M${mag}`).toBe(severity);
+      expect(getMagnitudeCategory(mag), `categoría de M${mag}`).toBe(categoria);
+    }
   });
 
   it('mapea magnitudes muy altas a critical', () => {

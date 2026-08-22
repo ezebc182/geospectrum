@@ -68,6 +68,7 @@ const config: Config = {
         severity: {
           low: 'hsl(var(--severity-low))',
           ok: 'hsl(var(--severity-ok))',
+          light: 'hsl(var(--severity-light))',
           moderate: 'hsl(var(--severity-moderate))',
           high: 'hsl(var(--severity-high))',
           critical: 'hsl(var(--severity-critical))',
