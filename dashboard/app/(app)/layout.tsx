@@ -7,6 +7,7 @@ import { OnboardingGate } from '@/components/onboarding/OnboardingGate';
 import { UserMenu } from '@/components/UserMenu';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
+import { LiveEventsProvider } from '@/hooks/use-live-events';
 
 export default function AppShellLayout({
   children,
@@ -14,6 +15,11 @@ export default function AppShellLayout({
   children: React.ReactNode;
 }) {
   return (
+    // El stream de eventos (PR-W4) va acá y no dentro de cada consumidor: cada
+    // useEventStream() abre SU propio WebSocket, y el sidebar y la cartelera
+    // del globo necesitan el mismo. Cubre a los dos aunque el overlay se monte
+    // por portal a document.body — el portal mueve el DOM, no el árbol React.
+    <LiveEventsProvider>
     <SidebarProvider>
       {/* Reconciliación users.locale → cookie en dispositivos sin cookie
           (Decision 3): corre una vez al hidratar la sesión, no renderiza. */}
@@ -41,5 +47,6 @@ export default function AppShellLayout({
         <OnboardingGate />
       </SidebarInset>
     </SidebarProvider>
+    </LiveEventsProvider>
   );
 }

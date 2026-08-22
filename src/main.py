@@ -73,6 +73,8 @@ from src.services.spectrogram_service import (
     LIVE_CANDIDATES_BY_CITY,
 )
 from src.services.event_bus import RedisPubSubBus
+from src.services.event_store import EventStore
+from src.services.events_ingestor import EVENTS_CHANNEL
 from src.services.metrics_store import MetricsStore
 from src.services.timescale_service import TimescaleColumnWriter
 from src.services.auth_service import (
@@ -180,6 +182,14 @@ column_writer: Optional[TimescaleColumnWriter] = (
     TimescaleColumnWriter(settings.timescaledb_dsn) if settings.timescaledb_dsn else None
 )
 
+# Store de eventos sísmicos (PR-W4). Lo escribe el worker
+# src/services/events_ingestor.py (proceso separado); acá sólo se LEE, para el
+# snapshot de /ws/events y para GET /events/recent. Igual que column_writer:
+# None si no hay base configurada, y los endpoints degradan en vez de romper.
+event_store: Optional[EventStore] = (
+    EventStore(settings.timescaledb_dsn) if settings.timescaledb_dsn else None
+)
+
 # Cliente Redis dedicado al rate-limiting de POST /auth/2fa/login-verify
 # (account-settings, fix post-verify — ver Login2FAAttemptLimiter en
 # auth_service.py para la justificación de por qué Redis y no in-memory).
@@ -222,6 +232,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "hasta que Redis esté arriba y se reinicie el servicio",
             exc_info=True,
         )
+
+    # EventStore (PR-W4): best-effort, MISMO criterio que el event_bus. Sin
+    # base, /ws/events sigue transmitiendo lo que llega por Redis pero sin
+    # snapshot inicial, y GET /events/recent devuelve 503. Que falte el
+    # histórico no debe impedir que arranque el resto de la API.
+    # `app.state.event_store` (y no la global) es lo que leen los endpoints:
+    # la global existe apenas hay DSN, pero sólo sirve si connect() funcionó.
+    # Sin esta distinción un endpoint llamaría a .pool sobre un store sin
+    # conectar y devolvería 500 en vez del 503 que corresponde.
+    app.state.event_store = None
+    if event_store is not None:
+        try:
+            await event_store.connect()
+            app.state.event_store = event_store
+            logger.info("EventStore (Postgres) conectado")
+        except Exception:
+            logger.warning(
+                "EventStore: base no disponible — /ws/events transmitirá sin "
+                "snapshot y /events/recent devolverá 503",
+                exc_info=True,
+            )
 
     # MetricsStore (PR-W3): best-effort como el event_bus — sin Redis el
     # dashboard pierde las métricas pero la API sigue sirviendo todo lo demás.
@@ -388,6 +419,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await event_bus.close()
     if getattr(app.state, "metrics_store", None) is not None:
         await app.state.metrics_store.close()
+    if getattr(app.state, "event_store", None) is not None:
+        await app.state.event_store.close()
     if column_writer is not None:
         await column_writer.close()
     await auth_service.close()
@@ -2178,6 +2211,100 @@ async def ws_spectrogram(websocket: WebSocket, channel: str) -> None:
         logger.info("WebSocket desconectado: /ws/spectrogram/%s", channel)
     except Exception:
         logger.warning("WebSocket error en /ws/spectrogram/%s", channel, exc_info=True)
+
+
+# =============================================================================
+# Eventos — WebSocket de push (worker -> Redis -> aquí) — PR-W4
+# =============================================================================
+
+# Ventana del snapshot que se manda al conectar. 24 h es lo que ya consume la
+# cartelera del globo (GlobeBroadcastOverlay usa /events/search con 24 h), así
+# que el cliente recibe de una lo mismo que hoy pide por REST.
+EVENTS_SNAPSHOT_HOURS = 24
+
+
+@app.websocket("/ws/events")
+async def ws_events(websocket: WebSocket) -> None:
+    """
+    Stream de eventos sísmicos en vivo. Los produce
+    src/services/events_ingestor.py (proceso separado) desde el WebSocket de
+    EMSC y el poll de USGS; acá sólo hacemos fan-out a los navegadores.
+
+    Al conectar manda un SNAPSHOT de las últimas 24 h desde la tabla, y recién
+    después el stream. Eso es lo que hace aceptable usar Redis Pub/Sub, que es
+    fire-and-forget: un cliente que reconecta recupera en el snapshot lo que se
+    perdió mientras estaba desconectado.
+
+    Protocolo (JSON por mensaje):
+        {"type": "snapshot", "events": [...]}   una vez, al conectar
+        {"type": "event", "event": {...}}       por cada evento nuevo
+
+    El sobre con `type` es a propósito y no un array pelado: sin él el cliente
+    no puede distinguir "acá está todo lo de las últimas 24 h" de "llegó uno
+    nuevo", y trataría el snapshot como 300 eventos recién ocurridos.
+
+    Público, misma política que /ws/spectrogram y /spectrograms/*: los datos
+    sísmicos son públicos, lo que requiere sesión es la UI del dashboard.
+    """
+    await websocket.accept()
+    logger.info("WebSocket conectado: /ws/events")
+
+    try:
+        store = getattr(app.state, "event_store", None)
+        if store is not None:
+            try:
+                recientes = await store.recent(hours=EVENTS_SNAPSHOT_HOURS)
+                await websocket.send_json(
+                    {"type": "snapshot", "events": [e.model_dump() for e in recientes]}
+                )
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                # Sin snapshot el cliente arranca vacío y se llena con lo que
+                # llegue: degradado, pero mejor que cerrarle la conexión.
+                logger.warning("ws_events: fallo armando el snapshot", exc_info=True)
+                await websocket.send_json({"type": "snapshot", "events": []})
+        else:
+            await websocket.send_json({"type": "snapshot", "events": []})
+
+        async for evento in event_bus.subscribe(EVENTS_CHANNEL):
+            await websocket.send_json({"type": "event", "event": evento})
+    except WebSocketDisconnect:
+        logger.info("WebSocket desconectado: /ws/events")
+    except Exception:
+        logger.warning("WebSocket error en /ws/events", exc_info=True)
+
+
+@app.get("/events/recent", tags=["events"])
+async def get_recent_events(
+    hours: int = Query(EVENTS_SNAPSHOT_HOURS, ge=1, le=168),
+    min_magnitude: Optional[float] = Query(None, ge=0, le=10),
+    limit: int = Query(2000, ge=1, le=5000),
+) -> dict:
+    """
+    Eventos persistidos por el worker, del más nuevo al más viejo.
+
+    Distinto de /events y /events/search: aquellos consultan USGS/EMSC EN VIVO
+    en cada request (con caché de 30 s). Éste lee la TABLA, así que responde en
+    milisegundos y no depende de que las fuentes externas estén arriba. Es el
+    fallback REST del frontend cuando el WebSocket está caído.
+
+    503 si no hay base: devolver una lista vacía haría que el frontend muestre
+    "no hay sismos" cuando lo cierto es "no sabemos".
+    """
+    store = getattr(app.state, "event_store", None)
+    if store is None:
+        raise HTTPException(
+            status_code=503,
+            detail="El histórico de eventos no está disponible (base no configurada)",
+        )
+
+    eventos = await store.recent(hours=hours, min_magnitude=min_magnitude, limit=limit)
+    return {
+        "eventos": [e.model_dump() for e in eventos],
+        "total": len(eventos),
+        "ventana_horas": hours,
+    }
 
 
 @app.get("/spectrograms/live-channels", tags=["spectrograms"])

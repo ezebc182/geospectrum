@@ -7,7 +7,13 @@
     },
     "notAvailable": "N/A",
     "utcSuffix": "UTC",
-    "refreshingArea": "Updating data for the selected area…"
+    "refreshingArea": "Updating data for the selected area…",
+    "live": {
+      "connected": "Live",
+      "connecting": "Connecting…",
+      "reconnecting": "Reconnecting…",
+      "offline": "Offline"
+    }
   },
   "nav": {
     "dashboard": "Dashboard",

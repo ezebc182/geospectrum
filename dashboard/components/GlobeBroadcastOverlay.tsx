@@ -33,7 +33,9 @@ import {
 import { FOCUS_INTERVAL_MS, pickSpotlight, readFocusMode, type FocusMode } from '@/lib/event-focus';
 import { GLOBAL_WALL_ID, WALL_PARAM, WALL_STORAGE_KEY, readWallSelection, resolveWall } from '@/lib/wall-selection';
 import { buildSpotlightCard } from '@/components/spotlight-card';
+import { LiveIndicator } from '@/components/LiveIndicator';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { useLiveEvents } from '@/hooks/use-live-events';
 import { SpectronetWall } from '@/components/SpectronetWall';
 import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
@@ -154,8 +156,16 @@ interface GlobeBroadcastOverlayProps {
 
 export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   const t = useTranslations('globe.broadcast');
+  // Estado del stream de eventos (PR-W4). El hook comparte UNA conexión con
+  // el sidebar y escribe los eventos que llegan directamente en el caché de
+  // SWR bajo esta misma key, así toda la cadena de useMemo de abajo sigue
+  // funcionando sin cambios.
+  const { status: liveStatus, isLive } = useLiveEvents();
   const { data: eventos } = useSWR('broadcast-events', broadcastFetcher, {
-    refreshInterval: REFRESH_SECONDS * 1000,
+    // Fallback automático (decisión del usuario, 2026-08-21): con el WS vivo
+    // el polling se apaga; si se cae, vuelve solo. El usuario nunca se queda
+    // sin datos, y no hay dos fuentes escribiendo la misma key a la vez.
+    refreshInterval: isLive ? 0 : REFRESH_SECONDS * 1000,
   });
 
   // Qué estaciones tienen streaming AHORA: se re-consulta cada 5 min porque
@@ -340,12 +350,16 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   useEffect(() => {
     if (eventos === undefined) return;
     setStatsNow(new Date());
+    // Con el WS vivo no hay próximo poll que contar: el countdown se apaga y
+    // en su lugar se muestra el indicador. Igual se sigue actualizando
+    // `statsNow`, que es lo que fecha las estadísticas de la cartelera.
+    if (isLive) return;
     setSecondsLeft(REFRESH_SECONDS);
     const interval = setInterval(() => {
       setSecondsLeft((s) => Math.max(0, s - 1));
     }, 1000);
     return () => clearInterval(interval);
-  }, [eventos]);
+  }, [eventos, isLive]);
 
   const stats = useMemo(
     () => computeBroadcastStats(eventos ?? [], statsNow ?? new Date(0)),
@@ -692,9 +706,17 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
         </div>
 
         <div className="relative flex items-center gap-3">
-          <span className="text-xs text-muted-foreground font-data whitespace-nowrap">
-            {t('nextUpdate', { seconds: secondsLeft })}
-          </span>
+          {/* Con el stream vivo el countdown no significa nada: los eventos
+              llegan empujados, no en la próxima tanda. Se reemplaza por el
+              indicador, que es lo que pide el spec (§5). Cuando el WS está
+              caído vuelve el contador, porque ahí sí hay un próximo poll. */}
+          {isLive ? (
+            <LiveIndicator status={liveStatus} className="whitespace-nowrap font-data" />
+          ) : (
+            <span className="text-xs text-muted-foreground font-data whitespace-nowrap">
+              {t('nextUpdate', { seconds: secondsLeft })}
+            </span>
+          )}
           <button
             onClick={openBillboard}
             aria-label={t('billboardMode')}

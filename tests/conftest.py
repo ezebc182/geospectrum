@@ -127,4 +127,27 @@ async def db_pool(_migrated):
             await conn.execute("DELETE FROM walls")
             await conn.execute("DELETE FROM areas_of_interest WHERE NOT is_system")
             await conn.execute("DELETE FROM users")
+            # seismic_events no cuelga de users (los eventos son globales y
+            # públicos, sin owner), pero se limpia igual: un test que persiste
+            # sismos no debe filtrarlos al siguiente.
+            await conn.execute("DELETE FROM seismic_events")
         await pool.close()
+
+
+@pytest.fixture
+async def event_store(_migrated):
+    """EventStore contra la base real (PR-W4).
+
+    Store propio y no `db_pool`: EventStore administra su pool con connect()/
+    close(), que es justo lo que hay que ejercitar. La limpieza va al final
+    porque el store crea filas sin owner y no las alcanza ningún CASCADE.
+    """
+    from src.services.event_store import EventStore
+
+    store = EventStore(_migrated)
+    await store.connect()
+    try:
+        yield store
+    finally:
+        await store.pool.execute("DELETE FROM seismic_events")
+        await store.close()

@@ -13,7 +13,9 @@ import {
   UserCheck,
 } from 'lucide-react';
 
+import { LiveIndicator } from '@/components/LiveIndicator';
 import { useAuth } from '@/hooks/use-auth';
+import { useLiveEvents } from '@/hooks/use-live-events';
 import {
   Sidebar,
   SidebarContent,
@@ -41,6 +43,9 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
   const t = useTranslations('nav');
+  // Estado del stream compartido con la cartelera del globo. Fuera del
+  // provider devuelve 'offline' en vez de romper (ver useLiveEvents).
+  const { status: liveStatus } = useLiveEvents();
   const isAdmin = user !== null && ADMIN_ROLES.includes(user.role);
 
   // Labels resueltas por hook dentro del componente (design, Decision 5:
@@ -67,6 +72,17 @@ export function AppSidebar() {
           <span className="font-heading text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">
             GeoSpectrum
           </span>
+        </div>
+        {/* Estado del stream de eventos (PR-W4). Va en el header y no en un
+            grupo propio para que el punto siga visible con el sidebar
+            colapsado; el texto se oculta con la misma utilidad de grupo que
+            usa "GeoSpectrum" arriba, y el title del indicador lo cubre. */}
+        <div className="px-2 pb-1.5">
+          <LiveIndicator
+            status={liveStatus}
+            className="group-data-[collapsible=icon]:justify-center"
+            labelClassName="group-data-[collapsible=icon]:hidden"
+          />
         </div>
       </SidebarHeader>
 
