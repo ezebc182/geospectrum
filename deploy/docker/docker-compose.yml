@@ -5,7 +5,6 @@ version: '3.8'
 #
 # Servicios:
 # - geospectrum: API principal
-# - inpres-adapter: Scraper INPRES (opcional)
 # - prometheus: Métricas (opcional)
 # - grafana: Dashboard (opcional)
 # - timescaledb: Storage histórico (opcional)
@@ -38,8 +37,8 @@ services:
       USGS_TIMEOUT_S: "5.0"
       INPRES_TIMEOUT_S: "5.0"
 
-      # INPRES adapter
-      INPRES_PROXY_URL: "http://inpres-adapter:8001/recent"
+      # INPRES se consulta in-process contra su feed XML oficial. INPRES_PROXY_URL
+      # sólo hace falta para apuntar a un proxy propio; sin ella funciona igual.
 
       # Logging
       LOG_LEVEL: "INFO"
@@ -96,33 +95,11 @@ services:
       # termina viendo la respuesta JSON de esta API en vez de su sesión.
       # DASHBOARD_URL: "https://tu-dashboard.example.com"
 
-    depends_on:
-      - inpres-adapter
     restart: unless-stopped
     networks:
       - geospectrum-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-
-  # ===========================================================================
-  # INPRES Adapter (scraper)
-  # ===========================================================================
-  inpres-adapter:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile.inpres-adapter
-    image: inpres-adapter:latest
-    container_name: inpres-adapter
-    ports:
-      - "8001:8001"
-    restart: unless-stopped
-    networks:
-      - geospectrum-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 3s
       retries: 3

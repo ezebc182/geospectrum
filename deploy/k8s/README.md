@@ -21,7 +21,6 @@ kubectl apply -f deploy/k8s/namespace.yaml
 kubectl apply -f deploy/k8s/configmap.yaml
 kubectl apply -f deploy/k8s/secret.yaml
 kubectl apply -f deploy/k8s/deployment.yaml
-kubectl apply -f deploy/k8s/deployment-inpres-adapter.yaml
 kubectl apply -f deploy/k8s/service.yaml
 kubectl apply -f deploy/k8s/hpa.yaml
 kubectl apply -f deploy/k8s/ingress.yaml

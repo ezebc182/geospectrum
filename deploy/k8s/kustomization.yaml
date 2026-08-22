@@ -9,7 +9,6 @@ resources:
   - configmap.yaml
   - secret.yaml
   - deployment.yaml
-  - deployment-inpres-adapter.yaml
   - service.yaml
   - hpa.yaml
   - ingress.yaml
@@ -26,8 +25,4 @@ labels:
 images:
   - name: geospectrum
     newName: ghcr.io/your-org/geospectrum  # CAMBIAR
-    newTag: latest
-
-  - name: inpres-adapter
-    newName: ghcr.io/your-org/inpres-adapter  # CAMBIAR
     newTag: latest

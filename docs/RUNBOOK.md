@@ -84,9 +84,11 @@ a) **Config error** (bad env var)
    - Fix: Check ConfigMap/Secret
    - `kubectl edit configmap geospectrum-config -n geospectrum`
 
-b) **Dependency unreachable** (INPRES adapter down)
-   - Check: `kubectl get pods -n geospectrum | grep inpres`
-   - Restart: `kubectl rollout restart deployment/inpres-adapter -n geospectrum`
+b) **Upstream source unreachable** (INPRES / USGS / EMSC down)
+   - INPRES is read in-process from `https://www.inpres.gob.ar/mapa/sismos.xml`
+     (no separate service). Check it directly: `curl -sI https://www.inpres.gob.ar/mapa/sismos.xml`
+   - The failure surfaces as an `INPRES_*` string in the `errors` array of `/report`,
+     and in the `source_errors_total{source="inpres"}` metric
 
 c) **OOMKilled** (out of memory)
    - Increase memory limit in deployment.yaml
@@ -129,10 +131,14 @@ a) **USGS API timeout/unavailable**
    - Check USGS status: https://earthquake.usgs.gov/
    - Service degrades gracefully (returns USGS-only or INPRES-only data)
 
-b) **INPRES scraper broken** (site structure changed)
-   - Check INPRES adapter: `curl http://<adapter-url>:8001/recent`
-   - If empty/error → INPRES site changed
-   - Requires code fix in `src/adapters/inpres_adapter.py`
+b) **INPRES feed broken** (XML schema changed)
+   - Check the feed directly: `curl -s https://www.inpres.gob.ar/mapa/sismos.xml | head -20`
+   - Expected: `<lista>` root with `<item>` children carrying `idSismo`, `latitud`,
+     `longitud`, `mg`, `color_link`
+   - A schema change surfaces as `INPRES_INVALID_FORMAT:*` in `/report`'s `errors`
+     array — never as a silent empty list
+   - Requires a code fix in `src/adapters/inpres_adapter.py`; update the fixture at
+     `tests/fixtures/inpres_sismos.xml` with a fresh capture so the tests reflect reality
 
 **Resolution**:
 
