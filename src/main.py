@@ -616,8 +616,49 @@ async def _fetch_parallel(
     return usgs_events, emsc_events, inpres_events, errors
 
 
+def parse_sources(sources: Optional[str]) -> list[str]:
+    """Normaliza el query param `sources` a una lista de fuentes válidas.
+
+    Acepta el mismo formato que /events/search ("usgs,emsc,inpres", con
+    espacios y mayúsculas indistintas) y devuelve CANONICAL_SOURCES cuando
+    no viene nada.
+
+    A diferencia de /events/search, valida: _fetch_parallel ignora en
+    silencio lo que no reconoce (`if "usgs" in sources`), así que un typo
+    devolvería 200 con cero eventos y el usuario leería "no tembló nadie"
+    en vez de "te equivocaste de fuente".
+
+    Raises:
+        HTTPException 400 si alguna fuente no está en CANONICAL_SOURCES.
+    """
+    if not sources:
+        return CANONICAL_SOURCES
+
+    requested = [s.strip().lower() for s in sources.split(",") if s.strip()]
+    if not requested:
+        return CANONICAL_SOURCES
+
+    unknown = [s for s in requested if s not in CANONICAL_SOURCES]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Fuentes desconocidas: {', '.join(unknown)}. "
+                f"Válidas: {', '.join(CANONICAL_SOURCES)}"
+            ),
+        )
+
+    # dict.fromkeys y no set(): deduplica preservando el orden pedido, del
+    # que depende merge_all_sources para elegir qué fuente gana en un
+    # evento fusionado.
+    return list(dict.fromkeys(requested))
+
+
 @app.get("/report", response_model=MonitorReport, tags=["monitoring"])
 async def report(
+    sources: Optional[str] = Query(
+        None, description="Fuentes separadas por coma: usgs,emsc,inpres"
+    ),
     current_user: Optional[CurrentUser] = Depends(get_current_user_optional),
 ) -> MonitorReport:
     """
@@ -628,6 +669,10 @@ async def report(
     - Alertas operativas activas
     - Lista completa de eventos detectados
     - Errores de fuentes externas (si los hubo)
+
+    `sources` recorta QUÉ fuentes se consultan (default: las 3 canónicas).
+    Antes no existía en la firma y FastAPI descartaba el query param en
+    silencio, así que `?sources=inpres` devolvía sismos de USGS.
 
     ENDPOINT PÚBLICO CON PERSONALIZACIÓN OPCIONAL (AOI-1). Usa
     get_current_user_optional, no get_current_user: con sesión válida el
@@ -645,6 +690,11 @@ async def report(
     """
     with request_duration.labels(endpoint="/report").time():
         logger.info("Generating seismic report")
+
+        # ANTES del try/except de abajo, a propósito: ese `except Exception`
+        # se tragaría el HTTPException 400 de una fuente inválida y
+        # devolvería un reporte global con status 200.
+        source_list = parse_sources(sources)
 
         # El área es una PERSONALIZACIÓN, no el corazón del endpoint: si no se
         # puede resolver (AreaService no wireado, base sin seed, Postgres
@@ -668,7 +718,7 @@ async def report(
             logger.exception("No se pudo resolver el área activa; reporte global")
 
         report_obj = await build_report(
-            sources=CANONICAL_SOURCES,
+            sources=source_list,
             area=area_filter,
         )
         logger.info("Merged events: %d total", len(report_obj.eventos))

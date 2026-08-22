@@ -7,12 +7,14 @@ import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
 
-const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock } = vi.hoisted(() => ({
-  searchEventsMock: vi.fn(),
-  getLiveChannelsMock: vi.fn(),
-  getGlobalWallMock: vi.fn(),
-  listWallsMock: vi.fn(),
-}));
+const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock, getActiveAreaMock } =
+  vi.hoisted(() => ({
+    searchEventsMock: vi.fn(),
+    getLiveChannelsMock: vi.fn(),
+    getGlobalWallMock: vi.fn(),
+    listWallsMock: vi.fn(),
+    getActiveAreaMock: vi.fn(),
+  }));
 vi.mock('@/lib/api', () => ({
   seismicAPI: {
     searchEvents: searchEventsMock,
@@ -22,6 +24,9 @@ vi.mock('@/lib/api', () => ({
 }));
 vi.mock('@/lib/walls', () => ({
   listWalls: listWallsMock,
+}));
+vi.mock('@/lib/areas', () => ({
+  getActiveArea: getActiveAreaMock,
 }));
 
 // SeismicGlobe usa WebGL: en jsdom se stubbea (mismo criterio que el resto
@@ -76,6 +81,9 @@ function renderOverlay(onClose = vi.fn()) {
   }
   if (listWallsMock.getMockImplementation() === undefined) {
     listWallsMock.mockResolvedValue([]);
+  }
+  if (getActiveAreaMock.getMockImplementation() === undefined) {
+    getActiveAreaMock.mockResolvedValue(null);
   }
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
@@ -547,6 +555,75 @@ describe('foco de eventos', () => {
       expect(pickSpotlightSpy).toHaveBeenCalledTimes(3);
 
       window.history.replaceState(null, '', '/');
+    });
+  });
+
+  describe('encuadre por área activa', () => {
+    // Los Andes: área real del proyecto, angosta en longitud y larga en
+    // latitud, así que el centro y la altitud que se derivan son distinguibles
+    // de cualquier default global.
+    function andesArea() {
+      return {
+        area: {
+          id: 'area-andes',
+          slug: 'andes',
+          name: 'Andes',
+          is_system: true,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [
+              [
+                [-75, -55],
+                [-65, -55],
+                [-65, -15],
+                [-75, -15],
+                [-75, -55],
+              ],
+            ],
+          },
+          bbox: { minlat: -55, maxlat: -15, minlon: -75, maxlon: -65 },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        is_default: false,
+      };
+    }
+
+    it('le pasa al globo el foco del área activa', async () => {
+      // El bug: el overlay se montaba sin focusArea, así que en transmisión
+      // cambiar de área no movía la cámara. SeismicGlobe ya sabe convivir con
+      // spotlight (se abstiene mientras isAreaAnimating) — sólo faltaba el dato.
+      searchEventsMock.mockResolvedValue([]);
+      getActiveAreaMock.mockResolvedValue(andesArea());
+
+      renderOverlay();
+
+      await waitFor(() => expect(capturedGlobeProps.focusArea).toBeTruthy());
+
+      const focus = capturedGlobeProps.focusArea as {
+        lat: number;
+        lng: number;
+        altitude: number;
+      };
+      // Centro del bbox de los Andes, no el (0,0) del default global.
+      expect(focus.lat).toBeCloseTo(-35, 5);
+      expect(focus.lng).toBeCloseTo(-70, 5);
+      // Altitud proporcional al lado más largo (40° de latitud), dentro del
+      // rango que declara globeFocusFromBounds.
+      expect(focus.altitude).toBeGreaterThan(1.4);
+      expect(focus.altitude).toBeLessThan(2.8);
+    });
+
+    it('sin área resuelta no fuerza ningún foco', async () => {
+      // Un anónimo sin sesión, o /areas/active caído: la transmisión sigue
+      // andando con el globo libre en vez de romperse o clavarse en (0,0).
+      searchEventsMock.mockResolvedValue([]);
+      getActiveAreaMock.mockResolvedValue(null);
+
+      renderOverlay();
+
+      await waitFor(() => expect(searchEventsMock).toHaveBeenCalled());
+      expect(capturedGlobeProps.focusArea ?? null).toBeNull();
     });
   });
 });
