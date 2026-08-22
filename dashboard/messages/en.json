@@ -838,5 +838,16 @@
       "errorGeneric": "Could not create the account. Try again in a few seconds.",
       "googleHint": "Use the Google account for <mono>{email}</mono> — the invitation is tied to that email."
     }
+  },
+  "station": {
+    "title": "Station detail",
+    "timeChunk": "Row time span",
+    "comingSoon": "coming soon",
+    "tabs": {
+      "helicorder": "Helicorder",
+      "spectrogram": "Spectrogram",
+      "wave": "Wave + Spectrum",
+      "rsam": "RSAM"
+    }
   }
 }
