@@ -118,7 +118,13 @@
     "felt": "Sentido",
     "selectedOnMap": "Seleccionado en el mapa",
     "showing": "Mostrando {shown} de {total} eventos",
-    "showingFiltered": "Mostrando {shown} de {total} eventos filtrados"
+    "showingFiltered": "Mostrando {shown} de {total} eventos filtrados",
+    "pagination": {
+      "range": "{from}-{to} de {total}",
+      "page": "Página {current} de {total}",
+      "previous": "Página anterior",
+      "next": "Página siguiente"
+    }
   },
   "filters": {
     "title": "Filtros de Búsqueda",

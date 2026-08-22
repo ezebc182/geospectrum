@@ -160,7 +160,7 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   // el sidebar y escribe los eventos que llegan directamente en el caché de
   // SWR bajo esta misma key, así toda la cadena de useMemo de abajo sigue
   // funcionando sin cambios.
-  const { status: liveStatus, isLive } = useLiveEvents();
+  const { status: liveStatus, isLive, receivedCount } = useLiveEvents();
   const { data: eventos } = useSWR('broadcast-events', broadcastFetcher, {
     // Fallback automático (decisión del usuario, 2026-08-21): con el WS vivo
     // el polling se apaga; si se cae, vuelve solo. El usuario nunca se queda
@@ -537,6 +537,14 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             // Misma altitud full-bleed que el hero de la landing: con el
             // default (2.5) el globo flotaba chico en un mar de fondo vacío.
             initialAltitude={1.35}
+            // El globo queda QUIETO y gira sólo un momento cuando entra un
+            // sismo (pedido del usuario 2026-08-22): así el movimiento
+            // significa "acaba de pasar algo" en vez de ser decoración que
+            // además arrastra fuera de la vista lo que uno mira.
+            rotationPolicy="on-event"
+            // `receivedCount` cambia con cada evento que llega por el
+            // WebSocket: es el disparador natural del pulso.
+            eventPulse={receivedCount}
             spotlight={spotlight}
             // Clic en un punto: enfoca ese evento como spotlight y mantiene
             // el ref de "último enfocado" coherente, igual que hace

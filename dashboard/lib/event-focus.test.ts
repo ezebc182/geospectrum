@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOCUS_POOL_SIZE, pickSpotlight, readFocusMode } from './event-focus';
+import { FOCUS_POOL_SIZE, pickSpotlight, readFocusMode, DEFAULT_FOCUS_MODE } from './event-focus';
 import type { SeismicEvent } from './types';
 
 const ev = (id: string, horaUtc: string, mag = 4): SeismicEvent => ({
@@ -86,9 +86,25 @@ describe('readFocusMode', () => {
   it('el query param gana sobre lo guardado', () => {
     expect(readFocusMode('?focus=latest', 'random')).toBe('latest');
   });
-  it('sin query usa lo guardado; sin nada, random', () => {
+  it('sin query usa lo guardado', () => {
     expect(readFocusMode('', 'latest')).toBe('latest');
-    expect(readFocusMode('', null)).toBe('random');
-    expect(readFocusMode('?focus=cualquiercosa', null)).toBe('random');
+    expect(readFocusMode('', 'random')).toBe('random');
+  });
+
+  it('sin nada usa el DEFAULT, que es "latest"', () => {
+    /**
+     * Era 'random' cuando el globo se pensaba como cartelera decorativa. Con
+     * el push de eventos (PR-W4) el sismo llega en segundos, así que la
+     * cámara tiene que mirar lo que ACABA de pasar: mostrar uno al azar
+     * mientras entra un M6 en vivo es lo contrario de lo que un monitor
+     * sísmico debe hacer.
+     */
+    expect(readFocusMode('', null)).toBe(DEFAULT_FOCUS_MODE);
+    expect(DEFAULT_FOCUS_MODE).toBe('latest');
+  });
+
+  it('un valor inválido cae al default, no rompe', () => {
+    expect(readFocusMode('?focus=cualquiercosa', null)).toBe(DEFAULT_FOCUS_MODE);
+    expect(readFocusMode('', 'basura-guardada')).toBe(DEFAULT_FOCUS_MODE);
   });
 });

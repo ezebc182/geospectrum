@@ -118,7 +118,13 @@
     "felt": "Felt",
     "selectedOnMap": "Selected on the map",
     "showing": "Showing {shown} of {total} events",
-    "showingFiltered": "Showing {shown} of {total} filtered events"
+    "showingFiltered": "Showing {shown} of {total} filtered events",
+    "pagination": {
+      "range": "{from}-{to} of {total}",
+      "page": "Page {current} of {total}",
+      "previous": "Previous page",
+      "next": "Next page"
+    }
   },
   "filters": {
     "title": "Search Filters",

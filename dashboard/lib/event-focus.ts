@@ -38,9 +38,22 @@ export function pickSpotlight(
   return candidates[index] ?? null;
 }
 
+/**
+ * Modo por defecto: 'latest'.
+ *
+ * Era 'random' cuando el globo se pensaba como cartelera decorativa —un
+ * paseo por los últimos 20 sismos—. Con el push de eventos (PR-W4) el sismo
+ * llega en segundos, así que lo esperable es que la cámara mire lo que
+ * ACABA de pasar. Mostrar uno al azar mientras entra un M6 en vivo es
+ * exactamente lo contrario de lo que un monitor sísmico tiene que hacer.
+ *
+ * 'random' sigue disponible en el selector de foco para el modo cartelera.
+ */
+export const DEFAULT_FOCUS_MODE: FocusMode = 'latest';
+
 export function readFocusMode(search: string, stored: string | null): FocusMode {
   const fromQuery = new URLSearchParams(search).get('focus');
   if (fromQuery === 'random' || fromQuery === 'latest') return fromQuery;
   if (stored === 'random' || stored === 'latest') return stored;
-  return 'random';
+  return DEFAULT_FOCUS_MODE;
 }
