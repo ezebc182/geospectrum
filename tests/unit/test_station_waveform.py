@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.services.station_waveform import decimate_minmax
+from src.services.station_waveform import butterworth_bandpass, decimate_minmax
 
 
 def test_decimacion_preserva_los_extremos():
@@ -32,3 +32,29 @@ def test_min_nunca_supera_al_max():
     data = rng.normal(size=50_000)
     mins, maxs = decimate_minmax(data, 640)
     assert np.all(mins <= maxs)
+
+
+def _sine(freq_hz, fs, seconds, amp=1.0):
+    t = np.arange(int(fs * seconds)) / fs
+    return amp * np.sin(2 * np.pi * freq_hz * t)
+
+
+def test_bandpass_conserva_la_banda_y_mata_la_deriva():
+    fs = 100.0
+    in_band = _sine(5.0, fs, 30.0, amp=100.0)
+    drift = np.linspace(0, 10_000, int(fs * 30))  # deriva lenta fuera de banda
+
+    out = butterworth_bandpass(in_band + drift, fs)
+
+    core = out[int(fs * 5) : -int(fs * 5)]  # descartar transitorios de borde
+    assert np.abs(core).max() == pytest.approx(100.0, rel=0.05)
+
+
+def test_bandpass_es_zero_phase():
+    # filtfilt no desfasa: el pico del seno filtrado coincide con el original.
+    fs = 100.0
+    sine = _sine(5.0, fs, 30.0, amp=100.0)
+    out = butterworth_bandpass(sine, fs)
+    center = slice(int(fs * 10), int(fs * 20))
+    lag = np.argmax(np.correlate(out[center], sine[center], "full")) - (len(sine[center]) - 1)
+    assert lag == 0
