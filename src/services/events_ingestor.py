@@ -26,6 +26,8 @@ import asyncio
 import logging
 from typing import Optional
 
+import asyncpg
+
 from src.config.settings import settings
 from src.ingestors.emsc_listener import EMSCListener
 from src.ingestors.usgs_poller import USGSPoller
@@ -152,7 +154,20 @@ if __name__ == "__main__":
         # seedlink_ingestor.py:423-426.
         store = EventStore(settings.timescaledb_dsn)
         await store.connect()
-        stats = await store.stats()
+
+        # Chequeo de arranque: si falta la tabla, el primer evento que llegue
+        # moriría con un UndefinedTableError de asyncpg y 30 líneas de
+        # traceback que no le dicen al operador qué hacer. Verificado a mano:
+        # es exactamente lo que pasaba con la base local sin migrar.
+        try:
+            stats = await store.stats()
+        except asyncpg.UndefinedTableError as exc:
+            raise RuntimeError(
+                "events_ingestor: falta la tabla seismic_events. Corré las "
+                "migraciones antes de arrancar el worker: "
+                "python -m scripts.apply_migrations"
+            ) from exc
+
         logger.info(
             "events_ingestor: base conectada — %d eventos, último %s",
             stats["total"],

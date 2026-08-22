@@ -192,7 +192,34 @@ testear.
     Node: `export PATH="$HOME/.nvm/versions/node/v22.16.0/bin:$PATH"` — el del
     shell es v12 y revienta.
 
-- [ ] **T18 — PR**
+- [x] **T18 — PR**
+
+## Verificación end-to-end (2026-08-21)
+
+El worker se corrió DE VERDAD contra EMSC y USGS de producción, no sólo con
+tests:
+
+```
+events_ingestor: conectado a Redis en redis://localhost:6379/0
+events_ingestor: base conectada — 0 eventos, último ninguno
+USGS: polling cada 60 s con ventana de 15 min
+httpx: GET earthquake.usgs.gov/fdsnws/event/1/query ... "HTTP/1.1 200 OK"
+EMSC: conectado a wss://www.seismicportal.eu/standing_order/websocket
+```
+
+Resultado en la tabla: `ci41532736  M2.26  6 km SSW of Encino, CA  ['USGS']`.
+
+Eso destapó lo que los tests no podían ver: sin la migración aplicada, el
+worker moría con un `UndefinedTableError` crudo de asyncpg y 30 líneas de
+traceback que no le dicen al operador que corra las migraciones. Ahora hay un
+chequeo de arranque con el mensaje accionable. El exit code ya era 1 (la
+lección del seedlink estaba bien aplicada).
+
+## Pendiente para el deploy (del usuario)
+
+1. Crear el servicio en Railway con `RAILWAY_DOCKERFILE_PATH=deploy/docker/Dockerfile.events-worker`.
+2. Copiarle las env vars de Redis y Postgres, con `RUN_MIGRATIONS_ON_STARTUP=false`.
+3. Verificar que la migración 014 corrió en prod ANTES de arrancar el worker.
 
 ## Fuera de alcance
 
