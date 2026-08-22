@@ -18,8 +18,8 @@ data:
   USGS_TIMEOUT_S: "5.0"
   INPRES_TIMEOUT_S: "5.0"
 
-  # INPRES adapter interno
-  INPRES_PROXY_URL: "http://inpres-adapter-service:8001/recent"
+  # INPRES se consulta in-process contra su feed XML oficial. INPRES_PROXY_URL
+  # sólo hace falta para apuntar a un proxy propio; sin ella funciona igual.
 
   # Logging
   LOG_LEVEL: "INFO"

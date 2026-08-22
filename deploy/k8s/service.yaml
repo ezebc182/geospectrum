@@ -14,21 +14,3 @@ spec:
       name: http
   selector:
     app: geospectrum
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: inpres-adapter-service
-  namespace: geospectrum
-  labels:
-    app: inpres-adapter
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8001
-      targetPort: 8001
-      protocol: TCP
-      name: http
-  selector:
-    app: inpres-adapter

@@ -146,8 +146,8 @@ Environment variables (see `.env.example`):
 | `MIN_MAG_ALERT`       | Minimum magnitude for alerts         | 3.0             |
 | `WINDOW_MINUTES`      | Analysis window (minutes)            | 60              |
 | `USGS_TIMEOUT_S`      | USGS API timeout                     | 5.0             |
-| `INPRES_TIMEOUT_S`    | INPRES adapter timeout               | 5.0             |
-| `INPRES_PROXY_URL`    | INPRES adapter URL                   | (internal)      |
+| `INPRES_TIMEOUT_S`    | INPRES feed timeout                  | 5.0             |
+| `INPRES_PROXY_URL`    | Optional proxy for the INPRES feed   | (official feed) |
 | `LOG_LEVEL`           | Logging level                        | INFO            |
 | `PROMETHEUS_ENABLED`  | Enable Prometheus metrics            | true            |
 
@@ -309,7 +309,7 @@ seismic-monitor/
 │   │   ├── kpi_service.py      # KPI calculator
 │   │   └── alert_service.py    # Alert detector
 │   ├── adapters/
-│   │   └── inpres_adapter.py   # INPRES scraper
+│   │   └── inpres_adapter.py   # INPRES XML feed client
 │   └── utils/
 │       └── geo.py              # Geo calculations
 ├── tests/
@@ -362,19 +362,22 @@ docker-compose -f deploy/docker/docker-compose.yml logs geospectrum
 ```
 
 Common issues:
-- INPRES adapter not reachable → Check `INPRES_PROXY_URL`
+- INPRES feed not reachable → see "No INPRES events" below
 - USGS API timeout → Increase `USGS_TIMEOUT_S`
 - Port already in use → Change port in docker-compose.yml
 
 ### No INPRES events
 
-INPRES scraper is fragile (HTML parsing). If INPRES site structure changes:
+INPRES is read in-process from its official XML feed — there is no separate
+adapter service to check. If the feed's schema changes:
 
-1. Check adapter logs: `docker logs inpres-adapter`
-2. Update `src/adapters/inpres_adapter.py` parsing logic
-3. Test with: `curl http://localhost:8001/recent`
+1. Look at `/report`'s `errors` array: a broken feed reports `INPRES_INVALID_FORMAT:*`.
+   It never reports an empty list as success.
+2. Inspect the feed: `curl -s https://www.inpres.gob.ar/mapa/sismos.xml | head -20`
+3. Update the parsing in `src/adapters/inpres_adapter.py` and refresh the fixture at
+   `tests/fixtures/inpres_sismos.xml` with a fresh capture
 
-Service continues to work with USGS-only mode if INPRES fails.
+Service continues to work with USGS/EMSC if INPRES fails.
 
 ### High memory usage
 

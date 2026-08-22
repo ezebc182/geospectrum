@@ -5,9 +5,13 @@ pydantic==2.9.0
 pydantic-settings==2.5.0
 python-dotenv==1.0.0
 
-# INPRES scraper dependencies
-beautifulsoup4==4.12.3
-lxml==5.3.0
+# INPRES: parseo del feed XML (https://www.inpres.gob.ar/mapa/sismos.xml).
+# defusedxml y no xml.etree de la stdlib porque el feed es de un tercero: el
+# parser de la stdlib bloquea XXE pero NO las bombas de entidades
+# (billion laughs), verificado en Python 3.12.
+# beautifulsoup4/lxml estaban acá para el scraper de HTML que este feed
+# reemplaza; INPRES sirve la tabla vacía y la rellena por JS desde este XML.
+defusedxml==0.7.1
 
 # Observability
 prometheus-client==0.20.0
@@ -98,3 +102,4 @@ pytest-httpx==0.30.0
 black==24.10.0
 ruff==0.6.0
 mypy==1.11.0
+types-defusedxml==0.7.0.20240218

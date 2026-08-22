@@ -406,8 +406,7 @@ if __name__ == "__main__":
         python -m src.services.seedlink_ingestor
 
     Requiere Redis corriendo (settings.redis_url). No se levanta con el API
-    principal (uvicorn src.main:app) — es un proceso aparte, igual que
-    src/adapters/inpres_adapter.py.
+    principal (uvicorn src.main:app) — es un proceso aparte.
     """
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
