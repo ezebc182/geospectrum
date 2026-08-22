@@ -39,15 +39,23 @@ import {
 } from '@/lib/utils';
 import type { SeismicEvent } from '@/lib/types';
 
-const magnitudeBadgeVariant = {
-  low: 'secondary' as const,
-  moderate: 'outline' as const,
-  high: 'outline' as const,
-  critical: 'destructive' as const,
+const magnitudeBadgeVariant: Record<
+  ReturnType<typeof getMagnitudeSeverity>,
+  'secondary' | 'outline' | 'destructive'
+> = {
+  low: 'secondary',
+  light: 'outline',
+  moderate: 'outline',
+  high: 'outline',
+  critical: 'destructive',
 };
 
-const magnitudeBadgeClass = {
+// El Record explícito es a propósito: sin él, agregar un tramo a
+// getMagnitudeSeverity no rompe la compilación acá y el badge sale sin color
+// en runtime. Con el tipo, TypeScript exige la clave nueva.
+const magnitudeBadgeClass: Record<ReturnType<typeof getMagnitudeSeverity>, string> = {
   low: 'bg-severity-low/15 text-severity-low',
+  light: 'bg-severity-light/15 text-severity-light',
   moderate: 'bg-severity-moderate/15 text-severity-moderate',
   high: 'bg-severity-high/15 text-severity-high',
   critical: 'bg-severity-critical/15 text-severity-critical',

@@ -23,12 +23,24 @@ import { useTranslations } from 'next-intl';
 /** Identificador de tramo: la etiqueta visible sale del diccionario (`globe.scale.bands.<id>`). */
 export type MagnitudeBand = 'minor' | 'light' | 'moderate' | 'strong' | 'major';
 
+/**
+ * Los cortes son los mismos que `getMagnitudeSeverity` y `getMagnitudeColor`:
+ * 3 / 4 / 5 / 6. La leyenda tiene que pintar el mismo sismo del mismo color
+ * que su chip.
+ *
+ * Los colores salen de los tokens `--severity-*` y no de hex sueltos. Hasta el
+ * 2026-08-22 estaban hardcodeados y el primer tramo apuntaba a
+ * `--color-severity-low`, una variable que no existe: caía siempre al fallback
+ * (un verde puro) mientras el token real es un teal. Los otros cuatro ni
+ * intentaban leer el token, así que la barra no cambiaba en modo oscuro y el
+ * chip de al lado sí.
+ */
 const TRAMOS: { hasta: number; id: MagnitudeBand; color: string }[] = [
-  { hasta: 3, id: 'minor', color: 'var(--color-severity-low, #22c55e)' },
-  { hasta: 4, id: 'light', color: '#eab308' },
-  { hasta: 5, id: 'moderate', color: '#f59e0b' },
-  { hasta: 6, id: 'strong', color: '#ea580c' },
-  { hasta: 8, id: 'major', color: '#dc2626' },
+  { hasta: 3, id: 'minor', color: 'hsl(var(--severity-low))' },
+  { hasta: 4, id: 'light', color: 'hsl(var(--severity-light))' },
+  { hasta: 5, id: 'moderate', color: 'hsl(var(--severity-moderate))' },
+  { hasta: 6, id: 'strong', color: 'hsl(var(--severity-high))' },
+  { hasta: 8, id: 'major', color: 'hsl(var(--severity-critical))' },
 ];
 
 /** Extremos de la escala dibujada. Un M2 y un M8 son los bordes útiles. */

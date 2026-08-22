@@ -5,11 +5,22 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Severidad por magnitud (escala Richter), derivada a tokens `--severity-*`. */
-export function getMagnitudeSeverity(mag: number): 'low' | 'moderate' | 'high' | 'critical' {
+/**
+ * Severidad por magnitud (escala Richter), derivada a tokens `--severity-*`.
+ *
+ * Los cortes son los MISMOS que `getMagnitudeColor` y `getMagnitudeCategory`:
+ * el chip de una lista y el punto del globo tienen que pintar igual el mismo
+ * sismo. Hasta el 2026-08-22 esta función no tenía el tramo 3-4 y metía todo
+ * lo menor a M4 en `low`: un M3.9 salía amarillo en el globo y verde en la
+ * lista.
+ */
+export function getMagnitudeSeverity(
+  mag: number,
+): 'low' | 'light' | 'moderate' | 'high' | 'critical' {
   if (mag >= 6) return 'critical';
   if (mag >= 5) return 'high';
   if (mag >= 4) return 'moderate';
+  if (mag >= 3) return 'light';
   return 'low';
 }
 

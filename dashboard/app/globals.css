@@ -42,6 +42,7 @@
     /* Severidad sísmica — único lugar donde el color compite por atención */
     --severity-low: 172 70% 38%;
     --severity-ok: 172 55% 45%;
+    --severity-light: 45 93% 42%;
     --severity-moderate: 43 96% 50%;
     --severity-high: 24 94% 53%;
     --severity-critical: 4 90% 55%;
@@ -78,6 +79,7 @@
 
     --severity-low: 172 65% 45%;
     --severity-ok: 172 45% 52%;
+    --severity-light: 45 93% 52%;
     --severity-moderate: 43 92% 55%;
     --severity-high: 24 90% 58%;
     --severity-critical: 4 85% 60%;
