@@ -78,7 +78,7 @@ estaba desconectado. Sin tabla, ese hueco no se puede cerrar.
 | El pool de asyncpg nace en el loop del worker | `seedlink_ingestor.py:423-426` | Instanciar en `__main__`, conectar dentro de `run()` |
 | Migraciones idempotentes, sin Alembic | `scripts/apply_migrations.py:1-18` | `CREATE TABLE IF NOT EXISTS` |
 | `RUN_MIGRATIONS_ON_STARTUP=false` en workers | `settings.py:80-83` — sólo el servicio api hace DDL | El worker nuevo no migra |
-| Un test no debe recibir config que producción no tiene | commit 92b0328 (fix UTC de hoy) | `IntlTestProvider` en los tests nuevos, nunca `NextIntlClientProvider` suelto |
+| Un test no debe recibir config que producción no tiene | commit 92b0328 (fix UTC, PR #30) | Los tests nuevos importan `formats` de `@/i18n/request`, no lo copian. (`IntlTestProvider` vive en el PR #30 y esta rama sale de `main`: usarlo acá daría conflicto de merge.) |
 | Verificar por mutación | `verificar-tests-por-mutacion` | Romper el dedupe y el fallback a propósito; deben fallar tests |
 | Verificar contra la base, no con mocks | `tests/integration/conftest.py:1-12` | Los tests del store van con testcontainer |
 | Efecto que lee un ref sin tenerlo en deps | `GlobeBroadcastOverlay.tsx:382-440` | El push escribe en el caché SWR; el efecto de sync del ref (`:405-418`) SE MANTIENE |
@@ -96,13 +96,13 @@ testear.
 
 ### Backend
 
-- [ ] **T1 — Migración `014_seismic_events.sql`**
+- [x] **T1 — Migración `014_seismic_events.sql`**
   Tabla `seismic_events`: `id` (canonical, PK), `fuentes` (text[]), `hora_utc`
   (timestamptz, index), `lat`, `lon`, `prof_km`, `mag` (index), `mag_tipo`,
   `lugar`, `sentido`, `revisado`, `created_at`. Idempotente.
   Index compuesto `(hora_utc DESC, mag)` para el snapshot de 24 h.
 
-- [ ] **T2 — `src/services/event_store.py`**
+- [x] **T2 — `src/services/event_store.py`**
   `EventStore` con pool asyncpg propio: `upsert_event(event) -> bool` (True si
   es NUEVO, False si ya estaba — es lo que decide si se publica),
   `recent_events(hours, min_mag)`, `connect()`, `close()`.
@@ -110,78 +110,80 @@ testear.
   (mag, revisado): EMSC manda revisiones del mismo evento.
   **Tests contra testcontainer, no mocks.**
 
-- [ ] **T3 — `canonical_id` y dedupe entre fuentes**
+- [x] **T3 — `canonical_id` y dedupe entre fuentes**
   Un mismo sismo llega como `usgs_us7000abcd` y `emsc_1234567`. Reusar el
   criterio de `merge_service.py:111` (`_fuse_two_events`), que ya resuelve esto
   para `/report`. Función pura, tests unitarios.
 
-- [ ] **T4 — `src/ingestors/emsc_listener.py`**
+- [x] **T4 — `src/ingestors/emsc_listener.py`**
   Cliente del WS de EMSC (`websockets==12.0` ya está en requirements.txt:84).
   Reconexión con backoff exponencial + jitter, watchdog de silencio (patrón
   `channel_watchdog.py`), y `failure` capturado como el seedlink.
 
-- [ ] **T5 — `src/ingestors/usgs_poller.py`**
+- [x] **T5 — `src/ingestors/usgs_poller.py`**
   Poll cada 60 s reusando `fetch_usgs_events()` (`usgs_service.py:17`), que ya
   existe y ya es global sin bbox.
 
-- [ ] **T6 — `src/services/events_ingestor.py` + `__main__`**
+- [x] **T6 — `src/services/events_ingestor.py` + `__main__`**
   Orquesta T4 y T5, dedupe con T3, persiste con T2, publica a `events:new`.
   `__main__` con el patrón exacto del seedlink, incluido el `raise` final.
 
-- [ ] **T7 — `@app.websocket("/ws/events")`**
+- [x] **T7 — `@app.websocket("/ws/events")`**
   Patrón de `main.py:2164-2181`. Público (misma política que
   `/spectrograms/*`, ver `stations.py:4-6`). Snapshot al conectar + stream.
   **Estrena `TestClient.websocket_connect` en este repo** (hoy no hay ni un
   test de WS).
 
-- [ ] **T8 — `GET /events/recent`**
+- [x] **T8 — `GET /events/recent`**
   Lee de la tabla, no de USGS. Es el fallback REST del frontend y la fuente del
   snapshot.
 
-- [ ] **T9 — `deploy/docker/Dockerfile.events-worker`**
+- [x] **T9 — `deploy/docker/Dockerfile.events-worker`**
   Copia de `Dockerfile.seedlink` cambiando sólo el `CMD`. Con
   `PYTHONUNBUFFERED=1`.
 
 ### Frontend
 
-- [ ] **T10 — `lib/ws-base.ts`**
+- [x] **T10 — `lib/ws-base.ts`**
   Extraer el `WS_BASE` hoy hardcodeado en `LiveSpectrogramCanvas.tsx:32-33`
   para no duplicar el `.replace(/^http/, 'ws')`.
 
-- [ ] **T11 — `hooks/use-event-stream.ts`**
+- [x] **T11 — `hooks/use-event-stream.ts`**
   Abre el WS, expone `status: 'connecting' | 'live' | 'reconnecting' | 'offline'`
   (mismo vocabulario que `LiveSpectrogramCanvas.tsx:64`). Backoff exponencial
   con tope (el de espectros es fijo de 3 s, acá el spec pide backoff real).
   Escribe con `mutate('broadcast-events', updater, { revalidate: false })`.
-  Cleanup con los tres flags coordinados de `LiveSpectrogramCanvas.tsx:144-149`.
+  Cleanup con UN flag (`cancelled`) leído en tres puntos, no con los dos de
+  `LiveSpectrogramCanvas.tsx:144-149`: medido por mutación, `cancelled` cubre
+  los dos roles y un segundo flag no cambiaría nada observable.
 
-- [ ] **T12 — `components/LiveIndicator.tsx`**
+- [x] **T12 — `components/LiveIndicator.tsx`**
   Semáforo verde/amarillo/rojo, reusando el vocabulario visual de
   `LiveSpectrogramCanvas.tsx:195-199`.
 
-- [ ] **T13 — Provider en `app/(app)/layout.tsx`**
+- [x] **T13 — Provider en `app/(app)/layout.tsx`**
   UNA sola conexión WS compartida entre sidebar y globo. Sin esto, dos
   `useEventStream()` abren dos WebSockets. El overlay se monta por portal a
   `document.body` pero está bajo el layout de `(app)`, así que el provider
   cubre a los dos.
 
-- [ ] **T14 — Sidebar**
+- [x] **T14 — Sidebar**
   Indicador en `AppSidebar.tsx:65-70` (header). Ojo `collapsible="icon"`: el
   texto necesita `group-data-[collapsible=icon]:hidden` y tooltip, como `:67`.
 
-- [ ] **T15 — Globo: reemplazar el countdown**
+- [x] **T15 — Globo: reemplazar el countdown**
   `GlobeBroadcastOverlay.tsx:338-348` + render `:695-697`. El `useSWR` de
   `:157-159` pasa a `refreshInterval: wsLive ? 0 : 30_000`.
   **No tocar** el efecto de sync del ref (`:405-418`): sigue siendo necesario.
 
-- [ ] **T16 — i18n**
+- [x] **T16 — i18n**
   `common.live.*` (transversal sidebar+globo, junto a `utcSuffix`). Paridad
   ES/EN — `messages/parity.test.ts` lo verifica y `global.d.ts:9-14` hace que
   una clave inexistente rompa el build.
 
 ### Cierre
 
-- [ ] **T17 — Verificación por mutación**
+- [x] **T17 — Verificación por mutación**
   - Romper el dedupe → un test debe fallar con evento duplicado.
   - Quitar el `raise` final del worker → el test del exit code debe fallar.
   - Forzar `wsLive = true` con el WS caído → el test del fallback debe fallar.
