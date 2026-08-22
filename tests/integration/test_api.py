@@ -150,6 +150,98 @@ def test_report_includes_emsc_only_event(client):
         assert "EMSC" in emsc_event["fuentes"]
 
 
+def test_report_sources_param_filters_fetches(client):
+    """/report?sources=emsc consulta SOLO EMSC.
+
+    Antes el parámetro no existía en la firma: FastAPI descartaba el query
+    param desconocido en silencio y el endpoint llamaba siempre a las 3
+    fuentes, así que `?sources=inpres` devolvía sismos de USGS en California.
+    """
+    with (
+        patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
+        patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
+    ):
+        mock_usgs.return_value = ([], None)
+        mock_inpres.return_value = ([], None)
+        mock_emsc.return_value = ([emsc_only_event()], None)
+
+        response = client.get("/report?sources=emsc")
+
+        assert response.status_code == 200
+        mock_emsc.assert_awaited()
+        mock_usgs.assert_not_awaited()
+        mock_inpres.assert_not_awaited()
+
+        eventos = response.json()["eventos"]
+        assert [e["id"] for e in eventos] == ["emsc_only1"]
+
+
+def test_report_without_sources_uses_all_canonical(client):
+    """Sin `sources` el reporte sigue consultando las 3 fuentes canónicas.
+
+    Es el contrato que ya consumen el dashboard y scripts/seismic-cli.py:
+    agregar el parámetro no puede cambiar la respuesta de quien no lo manda.
+    """
+    with (
+        patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
+        patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
+    ):
+        mock_usgs.return_value = ([], None)
+        mock_inpres.return_value = ([], None)
+        mock_emsc.return_value = ([], None)
+
+        response = client.get("/report")
+
+        assert response.status_code == 200
+        mock_usgs.assert_awaited()
+        mock_emsc.assert_awaited()
+        mock_inpres.assert_awaited()
+
+
+def test_report_sources_param_is_case_and_space_insensitive(client):
+    """`?sources=EMSC, USGS` normaliza igual que /events/search."""
+    with (
+        patch("src.services.report_service.fetch_usgs_events", new_callable=AsyncMock) as mock_usgs,
+        patch(
+            "src.services.report_service.fetch_inpres_events", new_callable=AsyncMock
+        ) as mock_inpres,
+        patch("src.services.report_service.fetch_emsc_events", new_callable=AsyncMock) as mock_emsc,
+    ):
+        mock_usgs.return_value = ([], None)
+        mock_inpres.return_value = ([], None)
+        mock_emsc.return_value = ([], None)
+
+        response = client.get("/report?sources=EMSC,%20USGS%20")
+
+        assert response.status_code == 200
+        mock_emsc.assert_awaited()
+        mock_usgs.assert_awaited()
+        mock_inpres.assert_not_awaited()
+
+
+def test_report_rejects_unknown_source(client):
+    """Una fuente inexistente devuelve 400, no un reporte vacío.
+
+    _fetch_parallel ignora en silencio lo que no reconoce (`if "usgs" in
+    sources`), así que sin validar, `?sources=chocolate` daría 200 con cero
+    eventos: el usuario leería "no tembló nadie" en vez de "te equivocaste
+    de fuente".
+    """
+    response = client.get("/report?sources=chocolate")
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "chocolate" in detail
+    # El error enumera las fuentes válidas para que sea accionable.
+    assert "usgs" in detail and "emsc" in detail and "inpres" in detail
+
+
 def test_events_endpoint(client):
     """Test endpoint /events — incluye evento EMSC-only (Fase 5)."""
     with (

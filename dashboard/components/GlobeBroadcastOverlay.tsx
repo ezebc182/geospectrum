@@ -21,6 +21,8 @@ import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight } from 'luci
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 
 import { seismicAPI } from '@/lib/api';
+import { getActiveArea } from '@/lib/areas';
+import { areaViewBounds, globeFocusFromBounds, type GlobeFocus } from '@/lib/area-view-bounds';
 import {
   computeBroadcastStats,
   formatUtcClock,
@@ -176,6 +178,22 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     () => seismicAPI.getLiveChannels(),
     { refreshInterval: 5 * 60_000 }
   );
+
+  // Área activa, para que cambiarla encuadre la cámara TAMBIÉN en transmisión
+  // (antes el overlay se montaba sin focusArea y la cámara no se movía).
+  //
+  // Se lee acá y no llega por prop a propósito: la key '/areas/active' es la
+  // misma que usa la página, así que SWR deduplica y esto no dispara un fetch
+  // extra — y el overlay queda autónomo como el resto de sus datos, sin
+  // depender de que quien lo monte se acuerde de cablearlo.
+  const { data: activeArea } = useSWR('/areas/active', getActiveArea);
+
+  const focusArea: GlobeFocus | null = useMemo(() => {
+    const area = activeArea?.area;
+    if (!area) return null;
+    const bounds = areaViewBounds(area.geometry, area.bbox);
+    return bounds ? globeFocusFromBounds(bounds) : null;
+  }, [activeArea]);
 
   // Muro SPECTRONET (Task 1): estático, generado del catálogo — no depende
   // de qué esté transmitiendo ahora, por eso no necesita refresco periódico.
@@ -546,6 +564,10 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             // `receivedCount` cambia con cada evento que llega por el
             // WebSocket: es el disparador natural del pulso.
             eventPulse={receivedCount}
+            // El área encuadra la cámara; el spotlight se abstiene solo
+            // mientras dura esa animación (ver isAreaAnimating en SeismicGlobe)
+            // y retoma después, así conviven sin pelearse por la cámara.
+            focusArea={focusArea}
             spotlight={spotlight}
             // Clic en un punto: enfoca ese evento como spotlight y mantiene
             // el ref de "último enfocado" coherente, igual que hace
