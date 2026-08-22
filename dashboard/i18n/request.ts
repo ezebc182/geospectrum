@@ -17,14 +17,28 @@ const FORMAT_LOCALES = { es: 'es-AR', en: 'en-US' } as const;
  * técnico ordenable, deliberadamente fuera de esta tabla (pero también UTC).
  *
  * timeZone: 'UTC' en los tres: el dominio sísmico trabaja en UTC y todas
- * las fuentes llegan en UTC. Fijarlo acá convierte a UTC TODOS los
- * `format.dateTime(...)` de la app de una sola vez, sin tocar call-sites.
+ * las fuentes llegan en UTC.
+ *
+ * OJO: fijarlo acá cubre SOLO las llamadas por nombre —
+ * `format.dateTime(d, 'medium')`. Las que pasan opciones inline
+ * (`format.dateTime(d, { hour: '2-digit' })`) NO heredan nada de esta tabla
+ * y caían a la zona del navegador. Por eso el `timeZone` global va también
+ * en el return de getRequestConfig (ver abajo), que es lo que use-intl
+ * mergea cuando el call-site no trae `timeZone` propio.
  */
+/**
+ * Zona de TODA la app: el dominio sísmico trabaja en UTC y todas las fuentes
+ * (USGS, EMSC, endtime de ObsPy) ya llegan en UTC. Fuente de verdad única —
+ * `lib/test-intl.tsx` la re-exporta en vez de declarar la suya, así un test
+ * no puede pasar en verde con producción mal configurada.
+ */
+export const APP_TIME_ZONE = 'UTC';
+
 export const formats = {
   dateTime: {
-    medium: { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' },
-    short: { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' },
-    time: { timeStyle: 'medium', timeZone: 'UTC' },
+    medium: { dateStyle: 'medium', timeStyle: 'medium', timeZone: APP_TIME_ZONE },
+    short: { dateStyle: 'short', timeStyle: 'short', timeZone: APP_TIME_ZONE },
+    time: { timeStyle: 'medium', timeZone: APP_TIME_ZONE },
   },
 } as const;
 
@@ -77,5 +91,9 @@ export default getRequestConfig(async () => {
     locale: FORMAT_LOCALES[appLocale],
     messages: (await import(`../messages/${appLocale}.json`)).default,
     formats,
+    // Zona por defecto de TODA la app, incluidas las llamadas con opciones
+    // inline que `formats` no alcanza. Sin esto, use-intl emite
+    // ENVIRONMENT_FALLBACK y usa la zona del navegador.
+    timeZone: APP_TIME_ZONE,
   };
 });

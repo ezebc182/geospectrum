@@ -26,9 +26,12 @@ interface MagnitudeTimeChartProps {
 
 export function MagnitudeTimeChart({ eventos, className }: MagnitudeTimeChartProps) {
   const t = useTranslations('charts');
+  const tCommon = useTranslations('common');
   // Formatter con el locale activo (Decision 6): reemplaza al 'es-ES'
-  // hardcodeado del tickFormatter y al formatDateTime fijo en es-AR del
-  // tooltip — con la UI en EN, ejes y tooltip salen en formato en-US.
+  // hardcodeado del tickFormatter — con la UI en EN, ejes y tooltip salen en
+  // formato en-US. Las horas van en UTC: el eje usa opciones inline, que
+  // heredan el timeZone global de i18n/request.ts (antes caían en la zona del
+  // navegador y quedaban corridas respecto del tooltip, que sí era UTC).
   const format = useFormatter();
   const data = eventos.map((ev) => ({
     timestamp: new Date(ev.hora_utc).getTime(),
@@ -69,7 +72,9 @@ export function MagnitudeTimeChart({ eventos, className }: MagnitudeTimeChartPro
               return (
                 <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-white shadow-lg">
                   <p className="font-bold">M{data.mag.toFixed(1)}</p>
-                  <p className="text-sm">{format.dateTime(new Date(data.timestamp), 'medium')}</p>
+                  <p className="text-sm">
+                    {format.dateTime(new Date(data.timestamp), 'medium')} {tCommon('utcSuffix')}
+                  </p>
                   <p className="text-xs text-gray-400">{data.lugar}</p>
                 </div>
               );

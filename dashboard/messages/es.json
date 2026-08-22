@@ -106,6 +106,7 @@
       "statusLabel": "Estado (revisado/sentido)"
     },
     "emptyWindow": "No hay eventos registrados en la ventana de tiempo actual",
+    "timesInUtc": "Horarios en UTC",
     "unknownPlace": "Desconocido",
     "reviewed": "Revisado",
     "felt": "Sentido",

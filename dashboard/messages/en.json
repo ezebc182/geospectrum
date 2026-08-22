@@ -106,6 +106,7 @@
       "statusLabel": "Status (reviewed/felt)"
     },
     "emptyWindow": "No events recorded in the current time window",
+    "timesInUtc": "Times in UTC",
     "unknownPlace": "Unknown",
     "reviewed": "Reviewed",
     "felt": "Felt",
