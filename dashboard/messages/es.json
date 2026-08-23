@@ -12,7 +12,9 @@
       "connected": "En vivo",
       "connecting": "Conectando…",
       "reconnecting": "Reconectando…",
-      "offline": "Sin conexión"
+      "offline": "Sin conexión",
+      "staleLabel": "Sin datos recientes",
+      "staleTooltip": "El último dato es de hace más de 5 minutos: esto no es el ahora"
     }
   },
   "nav": {
