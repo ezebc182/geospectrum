@@ -1,36 +1,69 @@
 /**
- * Detalle de estación — PR A de cuatro (ver
+ * Detalle de estación (ver
  * docs/superpowers/specs/2026-08-20-station-detail-swarm-design.md).
  *
- * Las cuatro pestañas de SWARM se muestran desde el principio, pero sólo
- * Helicorder está viva: las otras las habilitan los PRs B-D. Se dejan
- * visibles y deshabilitadas a propósito — así la estructura de la página no
- * cambia cuando se habiliten, y quien entra ve qué va a haber acá.
+ * Las cuatro pestañas de SWARM se muestran desde el principio; Helicorder
+ * (PR A) y Espectrograma (PR B) están vivas, y las otras las habilitan los PRs
+ * C-D. Se dejan visibles y deshabilitadas a propósito — así la estructura de
+ * la página no cambia cuando se habiliten, y quien entra ve qué va a haber acá.
  */
 
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
-
-/** Franjas por fila: los tres valores de SWARM. */
-const TIME_CHUNKS = [15, 30, 60] as const;
+import { SpectrogramLarge } from '@/components/SpectrogramLarge';
+import {
+  HELICORDER_DEFAULTS,
+  TIME_CHUNK_OPTIONS,
+  clampBarMult,
+  clampClipMult,
+  loadHelicorderSettings,
+  saveHelicorderSettings,
+} from '@/lib/helicorder-settings';
 
 const TABS = [
   { id: 'helicorder', enabled: true },
-  { id: 'spectrogram', enabled: false },
+  { id: 'spectrogram', enabled: true },
   { id: 'wave', enabled: false },
   { id: 'rsam', enabled: false },
 ] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export default function StationPage() {
   const params = useParams<{ channel: string }>();
   // El SCNL viaja URL-encoded en el path (lleva puntos y puede llevar espacios).
   const channel = decodeURIComponent(params.channel);
   const t = useTranslations('station');
-  const [timeChunk, setTimeChunk] = useState<number>(30);
+  const [activeTab, setActiveTab] = useState<TabId>('helicorder');
+  // Arranca en defaults y los settings guardados entran por efecto: leer
+  // localStorage durante el render daría un HTML distinto en servidor y
+  // cliente (hydration mismatch).
+  const [timeChunk, setTimeChunk] = useState<number>(HELICORDER_DEFAULTS.timeChunkMinutes);
+  const [clipMult, setClipMult] = useState<number>(HELICORDER_DEFAULTS.clipMult);
+  const [barMult, setBarMult] = useState<number>(HELICORDER_DEFAULTS.barMult);
+
+  useEffect(() => {
+    const s = loadHelicorderSettings(channel);
+    setTimeChunk(s.timeChunkMinutes);
+    setClipMult(s.clipMult);
+    setBarMult(s.barMult);
+  }, [channel]);
+
+  const persist = (next: Partial<{ timeChunk: number; clipMult: number; barMult: number }>) => {
+    const merged = { timeChunk, clipMult, barMult, ...next };
+    setTimeChunk(merged.timeChunk);
+    setClipMult(merged.clipMult);
+    setBarMult(merged.barMult);
+    saveHelicorderSettings(channel, {
+      timeChunkMinutes: merged.timeChunk,
+      clipMult: merged.clipMult,
+      barMult: merged.barMult,
+    });
+  };
 
   return (
     <div className="p-6">
@@ -45,10 +78,18 @@ export default function StationPage() {
             key={tab.id}
             role="tab"
             type="button"
-            aria-selected={tab.enabled}
+            // aria-selected marca la pestaña ACTIVA, no las habilitadas: con
+            // dos vivas, decir que ambas están seleccionadas es mentirle al
+            // lector de pantalla.
+            aria-selected={tab.id === activeTab}
             disabled={!tab.enabled}
+            onClick={() => tab.enabled && setActiveTab(tab.id)}
             className={`rounded px-3 py-1 text-sm ${
-              tab.enabled ? 'bg-teal-700 text-white' : 'bg-gray-800 text-gray-500'
+              !tab.enabled
+                ? 'bg-gray-800 text-gray-500'
+                : tab.id === activeTab
+                  ? 'bg-teal-700 text-white'
+                  : 'bg-gray-700 text-gray-200'
             }`}
           >
             {t(`tabs.${tab.id}`)}
@@ -57,24 +98,93 @@ export default function StationPage() {
         ))}
       </div>
 
-      <div className="mb-3 flex items-center gap-2 text-sm text-gray-300">
-        <span>{t('timeChunk')}</span>
-        {TIME_CHUNKS.map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setTimeChunk(m)}
-            aria-pressed={m === timeChunk}
-            className={`rounded px-2 py-0.5 ${
-              m === timeChunk ? 'bg-teal-700 text-white' : 'bg-gray-800'
-            }`}
-          >
-            {m}m
-          </button>
-        ))}
-      </div>
+      {activeTab === 'spectrogram' && <SpectrogramLarge channel={channel} />}
 
-      <HelicorderCanvas channel={channel} timeChunkMinutes={timeChunk} width={960} height={640} />
+      {activeTab === 'helicorder' && (
+        <>
+          <div className="mb-3 flex items-center gap-2 text-sm text-gray-300">
+            <span>{t('timeChunk')}</span>
+            {TIME_CHUNK_OPTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => persist({ timeChunk: m })}
+                aria-pressed={m === timeChunk}
+                className={`rounded px-2 py-0.5 ${
+                  m === timeChunk ? 'bg-teal-700 text-white' : 'bg-gray-800'
+                }`}
+              >
+                {m}m
+              </button>
+            ))}
+          </div>
+
+          {/*
+            Escala manual (spec §61, filosofía SWARM): el auto-clip por
+            percentil pinta de rojo justamente el evento que uno quiere mirar,
+            porque un sismo real ES la cola superior de la distribución del
+            día. Ninguna heurística reemplaza al operador moviendo la escala.
+          */}
+          <fieldset className="mb-4 rounded border border-gray-700 p-3">
+            <legend className="px-1 text-sm text-gray-300">{t('settings')}</legend>
+            <div className="flex flex-wrap items-center gap-6">
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <span title={t('clipMultHint')}>{t('clipMult')}</span>
+                <input
+                  type="range"
+                  aria-label={t('clipMult')}
+                  min={HELICORDER_DEFAULTS.clipMultMin}
+                  max={HELICORDER_DEFAULTS.clipMultMax}
+                  step={0.1}
+                  value={clipMult}
+                  onChange={(e) => persist({ clipMult: clampClipMult(Number(e.target.value)) })}
+                />
+                <span className="w-12 font-mono text-xs text-gray-400">
+                  {clipMult.toFixed(1)}×
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <span title={t('barMultHint')}>{t('barMult')}</span>
+                <input
+                  type="range"
+                  aria-label={t('barMult')}
+                  min={HELICORDER_DEFAULTS.barMultMin}
+                  max={HELICORDER_DEFAULTS.barMultMax}
+                  step={0.25}
+                  value={barMult}
+                  onChange={(e) => persist({ barMult: clampBarMult(Number(e.target.value)) })}
+                />
+                <span className="w-12 font-mono text-xs text-gray-400">
+                  {barMult.toFixed(2)}×
+                </span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() =>
+                  persist({
+                    clipMult: HELICORDER_DEFAULTS.clipMult,
+                    barMult: HELICORDER_DEFAULTS.barMult,
+                  })
+                }
+                className="rounded bg-gray-800 px-2 py-0.5 text-sm text-gray-300 hover:bg-gray-700"
+              >
+                {t('reset')}
+              </button>
+            </div>
+          </fieldset>
+
+          <HelicorderCanvas
+            channel={channel}
+            timeChunkMinutes={timeChunk}
+            width={960}
+            height={640}
+            clipMult={clipMult}
+            barMult={barMult}
+          />
+        </>
+      )}
     </div>
   );
 }

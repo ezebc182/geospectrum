@@ -70,6 +70,33 @@ describe('HelicorderCanvas', () => {
     expect(url).not.toContain('VA 01');
   });
 
+  it('nunca pide más puntos que el máximo del endpoint (le=50000)', async () => {
+    // Bug de QA: con franjas de 15 min son 96 filas × 800 pares = 76.800, y el
+    // endpoint valida le=50000 ANTES de entrar al handler → 422 y helicorder en
+    // blanco. El clamp no pierde resolución: 50.000/96 ≈ 520 pares por fila
+    // contra ~848 px de ancho útil, así que sigue habiendo más de un par por
+    // píxel.
+    render(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={15} width={900} height={620} />,
+    );
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    const url = (fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0];
+    const points = Number(new URL(url, 'http://x').searchParams.get('points'));
+    expect(points).toBeLessThanOrEqual(50000);
+    expect(points).toBeGreaterThan(0);
+  });
+
+  it('con franjas grandes pide lo que necesita, sin clampear de más', async () => {
+    // 24 filas × 800 = 19.200: por debajo del tope, tiene que viajar entero.
+    render(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={60} width={900} height={620} />,
+    );
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    const url = (fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0];
+    expect(new URL(url, 'http://x').searchParams.get('points')).toBe('19200');
+  });
+
   it('nunca manda NaN al canvas, ni con menos pares que filas', async () => {
     // 100 pares para 48 filas: las filas finales quedan cortas o vacías, que
     // es donde un bias mal calculado produce NaN y borra la fila en silencio.

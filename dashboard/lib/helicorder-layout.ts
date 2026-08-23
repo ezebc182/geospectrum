@@ -45,6 +45,54 @@ export function clampToClip(value: number, clipValue: number): { v: number; clip
 }
 
 /**
+ * Alto de la marca roja de saturación, como fracción del clip. Suficiente para
+ * verse, chico para no volver a tapar el cuerpo de la onda.
+ */
+const CLIP_MARK_FRACTION = 0.08;
+
+export interface TraceSegment {
+  lo: number;
+  hi: number;
+  clipped: boolean;
+}
+
+/**
+ * Parte el trazo vertical de una columna en tramos por dentro y por fuera del
+ * clip.
+ *
+ * Antes se pintaba la columna ENTERA de rojo si cualquiera de los dos extremos
+ * tocaba el clip. En la parte fuerte de un sismo eso se repite columna tras
+ * columna y el resultado es un bloque rojo sólido que tapa la forma de onda —
+ * justo lo que uno abre el helicorder para mirar.
+ *
+ * SWARM pinta de rojo sólo el pedazo que se desborda del alto de la fila; el
+ * cuerpo de la onda queda azul y sigue siendo legible. El rojo pasa de "hubo
+ * saturación en esta columna" a "hasta acá llegaba", que es la información
+ * útil.
+ */
+export function splitClippedSegment(lo: number, hi: number, clipValue: number): TraceSegment[] {
+  const dentroLo = Math.max(lo, -clipValue);
+  const dentroHi = Math.min(hi, clipValue);
+  const segmentos: TraceSegment[] = [];
+
+  // El cuerpo va primero para que las puntas rojas se dibujen encima y no
+  // queden tapadas por el azul.
+  if (dentroHi >= dentroLo) {
+    segmentos.push({ lo: dentroLo, hi: dentroHi, clipped: false });
+  }
+  // Las puntas se dibujan con un grosor mínimo: un segmento de altura 0 sería
+  // invisible en el canvas y la saturación dejaría de señalizarse.
+  const marca = clipValue * CLIP_MARK_FRACTION;
+  if (lo < -clipValue) {
+    segmentos.push({ lo: -clipValue, hi: -clipValue + marca, clipped: true });
+  }
+  if (hi > clipValue) {
+    segmentos.push({ lo: clipValue - marca, hi: clipValue, clipped: true });
+  }
+  return segmentos;
+}
+
+/**
  * Clip automático: percentil alto de |amplitud| del día.
  *
  * Un máximo absoluto no sirve como escala — un solo transitorio grande
