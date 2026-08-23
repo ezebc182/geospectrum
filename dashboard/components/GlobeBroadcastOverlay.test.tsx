@@ -248,8 +248,20 @@ describe('GlobeBroadcastOverlay', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Salir del modo transmisión' }));
+    fireEvent.click(screen.getByRole('button', { name: /pantalla completa/i }));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('la X llama a onClose para salir de pantalla completa', async () => {
+    const onClose = vi.fn();
+    renderOverlay({ onClose });
+    fireEvent.click(screen.getByRole('button', { name: /pantalla completa/i }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('embebido, el boton pide volver a pantalla completa', () => {
+    renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    expect(screen.getByRole('button', { name: /pantalla completa/i })).toBeTruthy();
   });
 
   it('en fullscreen usa fixed y portalea a body', () => {

@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight, Minimize2, Maximize2 } from 'lucide-react';
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 
 import { seismicAPI } from '@/lib/api';
@@ -360,16 +360,17 @@ export function GlobeBroadcastOverlay({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      // Escape sale por capas: primero la cartelera, después la transmisión.
+      // Escape sale por capas: primero la cartelera, después la pantalla
+      // completa. Embebido no hay pantalla completa de la que salir.
       if (billboard) {
         setBillboard(false);
-      } else {
+      } else if (fullscreen) {
         onClose();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, billboard]);
+  }, [onClose, billboard, fullscreen]);
 
   // Countdown sincronizado con el ciclo de SWR: se rearma con cada tanda de
   // datos. Es informativo (el refresco real lo maneja SWR), por eso clava en
@@ -784,12 +785,17 @@ export function GlobeBroadcastOverlay({
             <Settings2 className="h-4 w-4" />
           </button>
           <button
+            type="button"
             onClick={onClose}
-            aria-label={t('exit')}
-            title={t('exit')}
-            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            title={fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            className="rounded-lg p-1.5 transition-colors hover:bg-muted/60"
           >
-            <X className="h-4 w-4" />
+            {fullscreen ? (
+              <Minimize2 className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
 
           {/* Popover simple (sin Radix: un dropdown con inputs se come el

@@ -267,6 +267,8 @@
     "broadcast": {
       "enter": "Modo transmisión",
       "exit": "Salir del modo transmisión",
+      "exitFullscreen": "Salir de pantalla completa",
+      "enterFullscreen": "Pantalla completa",
       "title": "GeoSpectrum en vivo",
       "last24h": "Últimas 24 h",
       "todayM5": "Hoy ≥M5.0",
