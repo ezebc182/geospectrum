@@ -37,7 +37,8 @@
       "admin": "Admin",
       "moderador": "Moderador",
       "viewer": "Viewer"
-    }
+    },
+    "stations": "Estaciones"
   },
   "auth": {
     "badge": "Acceso por invitación",
@@ -860,5 +861,25 @@
       "wave": "Onda + Espectro",
       "rsam": "RSAM"
     }
+  },
+  "stations": {
+    "title": "Estaciones",
+    "subtitle": "Buscá una estación para ver su helicorder y espectrograma",
+    "searchPlaceholder": "Red, estación, canal o ciudad (ej. USC, tokyo)",
+    "searchLabel": "Buscar estaciones",
+    "clearSearch": "Limpiar búsqueda",
+    "catalogHeading": "En el catálogo",
+    "worldHeading": "Otras estaciones del mundo",
+    "searching": "Buscando en FDSN…",
+    "countLabel": "{count, plural, =0 {sin estaciones} one {# estación} other {# estaciones}}",
+    "live": "Con datos recientes",
+    "primary": "Principal",
+    "noCatalogMatches": "Ninguna estación del catálogo coincide",
+    "noWorldMatches": "FDSN no devolvió estaciones para ese código",
+    "worldHint": "La búsqueda global es por CÓDIGO de estación (USC, MAJO), no por nombre de lugar",
+    "catalogError": "No se pudo cargar el catálogo de estaciones",
+    "searchError": "Falló la búsqueda en FDSN; el catálogo local sigue disponible",
+    "loading": "Cargando catálogo…",
+    "retry": "Reintentar"
   }
 }

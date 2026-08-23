@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   Activity,
+  Antenna,
   Compass,
   Gauge,
   Globe2,
@@ -54,6 +55,7 @@ export function AppSidebar() {
     { href: '/', label: t('dashboard'), icon: Gauge },
     { href: '/explore', label: t('explore'), icon: Compass },
     { href: '/spectrograms-live', label: t('spectrograms'), icon: RadioTower },
+    { href: '/stations', label: t('stations'), icon: Antenna },
     { href: '/globe', label: t('globe'), icon: Globe2, tourId: 'nav-globe' },
     { href: '/analytics', label: t('analytics'), icon: LineChart },
   ];
@@ -63,6 +65,12 @@ export function AppSidebar() {
   // puertas que la API va a cerrar igual. "Accesos" unifica lista de espera
   // e invitaciones en una sola página con pestañas (pulido post-QA).
   const adminRoutes: NavRoute[] = [{ href: '/admin/access', label: t('access'), icon: UserCheck }];
+
+  /** La entrada queda marcada también en las subrutas (`/stations/CI.USC..BHZ`
+   *  mantiene "Estaciones" activo). La comparación exacta se conserva para `/`,
+   *  que si no quedaría activa en toda la app. */
+  const isRouteActive = (href: string) =>
+    href === '/' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <Sidebar collapsible="icon">
@@ -93,7 +101,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {routes.map((route) => (
                 <SidebarMenuItem key={route.href}>
-                  <SidebarMenuButton asChild isActive={pathname === route.href} tooltip={route.label}>
+                  <SidebarMenuButton asChild isActive={isRouteActive(route.href)} tooltip={route.label}>
                     <Link href={route.href} data-tour-id={route.tourId}>
                       <route.icon />
                       <span>{route.label}</span>
@@ -114,7 +122,7 @@ export function AppSidebar() {
                   <SidebarMenuItem key={route.href}>
                     <SidebarMenuButton
                       asChild
-                      isActive={pathname === route.href}
+                      isActive={isRouteActive(route.href)}
                       tooltip={route.label}
                     >
                       <Link href={route.href}>
