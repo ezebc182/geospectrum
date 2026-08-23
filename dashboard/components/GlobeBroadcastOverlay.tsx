@@ -153,11 +153,21 @@ const SEVERITY_CHIP: Record<ReturnType<typeof getMagnitudeSeverity>, string> = {
   critical: 'bg-severity-critical/15 text-severity-critical',
 };
 
-interface GlobeBroadcastOverlayProps {
+export interface GlobeBroadcastOverlayProps {
   onClose: () => void;
+  /** Pantalla completa (portal a <body> + fixed). En `false` se renderiza
+   *  embebido en el layout de la página, con `embeddedHeight` de alto. */
+  fullscreen?: boolean;
+  /** Alto en px cuando `fullscreen` es `false`. Ignorado en fullscreen,
+   *  que siempre usa el viewport. */
+  embeddedHeight?: number;
 }
 
-export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
+export function GlobeBroadcastOverlay({
+  onClose,
+  fullscreen = true,
+  embeddedHeight,
+}: GlobeBroadcastOverlayProps) {
   const t = useTranslations('globe.broadcast');
   // Estado del stream de eventos (PR-W4). El hook comparte UNA conexión con
   // el sidebar y escribe los eventos que llegan directamente en el caché de
@@ -537,20 +547,29 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     document.querySelector('[data-testid="feed-row-focused"]')?.scrollIntoView({ block: 'nearest' });
   }, [spotlightEvent]);
 
-  // Portal a <body>: el layout de (app) tiene ancestros con transform
-  // (SidebarInset, indicadores) que convierten `fixed` en "fixed relativo
-  // al ancestro" — el overlay quedaba DEBAJO del navbar de la app en vez
-  // de tapar el viewport entero. Visto en producción el 2026-08-20.
+  // En fullscreen el globo ocupa el viewport; embebido, el alto que le pasa
+  // la página. Se mantiene `viewportHeight` como fuente en fullscreen porque
+  // ya sigue el resize de la ventana.
+  const globeHeight = fullscreen ? viewportHeight : (embeddedHeight ?? null);
+
   const overlay = (
     // overflow-hidden en la raíz: ningún panel del HUD genera scroll; el
     // único scroll permitido es el interno del feed de eventos.
-    <div className="fixed inset-0 z-[100] overflow-hidden bg-background">
+    <div
+      data-testid="broadcast-root"
+      className={
+        fullscreen
+          ? 'fixed inset-0 z-[100] overflow-hidden bg-background'
+          : 'relative w-full overflow-hidden rounded-xl border border-border bg-background'
+      }
+      style={fullscreen ? undefined : { height: embeddedHeight }}
+    >
       {/* Globo full-bleed detrás del HUD */}
       <div className="absolute inset-0">
-        {viewportHeight !== null && (
+        {globeHeight !== null && (
           <SeismicGlobe
             eventos={eventos ?? []}
-            height={viewportHeight}
+            height={globeHeight}
             showControls={false}
             pointScale={1.6}
             // Misma altitud full-bleed que el hero de la landing: con el
@@ -1015,5 +1034,10 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     </div>
   );
 
-  return createPortal(overlay, document.body);
+  // Portal SÓLO en fullscreen: el layout de (app) tiene ancestros con
+  // transform (SidebarInset, indicadores) que convierten `fixed` en "fixed
+  // relativo al ancestro" y el overlay quedaba debajo del navbar (visto en
+  // producción el 2026-08-20). Embebido no hay `fixed` que rescatar, y
+  // portalear lo sacaría del flujo donde justamente lo queremos.
+  return fullscreen ? createPortal(overlay, document.body) : overlay;
 }

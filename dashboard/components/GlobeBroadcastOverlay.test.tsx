@@ -5,7 +5,7 @@ import { SWRConfig } from 'swr';
 
 import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
-import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
+import { GlobeBroadcastOverlay, type GlobeBroadcastOverlayProps } from './GlobeBroadcastOverlay';
 
 const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock, getActiveAreaMock } =
   vi.hoisted(() => ({
@@ -68,7 +68,12 @@ function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
   };
 }
 
-function renderOverlay(onClose = vi.fn()) {
+// Acepta props parciales para no duplicar el helper en cada task que agrega
+// props al overlay (fullscreen/embeddedHeight, etc.). Devuelve el resultado
+// de `render` (incluye `container`, necesario para los tests del modo
+// embebido) más `onClose`, que la mayoría de los tests existentes usa como
+// si fuera el valor de retorno directo.
+function renderOverlay(props?: Partial<GlobeBroadcastOverlayProps>) {
   if (getLiveChannelsMock.getMockImplementation() === undefined) {
     getLiveChannelsMock.mockResolvedValue([]);
   }
@@ -85,16 +90,17 @@ function renderOverlay(onClose = vi.fn()) {
   if (getActiveAreaMock.getMockImplementation() === undefined) {
     getActiveAreaMock.mockResolvedValue(null);
   }
-  render(
+  const onClose = props?.onClose ?? vi.fn();
+  const renderResult = render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
       {/* Caché de SWR fresco por test: la clave 'broadcast-events' es la
           misma en todos y el caché de módulo filtraría datos entre tests. */}
       <SWRConfig value={{ provider: () => new Map() }}>
-        <GlobeBroadcastOverlay onClose={onClose} />
+        <GlobeBroadcastOverlay {...props} onClose={onClose} />
       </SWRConfig>
     </NextIntlClientProvider>
   );
-  return onClose;
+  return { ...renderResult, onClose };
 }
 
 // jsdom no implementa scrollIntoView: el useEffect que resalta la fila
@@ -237,13 +243,28 @@ describe('GlobeBroadcastOverlay', () => {
 
   it('cierra con Escape y con el botón de salir', async () => {
     searchEventsMock.mockResolvedValue([]);
-    const onClose = renderOverlay();
+    const { onClose } = renderOverlay();
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Salir del modo transmisión' }));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('en fullscreen usa fixed y portalea a body', () => {
+    const { container } = renderOverlay();
+    // El portal saca el overlay del container de RTL.
+    expect(container.querySelector('.fixed')).toBeNull();
+    expect(document.body.querySelector('.fixed.inset-0')).toBeTruthy();
+  });
+
+  it('embebido renderiza en el árbol, sin fixed, con el alto pedido', () => {
+    const { container } = renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    const root = container.querySelector('[data-testid="broadcast-root"]');
+    expect(root).toBeTruthy();
+    expect(root?.className).not.toContain('fixed');
+    expect((root as HTMLElement).style.height).toBe('720px');
   });
 });
 
@@ -367,7 +388,7 @@ describe('cartelera (billboard)', () => {
   it('Escape con la cartelera abierta cierra la cartelera, no la transmisión', async () => {
     searchEventsMock.mockResolvedValue([]);
     getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
-    const onClose = renderOverlay();
+    const { onClose } = renderOverlay();
     await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
