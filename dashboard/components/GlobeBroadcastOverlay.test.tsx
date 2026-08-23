@@ -5,6 +5,7 @@ import { SWRConfig } from 'swr';
 
 import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
+import { globePointId } from '@/lib/globe-data';
 import { GlobeBroadcastOverlay, type GlobeBroadcastOverlayProps } from './GlobeBroadcastOverlay';
 
 const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock, getActiveAreaMock } =
@@ -499,6 +500,50 @@ describe('foco de eventos', () => {
       expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
     });
     window.history.replaceState(null, '', '/');
+  });
+
+  it('arranca con el evento del link como spotlight (Task 3)', async () => {
+    const ahora = Date.now();
+    const LINK_PLACE = 'Viejo, Chile';
+    const eventos = [
+      // El más viejo: en modo latest (default) NO es el que ganaría solo.
+      makeEvento({
+        id: 'viejo',
+        lugar: LINK_PLACE,
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: 'Nuevo, Japón',
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ];
+    searchEventsMock.mockResolvedValue(eventos);
+    renderOverlay({ initialEventId: globePointId(eventos[0]) });
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(LINK_PLACE);
+    });
+  });
+
+  it('sin initialEventId el spotlight lo elige el focusMode (Task 3)', async () => {
+    const ahora = Date.now();
+    const NEWEST_MOCK_PLACE = 'Nuevo, Japón';
+    searchEventsMock.mockResolvedValue([
+      makeEvento({
+        id: 'viejo',
+        lugar: 'Viejo, Chile',
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: NEWEST_MOCK_PLACE,
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    renderOverlay();
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
+    });
   });
 
   it('el clic en un evento del globo lo enfoca y resalta en el sidebar', async () => {

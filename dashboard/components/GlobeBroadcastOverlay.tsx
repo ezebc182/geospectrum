@@ -33,6 +33,7 @@ import {
   topRegions,
 } from '@/lib/broadcast-stats';
 import { FOCUS_INTERVAL_MS, pickSpotlight, readFocusMode, type FocusMode } from '@/lib/event-focus';
+import { globePointId } from '@/lib/globe-data';
 import { GLOBAL_WALL_ID, WALL_PARAM, WALL_STORAGE_KEY, readWallSelection, resolveWall } from '@/lib/wall-selection';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { LiveIndicator } from '@/components/LiveIndicator';
@@ -161,12 +162,16 @@ export interface GlobeBroadcastOverlayProps {
   /** Alto en px cuando `fullscreen` es `false`. Ignorado en fullscreen,
    *  que siempre usa el viewport. */
   embeddedHeight?: number;
+  /** Evento que arranca como spotlight (viene del `?event=` de un link
+   *  compartido). Gana UNA vez: después el ciclo sigue según `focusMode`. */
+  initialEventId?: string | null;
 }
 
 export function GlobeBroadcastOverlay({
   onClose,
   fullscreen = true,
   embeddedHeight,
+  initialEventId,
 }: GlobeBroadcastOverlayProps) {
   const t = useTranslations('globe.broadcast');
   // Estado del stream de eventos (PR-W4). El hook comparte UNA conexión con
@@ -437,6 +442,16 @@ export function GlobeBroadcastOverlay({
 
   const [spotlightEvent, setSpotlightEvent] = useState<SeismicEvent | null>(null);
   const lastFocusedIdRef = useRef<string | null>(null);
+  // El id del link (`initialEventId`) gana la primera elección y se consume:
+  // si siguiera ganando, el ciclo automático quedaría trabado en ese evento
+  // para siempre y la transmisión dejaría de rotar.
+  const initialEventConsumedRef = useRef(false);
+  // Se marca en el mismo golpe que `initialEventConsumedRef`, pero se lee y
+  // resetea aparte: el efecto de "modo latest" (más abajo) corre en el MISMO
+  // commit que el del pick inicial cuando el pool recién se pobló, y sin esta
+  // bandera pickearía el evento más nuevo y pisaría el spotlight del link
+  // antes de que el usuario llegue a verlo.
+  const justAppliedInitialRef = useRef(false);
   const pickSpotlightNow = () => {
     const pool = eventosRef.current;
     if (pool.length === 0) return;
@@ -444,6 +459,21 @@ export function GlobeBroadcastOverlay({
     if (elegido === null) return;
     lastFocusedIdRef.current = elegido.id;
     setSpotlightEvent(elegido);
+  };
+
+  const applyInitialEventIfPending = () => {
+    if (initialEventConsumedRef.current || !initialEventId) return false;
+    initialEventConsumedRef.current = true;
+    const delLink = eventosRef.current.find((e) => globePointId(e) === initialEventId);
+    if (!delLink) {
+      // Si el evento del link ya no está en la ventana de 24 h, se sigue
+      // con la elección normal en vez de dejar la transmisión sin spotlight.
+      return false;
+    }
+    lastFocusedIdRef.current = delLink.id;
+    setSpotlightEvent(delLink);
+    justAppliedInitialRef.current = true;
+    return true;
   };
 
   useEffect(() => {
@@ -455,7 +485,18 @@ export function GlobeBroadcastOverlay({
     // primer pick exitoso, así que esto corre una única vez; refetches
     // posteriores (mismo pool ya poblado, otra referencia) no lo repiten en
     // modo random — en latest lo cubre el efecto dedicado de más abajo.
-    if (lastFocusedIdRef.current === null && eventosRef.current.length > 0) {
+    if (eventosRef.current.length === 0) return;
+    // El spotlight del link se intenta consumir ACÁ, antes que nada: este
+    // efecto está declarado primero, así que corre antes que el de modo
+    // latest en el mismo commit. Si el efecto de latest lo intentara por su
+    // cuenta, ambos correrían en el mismo ciclo (el pool recién poblado) y
+    // el de latest pisaría el spotlight del link con el evento más nuevo.
+    // La guardia de arriba (pool vacío) es clave: SWR resuelve async, así
+    // que el primer render de este efecto corre con `eventos` todavía
+    // `undefined` — si se consumiera `initialEventId` ahí, se perdería para
+    // siempre antes de que lleguen los datos reales.
+    if (applyInitialEventIfPending()) return;
+    if (lastFocusedIdRef.current === null) {
       pickSpotlightNow();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -479,6 +520,12 @@ export function GlobeBroadcastOverlay({
   // ahí la cadencia la marca únicamente el interval de arriba.
   useEffect(() => {
     if (focusMode !== 'latest') return;
+    // El efecto de arriba (mismo commit, mismo cambio de `eventos`) ya puede
+    // haber aplicado el spotlight del link: no pisarlo con el más nuevo.
+    if (justAppliedInitialRef.current) {
+      justAppliedInitialRef.current = false;
+      return;
+    }
     pickSpotlightNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventos, focusMode]);
