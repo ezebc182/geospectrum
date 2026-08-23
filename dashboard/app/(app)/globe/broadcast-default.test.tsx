@@ -1,13 +1,13 @@
 /**
- * /globe arranca directamente en modo transmisión (pedido 2026-08-20: la
- * página-vestíbulo con un botón no tenía sentido). Excepción: un link
- * compartido con ?event= abre ESE evento, no la transmisión.
+ * /globe es siempre modo transmisión: no queda un "globo pelado" al que
+ * volver. El overlay es el único estado de la página, con o sin ?event=.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
 import es from '@/messages/es.json';
+import { EVENT_PARAM } from '@/lib/share-event';
 import GlobePage from './page';
 
 const { searchParamsMock } = vi.hoisted(() => ({
@@ -20,24 +20,6 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => searchParamsMock.current,
 }));
 
-vi.mock('@/lib/api', () => ({
-  reportFetcher: vi.fn().mockResolvedValue({ eventos: [] }),
-  seismicAPI: { searchEvents: vi.fn().mockResolvedValue([]), getLiveChannels: vi.fn().mockResolvedValue([]) },
-}));
-
-vi.mock('@/lib/areas', () => ({
-  getActiveArea: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock('@/lib/use-area-refresh', () => ({
-  useAreaRefresh: () => false,
-}));
-
-vi.mock('@/components/SeismicGlobe', () => ({ SeismicGlobe: () => null }));
-vi.mock('@/components/GlobeEventPanel', () => ({ GlobeEventPanel: () => null }));
-vi.mock('@/components/AreaRefreshIndicator', () => ({
-  AreaRefreshIndicator: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 vi.mock('@/components/GlobeBroadcastOverlay', () => ({
   GlobeBroadcastOverlay: () => <div data-testid="broadcast-overlay" />,
 }));
@@ -56,14 +38,19 @@ afterEach(() => {
 });
 
 describe('GlobePage', () => {
-  it('arranca directamente en modo transmisión', () => {
+  it('el overlay es el unico estado de la pagina', () => {
     renderPage();
     expect(screen.getByTestId('broadcast-overlay')).toBeTruthy();
   });
 
-  it('con ?event= NO abre la transmisión: el link compartido manda', () => {
-    searchParamsMock.current = new URLSearchParams('event=usgs-abc123');
+  it('tambien con ?event= en la URL', () => {
+    searchParamsMock.current = new URLSearchParams(`${EVENT_PARAM}=algun-evento`);
     renderPage();
-    expect(screen.queryByTestId('broadcast-overlay')).toBeNull();
+    expect(screen.getByTestId('broadcast-overlay')).toBeTruthy();
+  });
+
+  it('ya no hay boton de entrar a transmision', () => {
+    renderPage();
+    expect(screen.queryByRole('button', { name: /transmisi/i })).toBeNull();
   });
 });
