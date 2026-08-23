@@ -353,6 +353,13 @@ export function GlobeBroadcastOverlay({
     });
   };
 
+  // Marca que ya estamos en el navegador. El portal a `document.body` (ver el
+  // return) no puede correr durante el prerender del servidor, donde no hay
+  // DOM. Un efecto sólo corre en el cliente, así que esto es `false` en SSR y
+  // en el primer render del cliente — que es justo lo que hidrata parejo.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // El globo pide alto en píxeles (no %): se sigue el viewport a mano.
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   useEffect(() => {
@@ -1092,5 +1099,14 @@ export function GlobeBroadcastOverlay({
   // relativo al ancestro" y el overlay quedaba debajo del navbar (visto en
   // producción el 2026-08-20). Embebido no hay `fixed` que rescatar, y
   // portalear lo sacaría del flujo donde justamente lo queremos.
-  return fullscreen ? createPortal(overlay, document.body) : overlay;
+  //
+  // `mounted` es imprescindible: 'use client' NO evita el prerender en el
+  // servidor, y ahí `document` no existe. Antes no saltaba porque el overlay
+  // se montaba recién al hacer clic (ya en el navegador); desde que /globe
+  // ES la transmisión, este componente es lo primero que renderiza la ruta y
+  // pasa por SSR. Sin el guard: "document is not defined".
+  if (fullscreen) {
+    return mounted ? createPortal(overlay, document.body) : null;
+  }
+  return overlay;
 }

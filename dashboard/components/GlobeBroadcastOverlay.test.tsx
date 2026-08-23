@@ -274,6 +274,26 @@ describe('GlobeBroadcastOverlay', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('no revienta al prerenderizar en el servidor (sin DOM)', async () => {
+    // Regresión: `'use client'` NO evita el prerender en el servidor, y ahí
+    // `document` no existe. Mientras el overlay se montaba recién al hacer
+    // clic esto no salía; desde que /globe ES la transmisión, el componente
+    // es lo primero que renderiza la ruta y pasa por SSR.
+    // Sin el guard `mounted`: "document is not defined".
+    const { renderToString } = await import('react-dom/server');
+    searchEventsMock.mockResolvedValue([]);
+
+    expect(() =>
+      renderToString(
+        <NextIntlClientProvider locale="es-AR" messages={es}>
+          <SWRConfig value={{ provider: () => new Map() }}>
+            <GlobeBroadcastOverlay fullscreen onClose={vi.fn()} />
+          </SWRConfig>
+        </NextIntlClientProvider>
+      )
+    ).not.toThrow();
+  });
+
   it('en fullscreen usa fixed y portalea a body', () => {
     const { container } = renderOverlay();
     // El portal saca el overlay del container de RTL.
