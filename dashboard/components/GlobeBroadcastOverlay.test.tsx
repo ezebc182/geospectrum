@@ -248,20 +248,29 @@ describe('GlobeBroadcastOverlay', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', { name: /pantalla completa/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salir de pantalla completa' }));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it('la X llama a onClose para salir de pantalla completa', async () => {
     const onClose = vi.fn();
     renderOverlay({ onClose });
-    fireEvent.click(screen.getByRole('button', { name: /pantalla completa/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salir de pantalla completa' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('embebido, el boton pide volver a pantalla completa', () => {
     renderOverlay({ fullscreen: false, embeddedHeight: 720 });
-    expect(screen.getByRole('button', { name: /pantalla completa/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pantalla completa' })).toBeTruthy();
+  });
+
+  it('embebido, Escape con la cartelera cerrada no hace nada', () => {
+    // Rama vacía del efecto: en modo embebido no hay pantalla completa de la
+    // que salir, así que Escape sin cartelera abierta no debe llamar onClose.
+    // Borde frágil: Task 3 toca este mismo efecto.
+    const { onClose } = renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('en fullscreen usa fixed y portalea a body', () => {
