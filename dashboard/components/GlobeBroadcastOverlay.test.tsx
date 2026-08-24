@@ -734,3 +734,51 @@ describe('foco de eventos', () => {
     });
   });
 });
+
+/**
+ * Los contadores en 0 con la lista llena (reporte del usuario, 2026-08-23).
+ *
+ * La pantalla mostraba `0` y no `—`, o sea que el fetch RESOLVIÓ con datos:
+ * el problema no era la petición sino el `now` contra el que se comparan.
+ * `statsNow` arranca en null y el fallback era `new Date(0)` — el 1 de enero
+ * de 1970 —, así que ningún evento caía dentro de "últimas 24 h".
+ */
+describe('estadísticas de la cartelera', () => {
+  it('cuenta los eventos recibidos en vez de mostrar 0', async () => {
+    const eventos = [
+      makeEvento({ id: 'a', hora_utc: new Date(Date.now() - 30 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'b', hora_utc: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'c', hora_utc: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() }),
+    ];
+    searchEventsMock.mockResolvedValue(eventos);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+
+    // El contador de ÚLTIMAS 24 H tiene que reflejar los 3 eventos. Con el
+    // fallback a 1970 quedaba en 0 pese a tener la lista entera cargada.
+    // Se ancla en la etiqueta y se lee su hermano: buscar un "3" suelto
+    // engancharía cualquier otro número de la cartelera.
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('3');
+    });
+  });
+
+  it('no cuenta eventos anteriores a la ventana de 24 h', async () => {
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'viejo', hora_utc: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('0');
+    });
+  });
+});
