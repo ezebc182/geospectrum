@@ -251,7 +251,7 @@ function Colorbar({ height, label }: { height: number; label: string }) {
   const stops = colorbarStops(12);
   return (
     <div className="flex flex-col items-center gap-1" data-testid="spectrogram-colorbar">
-      <span className="text-[10px] text-gray-400">{label}</span>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
       <div className="flex items-stretch gap-1">
         <div
           className="w-4 rounded"
@@ -263,7 +263,7 @@ function Colorbar({ height, label }: { height: number; label: string }) {
               .join(', ')})`,
           }}
         />
-        <div className="flex flex-col justify-between text-[10px] text-gray-400">
+        <div className="flex flex-col justify-between text-[10px] text-muted-foreground">
           <span>{stops.at(-1)!.db}</span>
           <span>{stops[0].db}</span>
         </div>

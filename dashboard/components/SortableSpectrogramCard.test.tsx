@@ -86,6 +86,36 @@ function renderCard(props: { liveChannel?: string; metrics?: StationMetrics }) {
   );
 }
 
+describe('SortableSpectrogramCard — modo inicial', () => {
+  it('arranca en vivo cuando el canal llega DESPUÉS del primer render', () => {
+    // El caso real: /spectrograms-live pide los canales en vivo en un
+    // useEffect asíncrono, así que el primer render de la tarjeta siempre ve
+    // liveChannel=undefined. Con el modo resuelto sólo en el useState inicial,
+    // la tarjeta quedaba clavada en "24h" para siempre — y pedía un PNG a FDSN
+    // en ciudades que tenían dato vivo esperando en TimescaleDB (Port-au-Prince
+    // mostraba "sin estación cercana" con 456 columnas frescas en la base).
+    const { rerender } = renderCard({ liveChannel: undefined, metrics: METRICS });
+
+    // Sin canal todavía: modo estático, sin fila de métricas.
+    expect(screen.queryByTestId('card-metrics-row')).toBeNull();
+
+    rerender(
+      <NextIntlClientProvider locale="es" messages={es}>
+        <SortableSpectrogramCard
+          city={TOKYO}
+          liveChannel="JP.JYT..BHZ"
+          metrics={METRICS}
+          onRemove={() => {}}
+        />
+      </NextIntlClientProvider>
+    );
+
+    // La fila de métricas sólo se pinta en modo 'live': es la prueba de que
+    // la tarjeta pasó a vivo sola, sin que el usuario tocara el toggle.
+    expect(screen.getByTestId('card-metrics-row')).not.toBeNull();
+  });
+});
+
 describe('SortableSpectrogramCard — fila de métricas', () => {
   it('en modo live con métricas muestra la fila y oculta el badge de riesgo', () => {
     renderCard({ liveChannel: 'JP.JYT..BHZ', metrics: METRICS });

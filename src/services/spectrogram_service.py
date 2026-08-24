@@ -7,7 +7,7 @@ import io
 import base64
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 import logging
 
@@ -817,7 +817,11 @@ class SpectrogramService:
                     "latitude": latitude,
                     "longitude": longitude,
                     "duration_hours": duration_hours,
-                    "generated_at": datetime.utcnow().isoformat(),
+                    # tz-aware a propósito: `utcnow()` devuelve un naive y su
+                    # ISO sale sin offset, así que `new Date()` en el navegador
+                    # lo lee como hora LOCAL y lo corre por el offset del
+                    # usuario (rotulaba 5:10 "UTC" siendo las 02:10 en -03).
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "data_type": "synthetic",
                 },
             }
@@ -882,7 +886,11 @@ class SpectrogramService:
                     "latitude": latitude,
                     "longitude": longitude,
                     "duration_hours": duration_hours,
-                    "generated_at": datetime.utcnow().isoformat(),
+                    # tz-aware a propósito: `utcnow()` devuelve un naive y su
+                    # ISO sale sin offset, así que `new Date()` en el navegador
+                    # lo lee como hora LOCAL y lo corre por el offset del
+                    # usuario (rotulaba 5:10 "UTC" siendo las 02:10 en -03).
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "data_type": "real",
                 },
             }

@@ -335,6 +335,7 @@
       "viewHistory": "View 24h history",
       "liveBadge": "Live",
       "dragToReorder": "Drag to reorder",
+      "expand": "Expand in station detail",
       "removeCity": "Remove city",
       "riskTooltip": "Seismic risk of the area (fixed classification, not current status)",
       "riskLabel": {

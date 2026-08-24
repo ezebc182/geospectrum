@@ -81,8 +81,10 @@ export default function StationPage() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center gap-3">
-        <h1 className="text-xl font-bold text-white">{t('title')}</h1>
-        <span className="font-mono text-sm text-gray-400">{channel}</span>
+        {/* Tokens del tema y no grises fijos: con `text-white`/`text-gray-*`
+            esta pantalla era ilegible en tema claro (blanco sobre blanco). */}
+        <h1 className="text-xl font-bold text-foreground">{t('title')}</h1>
+        <span className="font-mono text-sm text-muted-foreground">{channel}</span>
       </div>
 
       <div role="tablist" className="mb-4 flex gap-2">
@@ -99,10 +101,10 @@ export default function StationPage() {
             onClick={() => tab.enabled && setActiveTab(tab.id)}
             className={`rounded px-3 py-1 text-sm ${
               !tab.enabled
-                ? 'bg-gray-800 text-gray-500'
+                ? 'bg-muted text-muted-foreground opacity-60'
                 : tab.id === activeTab
                   ? 'bg-teal-700 text-white'
-                  : 'bg-gray-700 text-gray-200'
+                  : 'bg-muted text-foreground hover:bg-muted/80'
             }`}
           >
             {t(`tabs.${tab.id}`)}
@@ -115,7 +117,7 @@ export default function StationPage() {
 
       {activeTab === 'helicorder' && (
         <>
-          <div className="mb-3 flex items-center gap-2 text-sm text-gray-300">
+          <div className="mb-3 flex items-center gap-2 text-sm text-foreground">
             <span>{t('timeChunk')}</span>
             {TIME_CHUNK_OPTIONS.map((m) => (
               <button
@@ -124,7 +126,9 @@ export default function StationPage() {
                 onClick={() => persist({ timeChunk: m })}
                 aria-pressed={m === timeChunk}
                 className={`rounded px-2 py-0.5 ${
-                  m === timeChunk ? 'bg-teal-700 text-white' : 'bg-gray-800'
+                  m === timeChunk
+                    ? 'bg-teal-700 text-white'
+                    : 'bg-muted text-foreground hover:bg-muted/80'
                 }`}
               >
                 {m}m
@@ -138,10 +142,10 @@ export default function StationPage() {
             porque un sismo real ES la cola superior de la distribución del
             día. Ninguna heurística reemplaza al operador moviendo la escala.
           */}
-          <fieldset className="mb-4 rounded border border-gray-700 p-3">
-            <legend className="px-1 text-sm text-gray-300">{t('settings')}</legend>
+          <fieldset className="mb-4 rounded border border-border p-3">
+            <legend className="px-1 text-sm text-foreground">{t('settings')}</legend>
             <div className="flex flex-wrap items-center gap-6">
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <span title={t('clipMultHint')}>{t('clipMult')}</span>
                 <input
                   type="range"
@@ -152,12 +156,12 @@ export default function StationPage() {
                   value={clipMult}
                   onChange={(e) => persist({ clipMult: clampClipMult(Number(e.target.value)) })}
                 />
-                <span className="w-12 font-mono text-xs text-gray-400">
+                <span className="w-12 font-mono text-xs text-muted-foreground">
                   {clipMult.toFixed(1)}×
                 </span>
               </label>
 
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <span title={t('barMultHint')}>{t('barMult')}</span>
                 <input
                   type="range"
@@ -168,14 +172,14 @@ export default function StationPage() {
                   value={barMult}
                   onChange={(e) => persist({ barMult: clampBarMult(Number(e.target.value)) })}
                 />
-                <span className="w-12 font-mono text-xs text-gray-400">
+                <span className="w-12 font-mono text-xs text-muted-foreground">
                   {barMult.toFixed(2)}×
                 </span>
               </label>
 
               {/* A diferencia de los sliders, esto vuelve a pedir la onda al
                   backend: el filtro cambia el dato, no cómo se dibuja. */}
-              <label className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <span title={t('filterHint')}>{t('filter')}</span>
                 <input
                   type="checkbox"
@@ -195,7 +199,7 @@ export default function StationPage() {
                     barMult: HELICORDER_DEFAULTS.barMult,
                   })
                 }
-                className="rounded bg-gray-800 px-2 py-0.5 text-sm text-gray-300 hover:bg-gray-700"
+                className="rounded bg-muted px-2 py-0.5 text-sm text-foreground hover:bg-muted/80"
               >
                 {t('reset')}
               </button>

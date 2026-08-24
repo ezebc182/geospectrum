@@ -335,6 +335,7 @@
       "viewHistory": "Ver histórico 24h",
       "liveBadge": "Vivo",
       "dragToReorder": "Arrastrar para reordenar",
+      "expand": "Ampliar en el detalle de estación",
       "removeCity": "Eliminar ciudad",
       "riskTooltip": "Riesgo sísmico de la zona (clasificación fija, no estado actual)",
       "riskLabel": {
