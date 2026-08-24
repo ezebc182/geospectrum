@@ -881,3 +881,92 @@ describe('estado de carga del feed', () => {
     expect(screen.queryByText(es.globe.broadcast.noEvents)).toBeNull();
   });
 });
+
+/**
+ * Los contadores en 0 con la lista llena (reporte del usuario, 2026-08-23).
+ *
+ * La pantalla mostraba `0` y no `—`, o sea que el fetch RESOLVIÓ con datos:
+ * el problema no era la petición sino el `now` contra el que se comparan.
+ * `statsNow` arranca en null y el fallback era `new Date(0)` — el 1 de enero
+ * de 1970 —, así que ningún evento caía dentro de "últimas 24 h".
+ */
+describe('estadísticas de la cartelera', () => {
+  it('cuenta los eventos recibidos en vez de mostrar 0', async () => {
+    const eventos = [
+      makeEvento({ id: 'a', hora_utc: new Date(Date.now() - 30 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'b', hora_utc: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'c', hora_utc: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() }),
+    ];
+    searchEventsMock.mockResolvedValue(eventos);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+
+    // El contador de ÚLTIMAS 24 H tiene que reflejar los 3 eventos. Con el
+    // fallback a 1970 quedaba en 0 pese a tener la lista entera cargada.
+    // Se ancla en la etiqueta y se lee su hermano: buscar un "3" suelto
+    // engancharía cualquier otro número de la cartelera.
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('3');
+    });
+  });
+
+  it('no cuenta eventos anteriores a la ventana de 24 h', async () => {
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'viejo', hora_utc: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('0');
+    });
+  });
+});
+
+/**
+ * El globo se montaba pelado mientras cargaba: `eventos ?? []` colapsa
+ * "todavía no llegó" y "no hubo sismos" en el mismo valor, así que la Tierra
+ * giraba sin puntos y el feed quedaba vacío, sin decir cuál de las dos cosas
+ * estaba pasando (pedido del usuario, 2026-08-24).
+ */
+describe('estado de carga del feed', () => {
+  it('avisa que está cargando en vez de mostrar el feed vacío', async () => {
+    // Promesa que no resuelve: deja la vista en el estado de carga.
+    searchEventsMock.mockReturnValue(new Promise(() => {}));
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.loadingEvents)).toBeTruthy();
+    });
+  });
+
+  it('distingue "sin sismos" de "cargando" cuando la respuesta viene vacía', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.noEvents)).toBeTruthy();
+    });
+    expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+  });
+
+  it('no muestra ningún cartel cuando hay eventos', async () => {
+    searchEventsMock.mockResolvedValue([makeEvento({ id: 'a' })]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+    });
+    expect(screen.queryByText(es.globe.broadcast.noEvents)).toBeNull();
+  });
+});
