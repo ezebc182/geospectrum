@@ -351,7 +351,10 @@
         "eventsHour": "ev/h",
         "latency": "lat",
         "tooltip": "RSAM (media móvil 10 min) · frecuencia dominante · Frequency Index (− fluidos / + fractura) · pico dB (escala fija 20-120) · eventos por hora · latencia"
-      }
+      },
+      "modalTitle": "Espectrograma de {city}",
+      "viewStationDetail": "Ver detalle de la estación",
+      "closeModal": "Cerrar"
     },
     "spectrogramsPage": {
       "title": "Espectrogramas Sísmicos",

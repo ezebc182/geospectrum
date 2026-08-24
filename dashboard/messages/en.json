@@ -351,7 +351,10 @@
         "eventsHour": "ev/h",
         "latency": "lat",
         "tooltip": "RSAM (10 min moving average) · dominant frequency · Frequency Index (− fluids / + fracture) · peak dB (fixed 20-120 scale) · events per hour · latency"
-      }
+      },
+      "modalTitle": "{city} spectrogram",
+      "viewStationDetail": "View station detail",
+      "closeModal": "Close"
     },
     "spectrogramsPage": {
       "title": "Seismic Spectrograms",
