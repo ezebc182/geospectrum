@@ -6,6 +6,7 @@ import { SWRConfig } from 'swr';
 import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { globePointId } from '@/lib/globe-data';
+import { AREA_CHANGED_EVENT } from '@/lib/area-events';
 import { GlobeBroadcastOverlay, type GlobeBroadcastOverlayProps } from './GlobeBroadcastOverlay';
 
 const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock, getActiveAreaMock } =
@@ -696,6 +697,36 @@ describe('foco de eventos', () => {
       };
     }
 
+    // Cascadia: otra área real del proyecto, con centro bien distinto al de
+    // los Andes — sirve para distinguir "sigue mostrando el foco viejo" de
+    // "se reencuadró de verdad" tras un cambio de área.
+    function cascadiaArea() {
+      return {
+        area: {
+          id: 'area-cascadia',
+          slug: 'cascadia',
+          name: 'Cascadia',
+          is_system: true,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [
+              [
+                [-128, 40],
+                [-120, 40],
+                [-120, 50],
+                [-128, 50],
+                [-128, 40],
+              ],
+            ],
+          },
+          bbox: { minlat: 40, maxlat: 50, minlon: -128, maxlon: -120 },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        is_default: false,
+      };
+    }
+
     it('le pasa al globo el foco del área activa', async () => {
       // El bug: el overlay se montaba sin focusArea, así que en transmisión
       // cambiar de área no movía la cámara. SeismicGlobe ya sabe convivir con
@@ -731,6 +762,33 @@ describe('foco de eventos', () => {
 
       await waitFor(() => expect(searchEventsMock).toHaveBeenCalled());
       expect(capturedGlobeProps.focusArea ?? null).toBeNull();
+    });
+
+    it('reencuadra la camara al cambiar de area, sin recargar la pagina', async () => {
+      // Residual de 50632ee: el overlay leía /areas/active por SWR pero no se
+      // suscribía al evento, así que en /globe (donde nadie más monta esa
+      // key) la cámara no se movía hasta que SWR revalidara por su cuenta.
+      searchEventsMock.mockResolvedValue([]);
+      getActiveAreaMock.mockResolvedValue(andesArea());
+
+      renderOverlay();
+
+      await waitFor(() => expect(capturedGlobeProps.focusArea).toBeTruthy());
+      const andesFocus = capturedGlobeProps.focusArea as { lat: number; lng: number };
+      expect(andesFocus.lat).toBeCloseTo(-35, 5);
+
+      getActiveAreaMock.mockResolvedValue(cascadiaArea());
+      act(() => {
+        window.dispatchEvent(new CustomEvent(AREA_CHANGED_EVENT));
+      });
+
+      await waitFor(
+        () => {
+          const focus = capturedGlobeProps.focusArea as { lat: number; lng: number };
+          expect(focus.lat).toBeCloseTo(45, 5);
+        },
+        { timeout: 2000 }
+      );
     });
   });
 });
