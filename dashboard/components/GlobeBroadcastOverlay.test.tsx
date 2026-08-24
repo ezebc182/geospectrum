@@ -782,3 +782,44 @@ describe('estadísticas de la cartelera', () => {
     });
   });
 });
+
+/**
+ * El globo se montaba pelado mientras cargaba: `eventos ?? []` colapsa
+ * "todavía no llegó" y "no hubo sismos" en el mismo valor, así que la Tierra
+ * giraba sin puntos y el feed quedaba vacío, sin decir cuál de las dos cosas
+ * estaba pasando (pedido del usuario, 2026-08-24).
+ */
+describe('estado de carga del feed', () => {
+  it('avisa que está cargando en vez de mostrar el feed vacío', async () => {
+    // Promesa que no resuelve: deja la vista en el estado de carga.
+    searchEventsMock.mockReturnValue(new Promise(() => {}));
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.loadingEvents)).toBeTruthy();
+    });
+  });
+
+  it('distingue "sin sismos" de "cargando" cuando la respuesta viene vacía', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.noEvents)).toBeTruthy();
+    });
+    expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+  });
+
+  it('no muestra ningún cartel cuando hay eventos', async () => {
+    searchEventsMock.mockResolvedValue([makeEvento({ id: 'a' })]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+    });
+    expect(screen.queryByText(es.globe.broadcast.noEvents)).toBeNull();
+  });
+});

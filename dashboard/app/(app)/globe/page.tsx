@@ -17,6 +17,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { LoadingSurface } from '@/components/ui/loading';
 
 import { EVENT_PARAM } from '@/lib/share-event';
 import { GlobeBroadcastOverlay } from '@/components/GlobeBroadcastOverlay';
@@ -33,11 +34,10 @@ const EMBEDDED_CHROME_PX = 120;
  */
 function GlobeSkeleton() {
   const t = useTranslations('globe');
-  return (
-    <div className="flex h-[600px] items-center justify-center rounded-xl bg-muted/30">
-      <span className="text-sm text-muted-foreground">{t('loadingGlobe')}</span>
-    </div>
-  );
+  // Usa el primitivo compartido (ui/loading): antes era un texto quieto sobre
+  // una caja gris, sin animación ni `role="status"` — para un lector de
+  // pantalla la página simplemente no decía nada mientras cargaba.
+  return <LoadingSurface label={t('loadingGlobe')} className="h-[600px]" />;
 }
 
 /**

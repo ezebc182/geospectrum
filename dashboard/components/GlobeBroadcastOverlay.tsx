@@ -46,12 +46,25 @@ import { listWalls } from '@/lib/walls';
 import { useStationMetrics } from '@/lib/use-station-metrics';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
+import { asyncStateOf } from '@/lib/async-state';
+import { LoadingBlock } from '@/components/ui/loading';
 
 // three.js accede a `window` al importarse: mismo motivo que en la página
 // del globo, el componente solo puede cargarse client-side.
+//
+// El `loading` NO es decorativo: sin él, mientras baja el chunk de three.js
+// (que no es chico) el área del globo queda literalmente en blanco. El
+// dynamic de LandingHero ya tenía placeholder; este se había quedado sin uno.
 const SeismicGlobe = dynamic(
   () => import('@/components/SeismicGlobe').then((m) => m.SeismicGlobe),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center">
+        <div className="h-64 w-64 animate-pulse rounded-full bg-primary/10 md:h-96 md:w-96" />
+      </div>
+    ),
+  }
 );
 
 // Ventana y piso de magnitud de la vista (explícitos: los defaults del
@@ -179,7 +192,7 @@ export function GlobeBroadcastOverlay({
   // SWR bajo esta misma key, así toda la cadena de useMemo de abajo sigue
   // funcionando sin cambios.
   const { status: liveStatus, isLive, receivedCount } = useLiveEvents();
-  const { data: eventos } = useSWR('broadcast-events', broadcastFetcher, {
+  const { data: eventos, error: eventosError } = useSWR('broadcast-events', broadcastFetcher, {
     // Fallback automático (decisión del usuario, 2026-08-21): con el WS vivo
     // el polling se apaga; si se cae, vuelve solo. El usuario nunca se queda
     // sin datos, y no hay dos fuentes escribiendo la misma key a la vez.
@@ -409,6 +422,13 @@ export function GlobeBroadcastOverlay({
   );
 
   const feed = useMemo(() => latestEvents(eventos ?? [], FEED_SIZE), [eventos]);
+
+  // El `?? []` de arriba es cómodo para calcular, pero borra la diferencia
+  // entre "todavía no llegó" y "no hubo sismos": con la lista vacía el globo
+  // se dibujaba pelado y el feed quedaba en blanco, sin decir cuál de las dos
+  // cosas estaba pasando. El estado se deriva del dato CRUDO, antes del
+  // fallback (ver lib/async-state.ts).
+  const eventosState = asyncStateOf(eventos, eventosError);
 
   // `now` de next-intl: envejece el "hace X min" del spotlight y el resalte
   // de eventos nuevos sin regenerar todo por segundo.
@@ -736,6 +756,21 @@ export function GlobeBroadcastOverlay({
           últimos minutos llevan punto pulsante — la "notificación" del HUD. */}
       {panels.feed && (
       <aside className="absolute top-14 bottom-9 right-0 z-10 w-80 overflow-y-auto border-l border-border bg-background/85 backdrop-blur">
+        {eventosState === 'loading' && (
+          <div className="p-3">
+            <LoadingBlock label={t('loadingEvents')} lines={6} />
+          </div>
+        )}
+        {eventosState === 'empty' && (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {t('noEvents')}
+          </p>
+        )}
+        {eventosState === 'error' && (
+          <p role="alert" className="px-3 py-6 text-center text-sm text-destructive">
+            {t('loadError')}
+          </p>
+        )}
         <ul data-testid="broadcast-feed" className="divide-y divide-border/60">
           {feed.map((evento) => {
             const severity = getMagnitudeSeverity(evento.mag);

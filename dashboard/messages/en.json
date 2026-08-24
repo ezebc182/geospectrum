@@ -305,7 +305,10 @@
       "tickerSinceM5": "Last M≥5.0: {rel}",
       "tickerNoM5": "No M≥5.0 events in the last 24 hours",
       "tickerTopRegion": "Most active region: {region} with {count} events",
-      "tickerMaxMag": "Maximum magnitude in the last 24 h: M{mag}"
+      "tickerMaxMag": "Maximum magnitude in the last 24 h: M{mag}",
+      "loadingEvents": "Loading events…",
+      "noEvents": "No earthquakes in the last 24 hours",
+      "loadError": "Could not load the seismic report."
     }
   },
   "charts": {
