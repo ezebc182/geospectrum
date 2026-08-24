@@ -10,11 +10,14 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
+import { seismicAPI } from '@/lib/api';
 import {
   HELICORDER_DEFAULTS,
   TIME_CHUNK_OPTIONS,
@@ -25,6 +28,8 @@ import {
   loadHelicorderSettings,
   saveHelicorderSettings,
 } from '@/lib/helicorder-settings';
+import { getCityById } from '@/lib/seismic-cities';
+import { useActiveArea } from '@/lib/use-active-area';
 
 const TABS = [
   { id: 'helicorder', enabled: true },
@@ -56,6 +61,41 @@ export default function StationPage() {
     setBarMult(s.barMult);
     setFilter(s.filter);
   }, [channel]);
+
+  // El selector de área vive en el layout, así que ya se ve en esta pantalla.
+  // Lo que faltaba era consumirlo: cambiar de área era un no-op visual.
+  const { area: activeArea } = useActiveArea();
+
+  // Las coordenadas NO están en esta página ni en el catálogo de estaciones
+  // (verificado: station_catalog devuelve channel/city_id/network/station/
+  // is_live/is_primary, sin lat/lon). Se resuelven por ciudad:
+  //   channel → station-catalog → city_id → seismic-cities → {lat, lon}
+  // La precisión es a nivel ciudad, que alcanza para un indicador de contexto.
+  const { data: catalog } = useSWR('/spectrograms/station-catalog', () =>
+    seismicAPI.getStationCatalog(),
+  );
+
+  const stationMeta = useMemo(() => {
+    const entry = catalog?.find((c) => c.channel === channel);
+    if (!entry) return null;
+    const city = getCityById(entry.city_id);
+    return city ? { latitude: city.lat, longitude: city.lon } : null;
+  }, [catalog, channel]);
+
+  // El área por defecto es el mundo entero: decir "dentro del área" ahí no
+  // aporta nada, sólo ruido.
+  //
+  // OJO con la forma del tipo (verificado en `lib/types.ts:63-68` y `:105-108`):
+  //   - `is_default` está en la RAÍZ del ActiveAreaResponse, NO dentro de `area`
+  //   - los campos del bbox van SIN guion bajo: `minlat`, no `min_lat`
+  const bbox = activeArea?.is_default ? null : (activeArea?.area?.bbox ?? null);
+  const inside =
+    bbox && stationMeta
+      ? stationMeta.latitude >= bbox.minlat &&
+        stationMeta.latitude <= bbox.maxlat &&
+        stationMeta.longitude >= bbox.minlon &&
+        stationMeta.longitude <= bbox.maxlon
+      : null;
 
   const persist = (
     next: Partial<{
@@ -112,6 +152,21 @@ export default function StationPage() {
           </button>
         ))}
       </div>
+
+      {inside !== null && (
+        <div
+          data-testid="station-area-context"
+          className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${inside ? 'bg-teal-400' : 'bg-amber-400'}`}
+          />
+          {inside ? t('insideArea') : t('outsideArea')}
+          <Link href="/stations" className="text-blue-400 hover:underline">
+            {t('seeAreaStations')}
+          </Link>
+        </div>
+      )}
 
       {activeTab === 'spectrogram' && <SpectrogramLarge channel={channel} />}
 
