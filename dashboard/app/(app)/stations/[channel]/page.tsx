@@ -20,6 +20,8 @@ import {
   TIME_CHUNK_OPTIONS,
   clampBarMult,
   clampClipMult,
+  clampFilter,
+  type HelicorderFilter,
   loadHelicorderSettings,
   saveHelicorderSettings,
 } from '@/lib/helicorder-settings';
@@ -45,23 +47,34 @@ export default function StationPage() {
   const [timeChunk, setTimeChunk] = useState<number>(HELICORDER_DEFAULTS.timeChunkMinutes);
   const [clipMult, setClipMult] = useState<number>(HELICORDER_DEFAULTS.clipMult);
   const [barMult, setBarMult] = useState<number>(HELICORDER_DEFAULTS.barMult);
+  const [filter, setFilter] = useState<HelicorderFilter>(HELICORDER_DEFAULTS.filter);
 
   useEffect(() => {
     const s = loadHelicorderSettings(channel);
     setTimeChunk(s.timeChunkMinutes);
     setClipMult(s.clipMult);
     setBarMult(s.barMult);
+    setFilter(s.filter);
   }, [channel]);
 
-  const persist = (next: Partial<{ timeChunk: number; clipMult: number; barMult: number }>) => {
-    const merged = { timeChunk, clipMult, barMult, ...next };
+  const persist = (
+    next: Partial<{
+      timeChunk: number;
+      clipMult: number;
+      barMult: number;
+      filter: HelicorderFilter;
+    }>,
+  ) => {
+    const merged = { timeChunk, clipMult, barMult, filter, ...next };
     setTimeChunk(merged.timeChunk);
     setClipMult(merged.clipMult);
     setBarMult(merged.barMult);
+    setFilter(merged.filter);
     saveHelicorderSettings(channel, {
       timeChunkMinutes: merged.timeChunk,
       clipMult: merged.clipMult,
       barMult: merged.barMult,
+      filter: merged.filter,
     });
   };
 
@@ -160,6 +173,20 @@ export default function StationPage() {
                 </span>
               </label>
 
+              {/* A diferencia de los sliders, esto vuelve a pedir la onda al
+                  backend: el filtro cambia el dato, no cómo se dibuja. */}
+              <label className="flex items-center gap-2">
+                <span title={t('filterHint')}>{t('filter')}</span>
+                <input
+                  type="checkbox"
+                  aria-label={t('filter')}
+                  checked={filter === 'bp'}
+                  onChange={(e) =>
+                    persist({ filter: clampFilter(e.target.checked ? 'bp' : 'none') })
+                  }
+                />
+              </label>
+
               <button
                 type="button"
                 onClick={() =>
@@ -182,6 +209,7 @@ export default function StationPage() {
             height={640}
             clipMult={clipMult}
             barMult={barMult}
+            filter={filter}
           />
         </>
       )}

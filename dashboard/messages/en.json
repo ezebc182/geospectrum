@@ -864,7 +864,9 @@
       "spectrogram": "Spectrogram",
       "wave": "Wave + Spectrum",
       "rsam": "RSAM"
-    }
+    },
+    "filter": "1-10 Hz filter",
+    "filterHint": "Butterworth 1-10 Hz bandpass: removes slow drift and high-frequency noise so the seismic phase reads clearly. Refetches the waveform."
   },
   "stations": {
     "title": "Stations",

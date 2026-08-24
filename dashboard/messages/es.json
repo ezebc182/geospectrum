@@ -864,7 +864,9 @@
       "spectrogram": "Espectrograma",
       "wave": "Onda + Espectro",
       "rsam": "RSAM"
-    }
+    },
+    "filter": "Filtro 1-10 Hz",
+    "filterHint": "Butterworth pasabanda 1-10 Hz: quita la deriva lenta y el ruido agudo para que se lea la fase sísmica. Vuelve a pedir la onda al servidor."
   },
   "stations": {
     "title": "Estaciones",

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   HELICORDER_DEFAULTS,
   clampBarMult,
+  clampFilter,
   clampClipMult,
   effectiveClip,
   loadHelicorderSettings,
@@ -72,11 +73,17 @@ describe('persistencia por canal', () => {
   });
 
   it('guarda y recupera lo mismo', () => {
-    saveHelicorderSettings('IU.MAJO..BHZ', { clipMult: 4, barMult: 2, timeChunkMinutes: 15 });
+    saveHelicorderSettings('IU.MAJO..BHZ', {
+      clipMult: 4,
+      barMult: 2,
+      timeChunkMinutes: 15,
+      filter: 'bp',
+    });
     expect(loadHelicorderSettings('IU.MAJO..BHZ')).toEqual({
       clipMult: 4,
       barMult: 2,
       timeChunkMinutes: 15,
+      filter: 'bp',
     });
   });
 
@@ -85,6 +92,7 @@ describe('persistencia por canal', () => {
       clipMult: HELICORDER_DEFAULTS.clipMult,
       barMult: HELICORDER_DEFAULTS.barMult,
       timeChunkMinutes: HELICORDER_DEFAULTS.timeChunkMinutes,
+      filter: HELICORDER_DEFAULTS.filter,
     });
   });
 
@@ -111,5 +119,50 @@ describe('persistencia por canal', () => {
     expect(loadHelicorderSettings('IU.MAJO..BHZ').timeChunkMinutes).toBe(
       HELICORDER_DEFAULTS.timeChunkMinutes,
     );
+  });
+
+  it('recuerda el filtro elegido junto al resto de los settings', () => {
+    saveHelicorderSettings('IU.MAJO..BHZ', {
+      clipMult: 1,
+      barMult: 1,
+      timeChunkMinutes: 30,
+      filter: 'bp',
+    });
+    expect(loadHelicorderSettings('IU.MAJO..BHZ').filter).toBe('bp');
+  });
+
+  it('un filtro desconocido cae a "none" — el backend sólo acepta none|bp', () => {
+    // El endpoint valida con pattern ^(none|bp)$ y responde 422 ante otra
+    // cosa: mandar basura guardada en localStorage rompería la vista entera.
+    localStorage.setItem(
+      settingsStorageKey('IU.MAJO..BHZ'),
+      JSON.stringify({ clipMult: 1, barMult: 1, timeChunkMinutes: 30, filter: 'lowpass' }),
+    );
+    expect(loadHelicorderSettings('IU.MAJO..BHZ').filter).toBe('none');
+  });
+});
+
+/**
+ * El filtro Butterworth existe en el backend desde el PR A
+ * (station_waveform.py, expuesto en main.py:2483 con pattern ^(none|bp)$) y
+ * el helicorder NUNCA lo mandaba en la URL: feature construida y apagada.
+ *
+ * A diferencia de clipMult/barMult, el filtro CAMBIA EL DATO — no cómo se
+ * dibuja —, así que obliga a volver a pedir la onda al backend.
+ */
+describe('filtro del helicorder', () => {
+  it('el default es sin filtrar: la señal cruda es la referencia', () => {
+    expect(HELICORDER_DEFAULTS.filter).toBe('none');
+  });
+
+  it('acepta los dos valores que el backend documenta', () => {
+    expect(clampFilter('none')).toBe('none');
+    expect(clampFilter('bp')).toBe('bp');
+  });
+
+  it('cualquier otra cosa cae a "none" en vez de provocar un 422', () => {
+    expect(clampFilter('bandpass')).toBe('none');
+    expect(clampFilter('')).toBe('none');
+    expect(clampFilter(undefined)).toBe('none');
   });
 });

@@ -13,6 +13,13 @@
  * deja de saturar, subir barMult agranda lo que ya entra.
  */
 
+/**
+ * Filtro que se le pide al backend. Los dos únicos valores que acepta
+ * `/stations/{channel}/waveform` (pattern `^(none|bp)$`); `bp` es el
+ * Butterworth 1-10 Hz de `station_waveform.py`.
+ */
+export type HelicorderFilter = 'none' | 'bp';
+
 export interface HelicorderSettings {
   /** Multiplicador del clip automático. 1 = el auto de siempre. */
   clipMult: number;
@@ -20,6 +27,11 @@ export interface HelicorderSettings {
   barMult: number;
   /** Minutos por fila. */
   timeChunkMinutes: number;
+  /**
+   * A diferencia de clipMult/barMult, esto CAMBIA EL DATO y no cómo se
+   * dibuja: cambiarlo obliga a volver a pedir la onda al backend.
+   */
+  filter: HelicorderFilter;
 }
 
 /** Las tres franjas de SWARM; la página las ofrece en ese orden. */
@@ -33,7 +45,19 @@ export const HELICORDER_DEFAULTS = {
   barMultMin: 0.25,
   barMultMax: 10,
   timeChunkMinutes: 30,
+  // Sin filtrar por default: la señal cruda es la referencia, y filtrar de
+  // entrada escondería períodos largos sin que nadie lo haya pedido.
+  filter: 'none',
 } as const;
+
+/** Los valores que el backend documenta; el resto provocaría un 422. */
+export const FILTER_OPTIONS: readonly HelicorderFilter[] = ['none', 'bp'];
+
+export function clampFilter(value: unknown): HelicorderFilter {
+  return FILTER_OPTIONS.includes(value as HelicorderFilter)
+    ? (value as HelicorderFilter)
+    : HELICORDER_DEFAULTS.filter;
+}
 
 function clampRange(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
@@ -80,6 +104,7 @@ export function loadHelicorderSettings(channel: string): HelicorderSettings {
     clipMult: HELICORDER_DEFAULTS.clipMult,
     barMult: HELICORDER_DEFAULTS.barMult,
     timeChunkMinutes: HELICORDER_DEFAULTS.timeChunkMinutes,
+    filter: HELICORDER_DEFAULTS.filter,
   };
 
   // SSR y modo privado: no hay storage y no es un error, es el caso normal.
@@ -98,6 +123,7 @@ export function loadHelicorderSettings(channel: string): HelicorderSettings {
       timeChunkMinutes: (TIME_CHUNK_OPTIONS as readonly number[]).includes(chunk)
         ? chunk
         : defaults.timeChunkMinutes,
+      filter: clampFilter(parsed.filter),
     };
   } catch {
     return defaults;

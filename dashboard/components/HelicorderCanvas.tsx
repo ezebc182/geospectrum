@@ -23,7 +23,11 @@ import {
   rowCount,
   splitClippedSegment,
 } from '@/lib/helicorder-layout';
-import { HELICORDER_DEFAULTS, effectiveClip } from '@/lib/helicorder-settings';
+import {
+  HELICORDER_DEFAULTS,
+  effectiveClip,
+  type HelicorderFilter,
+} from '@/lib/helicorder-settings';
 
 interface HelicorderCanvasProps {
   /** SCNL completo, ej. "IU.MAJO..BHZ". */
@@ -35,6 +39,8 @@ interface HelicorderCanvasProps {
   clipMult?: number;
   /** Exageración de amplitud al dibujar (SWARM `barMult`). Default 1. */
   barMult?: number;
+  /** Filtro que aplica el backend. 'bp' = Butterworth 1-10 Hz. Default 'none'. */
+  filter?: HelicorderFilter;
 }
 
 interface WaveformResponse {
@@ -67,6 +73,7 @@ export function HelicorderCanvas({
   height,
   clipMult = HELICORDER_DEFAULTS.clipMult,
   barMult = HELICORDER_DEFAULTS.barMult,
+  filter = HELICORDER_DEFAULTS.filter,
 }: HelicorderCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -88,7 +95,7 @@ export function HelicorderCanvas({
         // El SCNL va escapado: lleva puntos y algunas estaciones, espacios.
         const res = await fetch(
           `${API_BASE}/stations/${encodeURIComponent(channel)}/waveform` +
-            `?minutes=${TOTAL_MINUTES}&points=${points}`,
+            `?minutes=${TOTAL_MINUTES}&points=${points}&filter=${filter}`,
         );
         if (!res.ok) throw new Error(String(res.status));
         const wf: WaveformResponse = await res.json();
@@ -106,7 +113,10 @@ export function HelicorderCanvas({
     return () => {
       cancelled = true;
     };
-  }, [channel, timeChunkMinutes]);
+    // `filter` va acá y NO junto a clipMult/barMult: esos dos sólo cambian el
+    // dibujo y repintan con lo que ya está en memoria, mientras que filtrar
+    // cambia la onda misma y exige pedirla de nuevo.
+  }, [channel, timeChunkMinutes, filter]);
 
   // Efecto 2: dibujar. Depende del dato Y de todo lo que afecta el dibujo.
   useEffect(() => {
