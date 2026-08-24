@@ -8,6 +8,7 @@ import {
   rowColor,
   rowCount,
   rowForOffset,
+  rowsForWindow,
   splitClippedSegment,
   xFractionForOffset,
 } from './helicorder-layout';
@@ -209,5 +210,37 @@ describe('rowBias', () => {
   it('un tramo vacío o fuera de rango da 0 y no NaN', () => {
     expect(rowBias([1], [2], 5, 9)).toBe(0);
     expect(rowBias([], [], 0, 10)).toBe(0);
+  });
+});
+
+describe('rowsForWindow', () => {
+  const T0 = Date.UTC(2026, 7, 23, 0, 0, 0);
+  const h = (n: number) => T0 + n * 3_600_000;
+
+  it('deriva las filas de la ventana recibida, no de las 24 h pedidas', () => {
+    // Caso REAL medido en AK.FIRE..BHZ el 2026-08-24: se pidieron 24 h y FDSN
+    // devolvió 18,75 h. Con 96 filas fijas, 21 quedaban rotuladas con horas
+    // que no eran las de su dato.
+    expect(rowsForWindow(T0, h(18.75), 15)).toBe(75);
+    expect(rowCount(1440, 15)).toBe(96); // lo que se dibujaba antes
+  });
+
+  it('una ventana completa de 24 h sigue dando las filas de siempre', () => {
+    expect(rowsForWindow(T0, h(24), 15)).toBe(96);
+    expect(rowsForWindow(T0, h(24), 30)).toBe(48);
+    expect(rowsForWindow(T0, h(24), 60)).toBe(24);
+  });
+
+  it('redondea hacia arriba para no esconder la fila parcial', () => {
+    // 18,80 h son 75,2 franjas de 15 min: la 76 existe aunque esté incompleta.
+    expect(rowsForWindow(T0, h(18.8), 15)).toBe(76);
+  });
+
+  it('devuelve 0 con ventanas degeneradas para que el llamador use su fallback', () => {
+    expect(rowsForWindow(T0, T0, 15)).toBe(0);
+    expect(rowsForWindow(h(5), T0, 15)).toBe(0); // end antes que start
+    expect(rowsForWindow(T0, h(24), 0)).toBe(0);
+    expect(rowsForWindow(NaN, h(24), 15)).toBe(0); // starttime que no parsea
+    expect(rowsForWindow(T0, NaN, 15)).toBe(0);
   });
 });
