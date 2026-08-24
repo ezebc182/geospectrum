@@ -354,7 +354,8 @@
       },
       "modalTitle": "{city} spectrogram",
       "viewStationDetail": "View station detail",
-      "closeModal": "Close"
+      "closeModal": "Close",
+      "noLiveStream": "This station does not stream in real time"
     },
     "spectrogramsPage": {
       "title": "Seismic Spectrograms",

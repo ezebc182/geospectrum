@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import Link from 'next/link';
 import { GripVertical, Maximize2, Radio, X } from 'lucide-react';
 import type { SeismicCity } from '@/lib/seismic-cities';
 import { getRiskColor } from '@/lib/seismic-cities';
 import { SpectrogramViewReal } from '@/components/SpectrogramViewReal';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { SpectrogramModal } from '@/components/SpectrogramModal';
 import { latencySeconds, type StationMetrics } from '@/lib/station-metrics';
 
 interface SortableSpectrogramCardProps {
@@ -44,6 +44,7 @@ export function SortableSpectrogramCard({
   // FDSN en ciudades que ya tenían columnas frescas en TimescaleDB.
   const [chosenMode, setChosenMode] = useState<'live' | 'static' | null>(null);
   const mode = chosenMode ?? (liveChannel ? 'live' : 'static');
+  const [modalOpen, setModalOpen] = useState(false);
 
   // La fila solo tiene sentido sobre señal viva: en modo 24h las métricas
   // serían de un instante que no es el que se está mirando.
@@ -106,56 +107,73 @@ export function SortableSpectrogramCard({
         <SpectrogramViewReal city={city} height={120} showLabel={true} useRealData={true} />
       )}
 
-      {/* Selector Vivo/24h: SIEMPRE visible y con las dos opciones a la vista.
-          Antes era un botón único con `opacity-0 group-hover:opacity-100` —
-          invisible sin mouse encima, así que ni se sabía que la vista en vivo
-          existía. Un segmentado muestra en qué modo se está y adónde se puede
-          ir sin tener que descubrirlo por hover. */}
-      {liveChannel && (
-        <div
-          role="group"
-          aria-label={t('viewLive')}
-          className="absolute top-2 left-1/2 z-30 flex -translate-x-1/2 overflow-hidden rounded-full bg-black/75 text-[10px] font-semibold ring-1 ring-white/20"
+      {/* Selector Vivo/24h: SIEMPRE visible, incluso sin canal en vivo.
+          Antes estaba guardado por `liveChannel`, así que en las ciudades sin
+          transmisión la tarjeta caía al PNG de 24h en silencio: ni se sabía
+          que el modo vivo existía ni por qué esa tarjeta era distinta. Ahora
+          "Vivo" aparece deshabilitado y el tooltip dice el motivo. */}
+      <div
+        role="group"
+        aria-label={t('viewLive')}
+        className="absolute top-2 left-1/2 z-30 flex -translate-x-1/2 overflow-hidden rounded-full bg-black/75 text-[10px] font-semibold ring-1 ring-white/20"
+      >
+        <button
+          type="button"
+          data-testid="card-mode-live"
+          onClick={() => setChosenMode('live')}
+          disabled={!liveChannel}
+          aria-pressed={mode === 'live'}
+          title={liveChannel ? t('viewLive') : t('noLiveStream')}
+          className={`flex items-center gap-1 px-2 py-0.5 transition-colors ${
+            !liveChannel
+              ? 'cursor-not-allowed text-white/30'
+              : mode === 'live'
+                ? 'bg-teal-600 text-white'
+                : 'text-white/70 hover:text-white'
+          }`}
         >
-          <button
-            type="button"
-            onClick={() => setChosenMode('live')}
-            aria-pressed={mode === 'live'}
-            title={t('viewLive')}
-            className={`flex items-center gap-1 px-2 py-0.5 transition-colors ${
-              mode === 'live' ? 'bg-teal-600 text-white' : 'text-white/70 hover:text-white'
-            }`}
-          >
-            <Radio className={`h-3 w-3 ${mode === 'live' ? 'animate-pulse' : ''}`} />
-            {t('liveBadge')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setChosenMode('static')}
-            aria-pressed={mode === 'static'}
-            title={t('viewHistory')}
-            className={`px-2 py-0.5 transition-colors ${
-              mode === 'static' ? 'bg-teal-600 text-white' : 'text-white/70 hover:text-white'
-            }`}
-          >
-            24h
-          </button>
-        </div>
-      )}
+          <Radio className={`h-3 w-3 ${mode === 'live' ? 'animate-pulse' : ''}`} />
+          {t('liveBadge')}
+        </button>
+        <button
+          type="button"
+          data-testid="card-mode-static"
+          onClick={() => setChosenMode('static')}
+          aria-pressed={mode === 'static'}
+          title={t('viewHistory')}
+          className={`px-2 py-0.5 transition-colors ${
+            mode === 'static' ? 'bg-teal-600 text-white' : 'text-white/70 hover:text-white'
+          }`}
+        >
+          24h
+        </button>
+      </div>
 
-      {/* Ampliar: lleva al detalle de estación, que ya tiene el espectrograma
-          grande con ejes y el helicorder. En modo 24h el link vive dentro de
-          SpectrogramViewReal, pero en vivo no había ninguna puerta de salida
-          — la tarjeta de 120px de alto era todo lo que se podía ver. */}
-      {liveChannel && mode === 'live' && (
-        <Link
-          href={`/stations/${encodeURIComponent(liveChannel)}`}
+      {/* Ampliar: abre el modal. Antes era un <Link> al detalle de estación,
+          o sea que NAVEGABA — se perdía el muro entero y había que volver con
+          el botón atrás. El detalle sigue estando, pero como opción dentro del
+          modal. Sólo con canal vivo: sin columnas no hay espectrograma grande
+          que mostrar (el PNG de 24h no es el mismo pipeline). */}
+      {liveChannel && (
+        <button
+          type="button"
+          data-testid="card-expand"
+          onClick={() => setModalOpen(true)}
           title={t('expand')}
           aria-label={t('expand')}
           className="absolute bottom-2 right-2 z-30 rounded bg-black/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/90 focus-visible:opacity-100"
         >
           <Maximize2 className="h-3 w-3" />
-        </Link>
+        </button>
+      )}
+
+      {liveChannel && (
+        <SpectrogramModal
+          channel={liveChannel}
+          cityName={city.name}
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+        />
       )}
 
       {/* Handle de arrastre (visible al hover) */}

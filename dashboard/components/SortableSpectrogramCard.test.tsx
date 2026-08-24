@@ -9,7 +9,7 @@
 
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
 import es from '@/messages/es.json';
@@ -50,9 +50,27 @@ class MockWebSocket {
 
 beforeEach(() => {
   vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+  // El mock cubre tanto LiveSpectrogramCanvas (getImageData/putImageData) como
+  // SpectrogramLarge, que el modal de Ampliar monta al abrirse (save/restore/
+  // clip/fillText/etc — sin esto, `ctx.save is not a function` al montar).
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     fillStyle: '',
+    strokeStyle: '',
+    font: '',
+    textAlign: '',
+    textBaseline: '',
     fillRect: vi.fn(),
+    fillText: vi.fn(),
+    beginPath: vi.fn(),
+    stroke: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    rotate: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
     getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(0) })),
     putImageData: vi.fn(),
   } as unknown as CanvasRenderingContext2D);
@@ -150,5 +168,55 @@ describe('SortableSpectrogramCard — fila de métricas', () => {
     const row = screen.getByTestId('card-metrics-row');
     expect(row.textContent).toContain('RSAM —');
     expect(row.textContent).toContain('FI —');
+  });
+});
+
+describe('SortableSpectrogramCard — toggle honesto y Ampliar (PR B2)', () => {
+  it('muestra el toggle tambien en ciudades SIN transmision en vivo', () => {
+    renderCard({ liveChannel: undefined });
+    expect(screen.getByRole('group', { name: /vivo/i })).toBeInTheDocument();
+  });
+
+  it('deshabilita el boton Vivo cuando la ciudad no transmite', () => {
+    renderCard({ liveChannel: undefined });
+    const vivo = screen.getByTestId('card-mode-live');
+    expect(vivo).toBeDisabled();
+    expect(vivo).toHaveAttribute('title', expect.stringMatching(/no transmite/i));
+  });
+
+  it('no deshabilita el boton Vivo cuando si transmite', () => {
+    renderCard({ liveChannel: 'AR.TEST..HHZ' });
+    expect(screen.getByTestId('card-mode-live')).not.toBeDisabled();
+  });
+
+  it('clic en Vivo deshabilitado no cambia el modo', () => {
+    renderCard({ liveChannel: undefined });
+    fireEvent.click(screen.getByTestId('card-mode-live'));
+    expect(screen.getByTestId('card-mode-static')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('Ampliar abre el modal en vez de navegar', () => {
+    renderCard({ liveChannel: 'AR.TEST..HHZ' });
+    fireEvent.click(screen.getByTestId('card-expand'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('Ampliar NO es un enlace — antes navegaba y se perdia el muro', () => {
+    renderCard({ liveChannel: 'AR.TEST..HHZ' });
+    const expand = screen.getByTestId('card-expand');
+    expect(expand.tagName).toBe('BUTTON');
+    expect(expand).not.toHaveAttribute('href');
+  });
+
+  it('el modal se cierra y devuelve al muro', () => {
+    renderCard({ liveChannel: 'AR.TEST..HHZ' });
+    fireEvent.click(screen.getByTestId('card-expand'));
+    fireEvent.click(screen.getByTestId('modal-close'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('sin canal vivo no ofrece Ampliar — no hay espectrograma grande que mostrar', () => {
+    renderCard({ liveChannel: undefined });
+    expect(screen.queryByTestId('card-expand')).not.toBeInTheDocument();
   });
 });

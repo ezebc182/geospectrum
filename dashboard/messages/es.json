@@ -354,7 +354,8 @@
       },
       "modalTitle": "Espectrograma de {city}",
       "viewStationDetail": "Ver detalle de la estación",
-      "closeModal": "Cerrar"
+      "closeModal": "Cerrar",
+      "noLiveStream": "Esta estación no transmite en tiempo real"
     },
     "spectrogramsPage": {
       "title": "Espectrogramas Sísmicos",
