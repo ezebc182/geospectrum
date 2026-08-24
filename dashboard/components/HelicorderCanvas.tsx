@@ -21,6 +21,7 @@ import {
   rowBias,
   rowColor,
   rowCount,
+  rowsForWindow,
   splitClippedSegment,
 } from '@/lib/helicorder-layout';
 import {
@@ -147,7 +148,16 @@ export function HelicorderCanvas({
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, width, height);
 
-      const rows = rowCount(TOTAL_MINUTES, timeChunkMinutes);
+      // Las filas salen de la ventana RECIBIDA, no de las 24 h pedidas: FDSN
+      // suele no tener las últimas horas y repartir ese dato sobre 96 filas
+      // desplaza el eje de tiempo. Fallback a 24 h si los timestamps no
+      // parsean, para no quedarnos sin dibujar nada.
+      const rows =
+        rowsForWindow(
+          Date.parse(wf.starttime),
+          Date.parse(wf.endtime),
+          timeChunkMinutes,
+        ) || rowCount(TOTAL_MINUTES, timeChunkMinutes);
       const rowH = height / rows;
       const plotW = width - MARGIN_LEFT - MARGIN_RIGHT;
       const pairsPerRow = Math.max(1, Math.floor(wf.mins.length / rows));
@@ -259,7 +269,14 @@ export function HelicorderCanvas({
       height,
       marginLeft: MARGIN_LEFT,
       marginRight: MARGIN_RIGHT,
-      rows: rowCount(TOTAL_MINUTES, timeChunkMinutes),
+      // Mismo cálculo que el dibujo: si acá se usaran 96 filas y el canvas
+      // dibujó 75, el clic señalaría una fila distinta de la que el usuario ve.
+      rows:
+        rowsForWindow(
+          Date.parse(waveform.starttime),
+          Date.parse(waveform.endtime),
+          timeChunkMinutes,
+        ) || rowCount(TOTAL_MINUTES, timeChunkMinutes),
       timeChunkMinutes,
       startMs: Date.parse(waveform.starttime),
       windowSeconds: selectionWindowSeconds,

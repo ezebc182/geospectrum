@@ -18,6 +18,36 @@ export function rowCount(totalMinutes: number, timeChunkMinutes: number): number
   return Math.ceil(totalMinutes / timeChunkMinutes);
 }
 
+/**
+ * Filas que corresponden a la ventana REALMENTE devuelta, no a las 24 h que se
+ * pidieron.
+ *
+ * FDSN entrega lo que tiene: pedir 24 h de un canal cuyas últimas horas todavía
+ * no llegaron devuelve, por ejemplo, 18,75 h. Repartir esos pares sobre 96 filas
+ * "porque el día tiene 96 franjas de 15 min" estira la señal y **desplaza el eje
+ * de tiempo**: las filas del final quedan rotuladas con horas que no son las de
+ * su dato.
+ *
+ * Es el mismo pecado que ya cometimos con el eje de frecuencia del
+ * espectrograma: derivar el eje de una constante en vez del dato. La constante
+ * es lo que se PIDE; el rótulo tiene que salir de lo que se RECIBE.
+ */
+export function rowsForWindow(
+  startMs: number,
+  endMs: number,
+  timeChunkMinutes: number,
+): number {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return 0;
+  if (timeChunkMinutes <= 0) return 0;
+
+  const spanMinutes = (endMs - startMs) / 60_000;
+  if (spanMinutes <= 0) return 0;
+
+  // `ceil`: una ventana de 18,75 h en franjas de 15 min da 75 exactas, pero una
+  // de 18,80 h necesita 76 filas — la última parcial. Truncar la escondería.
+  return Math.ceil(spanMinutes / timeChunkMinutes);
+}
+
 export function rowForOffset(offsetSec: number, timeChunkSec: number): number {
   return Math.floor(offsetSec / timeChunkSec);
 }
