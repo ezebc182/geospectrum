@@ -28,6 +28,11 @@ import {
   effectiveClip,
   type HelicorderFilter,
 } from '@/lib/helicorder-settings';
+import {
+  DEFAULT_WINDOW_SECONDS,
+  helicorderHitToWindow,
+  type TimeWindow,
+} from '@/lib/helicorder-hit';
 
 interface HelicorderCanvasProps {
   /** SCNL completo, ej. "IU.MAJO..BHZ". */
@@ -41,6 +46,14 @@ interface HelicorderCanvasProps {
   barMult?: number;
   /** Filtro que aplica el backend. 'bp' = Butterworth 1-10 Hz. Default 'none'. */
   filter?: HelicorderFilter;
+  /**
+   * Se llama al hacer clic sobre la señal, con la ventana centrada en el
+   * instante señalado. Opcional a propósito: sin esta prop el helicorder se
+   * comporta exactamente como antes (sin cursor de mano ni handler).
+   */
+  onSelectWindow?: (window: TimeWindow) => void;
+  /** Ancho de la ventana que abre un clic. Default 120 s. */
+  selectionWindowSeconds?: number;
 }
 
 interface WaveformResponse {
@@ -74,6 +87,8 @@ export function HelicorderCanvas({
   clipMult = HELICORDER_DEFAULTS.clipMult,
   barMult = HELICORDER_DEFAULTS.barMult,
   filter = HELICORDER_DEFAULTS.filter,
+  onSelectWindow,
+  selectionWindowSeconds = DEFAULT_WINDOW_SECONDS,
 }: HelicorderCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -224,6 +239,35 @@ export function HelicorderCanvas({
     );
   }
 
+  /**
+   * Traduce el clic a una ventana y la delega. El cálculo vive en la lib pura
+   * `helicorder-hit`: acá sólo se resuelven las coordenadas relativas al canvas.
+   */
+  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onSelectWindow || !waveform) return;
+
+    // `clientX/Y` son de página: hay que restarles la posición del canvas. Y el
+    // canvas puede estar escalado por CSS, así que las coordenadas se llevan al
+    // sistema de `width`/`height` con el que se dibujó.
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const selected = helicorderHitToWindow({
+      x: ((event.clientX - rect.left) * width) / rect.width,
+      y: ((event.clientY - rect.top) * height) / rect.height,
+      width,
+      height,
+      marginLeft: MARGIN_LEFT,
+      marginRight: MARGIN_RIGHT,
+      rows: rowCount(TOTAL_MINUTES, timeChunkMinutes),
+      timeChunkMinutes,
+      startMs: Date.parse(waveform.starttime),
+      windowSeconds: selectionWindowSeconds,
+    });
+
+    if (selected) onSelectWindow(selected);
+  };
+
   return (
     <div className="rounded bg-white" style={{ width, height }}>
       <canvas
@@ -231,7 +275,8 @@ export function HelicorderCanvas({
         ref={canvasRef}
         width={width}
         height={height}
-        className="block"
+        className={onSelectWindow ? 'block cursor-pointer' : 'block'}
+        onClick={onSelectWindow ? handleClick : undefined}
       />
     </div>
   );

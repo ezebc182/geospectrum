@@ -8,7 +8,7 @@
  * puede desaparecer sin que nada falle.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HelicorderCanvas } from './HelicorderCanvas';
 
@@ -127,5 +127,133 @@ describe('HelicorderCanvas', () => {
     await waitFor(() => expect(ctx.moveTo).toHaveBeenCalled());
     const malos = coords.filter((c) => !Number.isFinite(c));
     expect(malos, `${malos.length} coordenadas no finitas`).toHaveLength(0);
+  });
+});
+
+describe('HelicorderCanvas — selección de ventana por clic', () => {
+  /**
+   * En jsdom `getBoundingClientRect` devuelve todo en cero, así que sin esto el
+   * handler sale por la guarda de `rect.width === 0` y el test pasaría por la
+   * razón equivocada: verde sin haber ejercitado el mapeo.
+   */
+  function stubRect(canvas: HTMLElement, width: number, height: number) {
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0 }) as DOMRect;
+  }
+
+  it('no cablea el handler ni el cursor sin onSelectWindow', async () => {
+    render(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={60} width={1112} height={480} />,
+    );
+
+    const canvas = await screen.findByTestId('helicorder-canvas');
+    expect(canvas.className).not.toContain('cursor-pointer');
+  });
+
+  it('con onSelectWindow muestra cursor de mano', async () => {
+    render(
+      <HelicorderCanvas
+        channel="IU.MAJO..BHZ"
+        timeChunkMinutes={60}
+        width={1112}
+        height={480}
+        onSelectWindow={() => {}}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('helicorder-canvas');
+    expect(canvas.className).toContain('cursor-pointer');
+  });
+
+  it('el clic entrega la ventana centrada en el instante señalado', async () => {
+    const onSelectWindow = vi.fn();
+    render(
+      <HelicorderCanvas
+        channel="IU.MAJO..BHZ"
+        timeChunkMinutes={60}
+        width={1112}
+        height={480}
+        onSelectWindow={onSelectWindow}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('helicorder-canvas');
+    stubRect(canvas, 1112, 480);
+    // Fila 3, mitad del plot: T0 + 3 h + 30 min (mismo caso que el test de la
+    // lib pura, pero acá pasando por el componente).
+    fireEvent.click(canvas, { clientX: 556, clientY: 70 });
+
+    const T0 = Date.parse('2026-08-20T00:00:00Z');
+    const esperado = T0 + 3 * 3_600_000 + 30 * 60_000;
+    expect(onSelectWindow).toHaveBeenCalledWith({
+      startMs: esperado - 60_000,
+      endMs: esperado + 60_000,
+    });
+  });
+
+  it('el clic en el margen no dispara nada', async () => {
+    const onSelectWindow = vi.fn();
+    render(
+      <HelicorderCanvas
+        channel="IU.MAJO..BHZ"
+        timeChunkMinutes={60}
+        width={1112}
+        height={480}
+        onSelectWindow={onSelectWindow}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('helicorder-canvas');
+    stubRect(canvas, 1112, 480);
+    fireEvent.click(canvas, { clientX: 20, clientY: 70 });
+
+    expect(onSelectWindow).not.toHaveBeenCalled();
+  });
+
+  it('respeta selectionWindowSeconds', async () => {
+    const onSelectWindow = vi.fn();
+    render(
+      <HelicorderCanvas
+        channel="IU.MAJO..BHZ"
+        timeChunkMinutes={60}
+        width={1112}
+        height={480}
+        onSelectWindow={onSelectWindow}
+        selectionWindowSeconds={600}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('helicorder-canvas');
+    stubRect(canvas, 1112, 480);
+    fireEvent.click(canvas, { clientX: 556, clientY: 70 });
+
+    const { startMs, endMs } = onSelectWindow.mock.calls[0][0];
+    expect(endMs - startMs).toBe(600_000);
+  });
+
+  it('escala las coordenadas cuando el canvas está redimensionado por CSS', async () => {
+    // El canvas se dibuja a 1112x480 pero CSS lo muestra a la mitad. Sin la
+    // conversión, un clic en el centro visual caería en el cuarto del dibujo.
+    const onSelectWindow = vi.fn();
+    render(
+      <HelicorderCanvas
+        channel="IU.MAJO..BHZ"
+        timeChunkMinutes={60}
+        width={1112}
+        height={480}
+        onSelectWindow={onSelectWindow}
+      />,
+    );
+
+    const canvas = await screen.findByTestId('helicorder-canvas');
+    stubRect(canvas, 556, 240); // mitad de tamaño
+    fireEvent.click(canvas, { clientX: 278, clientY: 35 });
+
+    const T0 = Date.parse('2026-08-20T00:00:00Z');
+    const esperado = T0 + 3 * 3_600_000 + 30 * 60_000;
+    expect(onSelectWindow).toHaveBeenCalledWith({
+      startMs: esperado - 60_000,
+      endMs: esperado + 60_000,
+    });
   });
 });
