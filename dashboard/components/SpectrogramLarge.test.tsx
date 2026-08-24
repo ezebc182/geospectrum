@@ -90,6 +90,22 @@ function getMockContext() {
   return mockCtx;
 }
 
+/**
+ * Rótulos del eje de tiempo (formato HH:MM) del ÚLTIMO dibujo, no del
+ * historial acumulado. `fillText` nunca se resetea entre renders, así que
+ * comparar todo el historial confundiría "el componente re-renderizó" con
+ * "la vista se movió". El eje de tiempo siempre se dibuja después del de
+ * frecuencia en cada pasada del efecto, así que el último bloque de tickets
+ * HH:MM es siempre el del dibujo más reciente.
+ */
+function lastAxisTicks(ctx: ReturnType<typeof buildMockContext>): string[] {
+  const labels = ctx.fillText.mock.calls.map((c) => String(c[0]));
+  const hora = /^\d{2}:\d{2}$/;
+  let start = labels.length;
+  while (start > 0 && hora.test(labels[start - 1])) start--;
+  return labels.slice(start);
+}
+
 beforeEach(() => {
   FakeWS.instances = [];
   vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket);
@@ -259,10 +275,14 @@ describe('SpectrogramLarge', () => {
     fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
     await screen.findByTestId('spectrogram-reset-zoom');
 
-    // Rótulos del eje de tiempo ANTES del mensaje del WS: son la huella de
-    // qué ventana temporal se está dibujando ahora mismo.
+    // Rótulos del eje de tiempo del ÚLTIMO dibujo ANTES del mensaje del WS:
+    // son la huella de qué ventana temporal se está mostrando ahora mismo.
+    // Se toma sólo la última tanda (no el acumulado) porque el mock de
+    // fillText nunca se limpia entre renders: comparar el historial completo
+    // haría que cualquier render de más -pinte lo mismo o no- rompiera la
+    // igualdad, aunque la vista real no se haya movido un píxel.
     const ctx = getMockContext();
-    const ticksAntes = ctx.fillText.mock.calls.map((c) => c[0]).join('|');
+    const ticksAntes = lastAxisTicks(ctx);
 
     emitWsColumn({
       // Muy lejos en el futuro a propósito: si la vista se re-encuadrara con
@@ -276,8 +296,7 @@ describe('SpectrogramLarge', () => {
     // Sigue habiendo zoom: la vista no se re-encuadró sola.
     await waitFor(() => expect(screen.getByTestId('spectrogram-reset-zoom')).toBeTruthy());
 
-    const ticksDespues = ctx.fillText.mock.calls.map((c) => c[0]).join('|');
-    expect(ticksDespues).toBe(ticksAntes);
+    expect(lastAxisTicks(ctx)).toEqual(ticksAntes);
   });
 
   it('recorta el dibujo al area de plot para no pisar los rotulos', async () => {
@@ -287,5 +306,87 @@ describe('SpectrogramLarge', () => {
 
     const ctx = getMockContext();
     expect(ctx.clip).toHaveBeenCalled();
+  });
+
+  it('sin zoom no aparece el boton de volver a vivo', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    await screen.findByTestId('spectrogram-large-canvas');
+
+    expect(screen.queryByTestId('spectrogram-back-to-live')).toBeNull();
+  });
+
+  it('con zoom pero sin columnas nuevas del WS no aparece el boton de volver a vivo', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+
+    expect(screen.queryByTestId('spectrogram-back-to-live')).toBeNull();
+  });
+
+  it('con zoom y una columna nueva del WS fuera de la vista aparece el boton de volver a vivo', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+
+    emitWsColumn({
+      endtime: new Date(Date.now() + 3_600_000).toISOString(),
+      freqs: [1, 2],
+      power_db: [50, 60],
+    });
+
+    expect(await screen.findByTestId('spectrogram-back-to-live')).toBeTruthy();
+  });
+
+  it('al hacer clic en volver a vivo se preserva el ancho del zoom', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+
+    emitWsColumn({
+      endtime: new Date(Date.now() + 3_600_000).toISOString(),
+      freqs: [1, 2],
+      power_db: [50, 60],
+    });
+    fireEvent.click(await screen.findByTestId('spectrogram-back-to-live'));
+
+    // Sigue habiendo zoom: "volver a vivo" no reseteo el ancho, sólo corrió
+    // la ventana. Si reseteara, "Ajustar todo" desaparecería.
+    await waitFor(() => expect(screen.getByTestId('spectrogram-reset-zoom')).toBeTruthy());
+  });
+
+  it('al hacer clic en volver a vivo la vista pasa a mostrar el borde derecho', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+
+    const ctx = getMockContext();
+    const ticksAntes = lastAxisTicks(ctx);
+
+    emitWsColumn({
+      endtime: new Date(Date.now() + 3_600_000).toISOString(),
+      freqs: [1, 2],
+      power_db: [50, 60],
+    });
+    fireEvent.click(await screen.findByTestId('spectrogram-back-to-live'));
+
+    // Corrió la ventana: los rótulos del eje de tiempo del último dibujo
+    // cambiaron respecto a antes del clic — la vista ahora cubre hasta el
+    // borde vivo.
+    await waitFor(() => {
+      expect(lastAxisTicks(ctx)).not.toEqual(ticksAntes);
+    });
   });
 });

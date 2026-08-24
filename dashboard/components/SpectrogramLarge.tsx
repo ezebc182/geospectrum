@@ -152,6 +152,10 @@ export function SpectrogramLarge({
   // Vista efectiva: la del usuario si tocó algo, si no el dominio completo.
   const view = viewport ?? limits;
   const zoomed = viewport !== null && !isFullView(viewport, limits);
+  // El borde derecho de la vista quedó atrás del borde derecho del dato: hay
+  // columnas nuevas del WS que el usuario no está viendo. Sin zoom no aplica
+  // — sin viewport la vista SIEMPRE sigue al dato, no hay nada de qué volver.
+  const behindLive = zoomed && view.endMs < limits.endMs;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -300,6 +304,12 @@ export function SpectrogramLarge({
 
   const resetZoom = () => setViewport(null);
 
+  // Re-engancha al vivo SIN resetear el zoom: corre la ventana temporal hasta
+  // el borde derecho del dato, preservando el ancho. `panViewport` ya clampea
+  // contra `limits`, así que un dxFraction grande siempre topa justo ahí —
+  // no hace falta calcular el desplazamiento exacto a mano.
+  const backToLive = () => setViewport((prev) => panViewport(prev ?? limits, 1, 0, limits));
+
   if (status === 'error') {
     return (
       <div
@@ -346,15 +356,29 @@ export function SpectrogramLarge({
           {t('mixedGrid')}
         </p>
       )}
-      {zoomed && (
-        <button
-          type="button"
-          data-testid="spectrogram-reset-zoom"
-          onClick={resetZoom}
-          className="mt-2 rounded bg-teal-600 px-2 py-1 text-xs font-semibold text-white hover:bg-teal-500"
-        >
-          {t('resetZoom')}
-        </button>
+      {(zoomed || behindLive) && (
+        <div className="mt-2 flex gap-2">
+          {zoomed && (
+            <button
+              type="button"
+              data-testid="spectrogram-reset-zoom"
+              onClick={resetZoom}
+              className="rounded bg-teal-600 px-2 py-1 text-xs font-semibold text-white hover:bg-teal-500"
+            >
+              {t('resetZoom')}
+            </button>
+          )}
+          {behindLive && (
+            <button
+              type="button"
+              data-testid="spectrogram-back-to-live"
+              onClick={backToLive}
+              className="rounded bg-teal-600 px-2 py-1 text-xs font-semibold text-white hover:bg-teal-500"
+            >
+              {t('backToLive')}
+            </button>
+          )}
+        </div>
       )}
       <p className="mt-2 text-xs text-muted-foreground">{t('zoomHint')}</p>
     </div>
