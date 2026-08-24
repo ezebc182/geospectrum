@@ -29,3 +29,19 @@ export function freqTickOffset(hz: number): number {
 
   return Math.min(100, Math.max(0, (1 - fraction) * 100));
 }
+
+/**
+ * Marcas del eje de tiempo, calculadas desde las horas realmente pedidas.
+ *
+ * Antes eran cuatro strings escritos a mano (`-24h/-18h/-12h/-6h`) sin
+ * relación con `duration_hours`: si se pedían 12 horas, el eje seguía
+ * anunciando un rango de 24. Se generan 4 marcas equiespaciadas dentro del
+ * rango real, de más antiguo a más reciente (el extremo "ahora" lo agrega el
+ * llamador aparte, con su propio rótulo traducido).
+ */
+export function timeAxisLabels(durationHours: number): string[] {
+  if (!(durationHours > 0)) return [];
+
+  const step = durationHours / 4;
+  return [4, 3, 2, 1].map((n) => `-${Math.round(step * n)}h`);
+}

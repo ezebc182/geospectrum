@@ -331,6 +331,8 @@
       "updated": "Actualizado: {time}",
       "imageAlt": "Espectrograma de {city}",
       "axisNow": "Ahora",
+      "fixedAxisWarning": "Eje fijo 0,1–20 Hz. El rango real depende del muestreo de la estación.",
+      "accurateAxis": "Ver con eje real",
       "viewLive": "Ver en vivo",
       "viewHistory": "Ver histórico 24h",
       "liveBadge": "Vivo",

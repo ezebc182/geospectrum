@@ -331,6 +331,8 @@
       "updated": "Updated: {time}",
       "imageAlt": "Spectrogram of {city}",
       "axisNow": "Now",
+      "fixedAxisWarning": "Fixed 0.1–20 Hz axis. The real range depends on the station's sampling rate.",
+      "accurateAxis": "View with real axis",
       "viewLive": "View live",
       "viewHistory": "View 24h history",
       "liveBadge": "Live",
