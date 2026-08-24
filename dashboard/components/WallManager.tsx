@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useToast } from '@/components/ui/toast';
 import useSWR from 'swr';
 import { seismicAPI } from '@/lib/api';
 import { ApiStatusError } from '@/lib/auth';
@@ -31,6 +32,7 @@ interface PendingDuplicate {
 }
 
 export function WallManager() {
+  const { notify } = useToast();
   const t = useTranslations('charts.spectrogramsPage.wall');
   const { data: walls, mutate } = useSWR('walls-list', () => listWalls(), {
     revalidateOnFocus: false,
@@ -146,6 +148,9 @@ export function WallManager() {
       }
       setSelectedId('new');
       await mutate();
+      // El borrado era mudo: la fila desaparecía de la lista y esa era
+      // toda la confirmación.
+      notify('success', 'charts.spectrogramsPage.wall.deleted');
     } catch {
       // Mismo criterio: se reusa la clave genérica de error de guardado (no
       // hay una dedicada a "no se pudo borrar") y NO se resetea la

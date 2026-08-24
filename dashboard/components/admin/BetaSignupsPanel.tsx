@@ -15,6 +15,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { CheckCircle2, Clock, Mail, UserCheck } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
+import { useToast } from '@/components/ui/toast';
 
 import { approveBetaSignup, getBetaSignups } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,7 @@ const DATE_OPTIONS = {
 } as const;
 
 export function BetaSignupsPanel() {
+  const { notify } = useToast();
   const t = useTranslations('admin.waitlist');
   const format = useFormatter();
   const { data, error, isLoading, mutate } = useSWR<BetaSignup[]>(
@@ -55,6 +57,7 @@ export function BetaSignupsPanel() {
       // Revalidar trae approved_at real del backend — sin estado optimista
       // que pueda mentir si el POST falló a mitad de camino.
       await mutate();
+      notify('success', 'admin.waitlist.approved', { email: signup.email });
     } catch {
       setApproveFailedEmail(signup.email);
     } finally {

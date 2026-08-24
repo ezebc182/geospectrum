@@ -25,6 +25,7 @@ import * as React from 'react';
 import useSWR from 'swr';
 import { Ban, CheckCircle2, KeyRound, RefreshCw, Users } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
+import { useToast } from '@/components/ui/toast';
 
 import {
   ApiStatusError,
@@ -134,6 +135,7 @@ const DATE_OPTIONS = {
 } as const;
 
 export function UsersPanel() {
+  const { notify } = useToast();
   const t = useTranslations('admin.users');
   const tRoles = useTranslations('admin.roles');
   const { user } = useAuth();
@@ -187,6 +189,9 @@ export function UsersPanel() {
     try {
       await changeUserRole(target.userId, target.to);
       await mutate();
+      // Antes esta acción era muda: sólo revalidaba SWR y el admin tenía
+      // que adivinar mirando si la fila había cambiado.
+      notify('success', 'admin.users.roleChanged', { email: target.email });
     } catch (err: unknown) {
       setOutcome({
         kind: 'failed',
@@ -204,6 +209,7 @@ export function UsersPanel() {
     try {
       await deactivateUser(target.id);
       await mutate();
+      notify('success', 'admin.users.deactivated', { email: target.email });
     } catch (err: unknown) {
       setOutcome({
         kind: 'failed',
@@ -221,6 +227,7 @@ export function UsersPanel() {
     try {
       await reactivateUser(target.id);
       await mutate();
+      notify('success', 'admin.users.reactivated', { email: target.email });
     } catch (err: unknown) {
       setOutcome({
         kind: 'failed',

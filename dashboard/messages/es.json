@@ -15,7 +15,8 @@
       "offline": "Sin conexión",
       "staleLabel": "Sin datos recientes",
       "staleTooltip": "El último dato es de hace más de 5 minutos: esto no es el ahora"
-    }
+    },
+    "languageSyncFailed": "El idioma cambió en este navegador, pero no se pudo guardar en tu cuenta."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -406,7 +407,8 @@
         "saveError": "No se pudo guardar el muro",
         "needSession": "Iniciá sesión para guardar muros",
         "preview": "Vista previa",
-        "wallsTitle": "Mis muros"
+        "wallsTitle": "Mis muros",
+        "deleted": "Muro eliminado."
       }
     }
   },
@@ -500,7 +502,7 @@
       "approveError": "No se pudo aprobar a {email}. Probá de nuevo en unos segundos.",
       "loadError": "No se pudo cargar la lista. Verificá tu sesión e intentá de nuevo.",
       "empty": "Todavía no hay interesados. Cuando alguien se anote en la landing, aparece acá (y te llega un aviso por email).",
-      "approved": "Aprobado",
+      "approved": "{email} fue aprobado.",
       "pending": "Pendiente",
       "approving": "Aprobando…",
       "approve": "Aprobar"
@@ -556,7 +558,8 @@
       "revokeDialogTitle": "¿Revocar la invitación?",
       "revokeDialogDescription": "El link enviado a <mono>{email}</mono> deja de funcionar de inmediato. Esta acción no se puede deshacer — si te arrepentís vas a tener que crear una invitación nueva.",
       "revokeCancel": "Cancelar",
-      "revokeConfirm": "Revocar"
+      "revokeConfirm": "Revocar",
+      "revoked": "Invitación de {email} revocada."
     },
     "users": {
       "title": "Usuarios",
@@ -605,7 +608,10 @@
         "deactivateGeneric": "No se pudo desactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
         "reactivateGeneric": "No se pudo reactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
         "roleGeneric": "No se pudo cambiar el rol de {email}. Intentá de nuevo en unos segundos."
-      }
+      },
+      "roleChanged": "Rol actualizado para {email}.",
+      "deactivated": "{email} quedó desactivado.",
+      "reactivated": "{email} volvió a estar activo."
     }
   },
   "onboarding": {

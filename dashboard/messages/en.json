@@ -15,7 +15,8 @@
       "offline": "Offline",
       "staleLabel": "No recent data",
       "staleTooltip": "The latest data is over 5 minutes old — this is not live"
-    }
+    },
+    "languageSyncFailed": "Language changed in this browser, but it could not be saved to your account."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -406,7 +407,8 @@
         "saveError": "The wall could not be saved",
         "needSession": "Sign in to save walls",
         "preview": "Preview",
-        "wallsTitle": "My walls"
+        "wallsTitle": "My walls",
+        "deleted": "Wall deleted."
       }
     }
   },
@@ -500,7 +502,7 @@
       "approveError": "Could not approve {email}. Try again in a few seconds.",
       "loadError": "Could not load the list. Check your session and try again.",
       "empty": "No one has signed up yet. When someone joins from the landing page, they show up here (and you get an email notice).",
-      "approved": "Approved",
+      "approved": "{email} has been approved.",
       "pending": "Pending",
       "approving": "Approving…",
       "approve": "Approve"
@@ -556,7 +558,8 @@
       "revokeDialogTitle": "Revoke the invitation?",
       "revokeDialogDescription": "The link sent to <mono>{email}</mono> stops working immediately. This action cannot be undone — if you change your mind you will have to create a new invitation.",
       "revokeCancel": "Cancel",
-      "revokeConfirm": "Revoke"
+      "revokeConfirm": "Revoke",
+      "revoked": "Invitation for {email} revoked."
     },
     "users": {
       "title": "Users",
@@ -605,7 +608,10 @@
         "deactivateGeneric": "Could not deactivate {email}. Try again in a few seconds.",
         "reactivateGeneric": "Could not reactivate {email}. Try again in a few seconds.",
         "roleGeneric": "Could not change the role of {email}. Try again in a few seconds."
-      }
+      },
+      "roleChanged": "Role updated for {email}.",
+      "deactivated": "{email} has been deactivated.",
+      "reactivated": "{email} is active again."
     }
   },
   "onboarding": {

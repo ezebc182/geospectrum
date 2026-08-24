@@ -24,6 +24,9 @@ import * as React from 'react';
 import { act } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+// El hook useToast exige el provider: montar un componente que notifica
+// sin él tira a propósito, para que el fallo se vea en el test y no en prod.
+import { ToastProvider } from '@/components/ui/toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import en from '@/messages/en.json';
@@ -83,9 +86,11 @@ async function renderPage(token = 'tok_ABC123', locale: AppLocale = 'es') {
   await act(async () => {
     render(
       <NextIntlClientProvider locale={FORMAT_LOCALES[locale]} messages={MESSAGES[locale]}>
-        <React.Suspense fallback={null}>
+        <ToastProvider>
+          <React.Suspense fallback={null}>
           <InvitePage params={Promise.resolve({ token })} />
         </React.Suspense>
+      </ToastProvider>
       </NextIntlClientProvider>,
     );
   });

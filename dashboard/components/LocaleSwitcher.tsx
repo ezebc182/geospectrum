@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { useToast } from '@/components/ui/toast';
 import { Check, Languages } from 'lucide-react';
 
 import {
@@ -26,6 +27,7 @@ import { APP_LOCALES, setLocaleCookie, toAppLocale, type AppLocale } from '@/lib
  *    ninguna API de cuenta.
  */
 export function LocaleSwitcher() {
+  const { notify } = useToast();
   const router = useRouter();
   const { user } = useAuth();
   const t = useTranslations('common');
@@ -44,6 +46,11 @@ export function LocaleSwitcher() {
       // dispositivos; en este navegador la cookie ya ganó.
       updateProfile({ locale }).catch((error) => {
         console.error('No se pudo persistir el idioma en la cuenta', error);
+        // Warning y no error: en ESTE navegador el idioma sí cambió (la
+        // cookie ya ganó). Lo que se perdió es la preferencia para los otros
+        // dispositivos, y el usuario tiene que poder enterarse — antes esto
+        // moría en la consola y la app fingía que había guardado.
+        notify('warning', 'common.languageSyncFailed');
       });
     }
   }
