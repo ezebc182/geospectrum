@@ -7,11 +7,10 @@ import io
 import base64
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 import logging
 
-import numpy as np
 from obspy.clients.fdsn import Client
 from obspy import UTCDateTime
 import matplotlib
@@ -689,90 +688,6 @@ class SpectrogramService:
             logger.error(f"Error generating spectrogram: {e}")
             return None
 
-    def generate_synthetic_spectrogram(
-        self,
-        latitude: float,
-        longitude: float,
-        city_id: Optional[str] = None,
-        width: int = 800,
-        height: int = 400,
-    ) -> Optional[str]:
-        """
-        Generar espectrograma sintético realista basado en ubicación
-        Usado como fallback cuando no hay datos FDSN disponibles
-        OPTIMIZADO: Genera el espectrograma directamente sin procesar 24h de señal
-        """
-        try:
-            # Generar espectrograma sintético directamente (mucho más rápido)
-            # 144 bloques de 10 minutos = 24 horas
-            time_blocks = 144  # 10 minutos cada uno
-            freq_bins = 100  # 100 bins de frecuencia (0.1 a 20 Hz)
-
-            # Crear matriz de espectrograma sintético
-            # Simular ruido de fondo con variación día/noche, centrado en la
-            # zona de ruido típica de la escala SWARM (20-120 dB)
-            Sxx = 60 + np.random.randn(freq_bins, time_blocks) * 5
-
-            # Añadir ruido océano (frecuencias bajas, constante)
-            Sxx[0:10, :] += 20 + np.random.randn(10, time_blocks) * 3
-
-            # Añadir ruido cultural (frecuencias medias, más de día que de noche)
-            day_cycle = np.sin(2 * np.pi * np.arange(time_blocks) / time_blocks) * 0.5 + 0.5
-            for i in range(20, 50):
-                Sxx[i, :] += 15 * day_cycle + np.random.randn(time_blocks) * 2
-
-            # Añadir eventos sísmicos aleatorios (picos en todas las frecuencias)
-            num_events = np.random.randint(2, 5)
-            for _ in range(num_events):
-                event_time = np.random.randint(0, time_blocks)
-                event_width = np.random.randint(1, 5)
-                Sxx[
-                    :, max(0, event_time - event_width) : min(time_blocks, event_time + event_width)
-                ] += (np.random.randn(freq_bins, 1) * 10)
-
-            # Crear ejes de frecuencia y tiempo
-            f = np.linspace(0.1, 20, freq_bins)
-            t = np.linspace(0, 24, time_blocks)
-
-            # Crear figura
-            fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
-
-            # Plot espectrograma
-            im = ax.pcolormesh(
-                t,
-                f,
-                Sxx,
-                cmap="jet",  # paleta estilo SWARM (Jet2); ver dashboard/lib/jet2-palette.ts
-                shading="gouraud",
-                vmin=MIN_POWER_DB,
-                vmax=MAX_POWER_DB,
-            )
-
-            # Configurar ejes
-            ax.set_ylabel("Frecuencia [Hz]", fontsize=8)
-            ax.set_xlabel("Tiempo [horas]", fontsize=8)
-            ax.set_ylim([0.1, 20])
-            ax.set_xlim([0, 24])
-            ax.tick_params(labelsize=7)
-
-            # Ajustar para que se vea limpio
-            plt.tight_layout(pad=0.3)
-
-            # Convertir a imagen
-            buf = io.BytesIO()
-            plt.savefig(buf, format="png", bbox_inches="tight", dpi=100)
-            buf.seek(0)
-            plt.close(fig)
-
-            # Convertir a base64
-            img_base64 = base64.b64encode(buf.read()).decode("utf-8")
-
-            return img_base64
-
-        except Exception as e:
-            logger.error(f"Error generating synthetic spectrogram: {e}")
-            return None
-
     async def generate_spectrogram_for_location(
         self,
         latitude: float,
@@ -785,8 +700,8 @@ class SpectrogramService:
         Generar espectrograma para una ubicación geográfica.
 
         Intenta datos reales vía FDSN (estaciones conocidas para city_id,
-        si no hay match usa búsqueda por radio). Si falla o no hay datos,
-        cae a espectrograma sintético.
+        si no hay match usa búsqueda por radio). Sin estación real no se
+        inventa señal: se devuelve el error directo.
 
         Args:
             latitude: Latitud
@@ -804,24 +719,11 @@ class SpectrogramService:
         if real_result:
             return real_result
 
-        logger.info(f"Falling back to synthetic spectrogram for {city_id or 'location'}")
-        synthetic_image = self.generate_synthetic_spectrogram(latitude, longitude, city_id)
-
-        if synthetic_image:
-            return {
-                "success": True,
-                "image": synthetic_image,
-                "metadata": {
-                    "network": "SYNTHETIC",
-                    "station": city_id or "unknown",
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "duration_hours": duration_hours,
-                    "generated_at": datetime.utcnow().isoformat(),
-                    "data_type": "synthetic",
-                },
-            }
-
+        # Antes acá había un fallback que generaba ruido con matplotlib
+        # cuando no había estación real. El frontend lo descartaba SIEMPRE
+        # (dashboard/components/SpectrogramViewReal.tsx:74) y mostraba este
+        # mismo error. Era CPU gastada en una imagen que nadie llegó a ver.
+        logger.warning(f"No real spectrogram available for {city_id or 'location'}")
         return {
             "success": False,
             "error": "Failed to generate spectrogram",
@@ -882,7 +784,11 @@ class SpectrogramService:
                     "latitude": latitude,
                     "longitude": longitude,
                     "duration_hours": duration_hours,
-                    "generated_at": datetime.utcnow().isoformat(),
+                    # tz-aware a propósito: `utcnow()` devuelve un naive y su
+                    # ISO sale sin offset, así que `new Date()` en el navegador
+                    # lo lee como hora LOCAL y lo corre por el offset del
+                    # usuario (rotulaba 5:10 "UTC" siendo las 02:10 en -03).
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "data_type": "real",
                 },
             }

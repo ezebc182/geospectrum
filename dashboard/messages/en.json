@@ -331,10 +331,13 @@
       "updated": "Updated: {time}",
       "imageAlt": "Spectrogram of {city}",
       "axisNow": "Now",
+      "fixedAxisWarning": "Fixed 0.1–20 Hz axis. The real range depends on the station's sampling rate.",
+      "accurateAxis": "View with real axis",
       "viewLive": "View live",
       "viewHistory": "View 24h history",
       "liveBadge": "Live",
       "dragToReorder": "Drag to reorder",
+      "expand": "View enlarged spectrogram",
       "removeCity": "Remove city",
       "riskTooltip": "Seismic risk of the area (fixed classification, not current status)",
       "riskLabel": {
@@ -350,10 +353,15 @@
         "eventsHour": "ev/h",
         "latency": "lat",
         "tooltip": "RSAM (10 min moving average) · dominant frequency · Frequency Index (− fluids / + fracture) · peak dB (fixed 20-120 scale) · events per hour · latency"
-      }
+      },
+      "modalTitle": "{city} spectrogram",
+      "viewStationDetail": "View station detail",
+      "closeModal": "Close",
+      "noLiveStream": "This station does not stream in real time",
+      "notAllLive": "Not all stations stream in real time. Those that don't show the last 24 h."
     },
     "spectrogramsPage": {
-      "title": "Seismic Spectrograms",
+      "title": "Spectrograms",
       "subtitle": "Monitoring {count} locations · {live} with live streaming",
       "columns": "{count} columns",
       "addCity": "Add City",
@@ -868,6 +876,9 @@
     "spectrogramError": "Could not load the spectrogram for this station",
     "spectrogramEmpty": "No stored columns for this channel — the spectrogram ingestor follows a limited set of stations",
     "mixedGrid": "Columns in this window use different frequency grids; the axis covers the range of all of them",
+    "resetZoom": "Fit all",
+    "zoomHint": "Wheel: time · Shift+wheel: frequency · Drag: pan · Double-click or Esc: fit all",
+    "backToLive": "Back to live",
     "tabs": {
       "helicorder": "Helicorder",
       "spectrogram": "Spectrogram",
@@ -875,7 +886,10 @@
       "rsam": "RSAM"
     },
     "filter": "1-10 Hz filter",
-    "filterHint": "Butterworth 1-10 Hz bandpass: removes slow drift and high-frequency noise so the seismic phase reads clearly. Refetches the waveform."
+    "filterHint": "Butterworth 1-10 Hz bandpass: removes slow drift and high-frequency noise so the seismic phase reads clearly. Refetches the waveform.",
+    "insideArea": "Inside the active area",
+    "outsideArea": "Outside the active area",
+    "seeAreaStations": "See stations in this area"
   },
   "stations": {
     "title": "Stations",

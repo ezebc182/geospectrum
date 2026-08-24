@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Radio, X } from 'lucide-react';
+import { GripVertical, Maximize2, Radio, X } from 'lucide-react';
 import type { SeismicCity } from '@/lib/seismic-cities';
 import { getRiskColor } from '@/lib/seismic-cities';
 import { SpectrogramViewReal } from '@/components/SpectrogramViewReal';
 import { LiveSpectrogramCanvas } from '@/components/LiveSpectrogramCanvas';
+import { SpectrogramModal } from '@/components/SpectrogramModal';
 import { latencySeconds, type StationMetrics } from '@/lib/station-metrics';
 
 interface SortableSpectrogramCardProps {
@@ -35,13 +36,42 @@ export function SortableSpectrogramCard({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: city.id,
   });
-  const [mode, setMode] = useState<'live' | 'static'>(liveChannel ? 'live' : 'static');
+  // `null` = el usuario todavía no eligió; manda el default (vivo si hay
+  // canal). El modo NO se puede resolver sólo en el useState inicial: la
+  // página pide los canales en un useEffect asíncrono, así que el primer
+  // render SIEMPRE ve liveChannel=undefined y la tarjeta quedaba clavada en
+  // "24h" aunque el canal llegara un instante después — pidiendo un PNG a
+  // FDSN en ciudades que ya tenían columnas frescas en TimescaleDB.
+  const [chosenMode, setChosenMode] = useState<'live' | 'static' | null>(null);
+  const mode = chosenMode ?? (liveChannel ? 'live' : 'static');
+  const [modalOpen, setModalOpen] = useState(false);
 
   // La fila solo tiene sentido sobre señal viva: en modo 24h las métricas
   // serían de un instante que no es el que se está mirando.
   const showMetrics = mode === 'live' && Boolean(liveChannel) && metrics !== undefined;
   // Se recalcula en cada render; el polling de 15 s dispara los que importan.
   const latency = metrics ? latencySeconds(metrics.endtime, Date.now()) : null;
+
+  // Ancho real de la tarjeta. El fallback de 360 es el valor que estaba
+  // hardcodeado: cubre el primer render (antes de que mida) y jsdom, donde
+  // ResizeObserver no reporta layout.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [cardWidth, setCardWidth] = useState(360);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      // Redibujar el canvas descarta el historial pintado, así que no se
+      // reacciona a cada píxel de un resize en curso: sólo a cambios reales
+      // de layout (cambiar de 3 a 4 columnas, girar la pantalla).
+      if (w > 0) setCardWidth((prev) => (Math.abs(prev - w) > 8 ? w : prev));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -51,23 +81,99 @@ export function SortableSpectrogramCard({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="relative group">
+    <div
+      // Dos refs sobre el mismo nodo: dnd-kit necesita el suyo para arrastrar
+      // y el ResizeObserver necesita el elemento para medirlo.
+      ref={(node) => {
+        setNodeRef(node);
+        wrapperRef.current = node;
+      }}
+      style={style}
+      className="relative group"
+    >
       {liveChannel && mode === 'live' ? (
-        <LiveSpectrogramCanvas channel={liveChannel} label={city.name} height={120} width={360} />
+        /* `width` medido y no 360 fijo: la grilla es fluida (2/3/4/6 columnas
+           sobre el ancho de la ventana) y un canvas de ancho fijo dejaba ver
+           el fondo de la tarjeta a la derecha. En un canvas el width ADEMÁS
+           es cuántas columnas de espectrograma entran, así que no se puede
+           estirar con CSS: hay que crearlo del tamaño real. */
+        <LiveSpectrogramCanvas
+          channel={liveChannel}
+          label={city.name}
+          height={120}
+          width={cardWidth}
+        />
       ) : (
         <SpectrogramViewReal city={city} height={120} showLabel={true} useRealData={true} />
       )}
 
-      {/* Toggle Vivo/24h (solo si la ciudad tiene streaming disponible) */}
+      {/* Selector Vivo/24h: SIEMPRE visible, incluso sin canal en vivo.
+          Antes estaba guardado por `liveChannel`, así que en las ciudades sin
+          transmisión la tarjeta caía al PNG de 24h en silencio: ni se sabía
+          que el modo vivo existía ni por qué esa tarjeta era distinta. Ahora
+          "Vivo" aparece deshabilitado y el tooltip dice el motivo. */}
+      <div
+        role="group"
+        aria-label={t('viewLive')}
+        className="absolute top-2 left-1/2 z-30 flex -translate-x-1/2 overflow-hidden rounded-full bg-black/75 text-[10px] font-semibold ring-1 ring-white/20"
+      >
+        <button
+          type="button"
+          data-testid="card-mode-live"
+          onClick={() => setChosenMode('live')}
+          disabled={!liveChannel}
+          aria-pressed={mode === 'live'}
+          title={liveChannel ? t('viewLive') : t('noLiveStream')}
+          className={`flex items-center gap-1 px-2 py-0.5 transition-colors ${
+            !liveChannel
+              ? 'cursor-not-allowed text-white/30'
+              : mode === 'live'
+                ? 'bg-teal-600 text-white'
+                : 'text-white/70 hover:text-white'
+          }`}
+        >
+          <Radio className={`h-3 w-3 ${mode === 'live' ? 'animate-pulse' : ''}`} />
+          {t('liveBadge')}
+        </button>
+        <button
+          type="button"
+          data-testid="card-mode-static"
+          onClick={() => setChosenMode('static')}
+          aria-pressed={mode === 'static'}
+          title={t('viewHistory')}
+          className={`px-2 py-0.5 transition-colors ${
+            mode === 'static' ? 'bg-teal-600 text-white' : 'text-white/70 hover:text-white'
+          }`}
+        >
+          24h
+        </button>
+      </div>
+
+      {/* Ampliar: abre el modal. Antes era un <Link> al detalle de estación,
+          o sea que NAVEGABA — se perdía el muro entero y había que volver con
+          el botón atrás. El detalle sigue estando, pero como opción dentro del
+          modal. Sólo con canal vivo: sin columnas no hay espectrograma grande
+          que mostrar (el PNG de 24h no es el mismo pipeline). */}
       {liveChannel && (
         <button
-          onClick={() => setMode((m) => (m === 'live' ? 'static' : 'live'))}
-          className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-0.5 bg-black/70 text-white rounded-full text-[10px] font-semibold z-30 opacity-0 group-hover:opacity-100 transition-opacity"
-          title={mode === 'live' ? t('viewHistory') : t('viewLive')}
+          type="button"
+          data-testid="card-expand"
+          onClick={() => setModalOpen(true)}
+          title={t('expand')}
+          aria-label={t('expand')}
+          className="absolute bottom-2 right-2 z-30 rounded bg-black/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/90 focus-visible:opacity-100"
         >
-          <Radio className={`h-3 w-3 ${mode === 'live' ? 'text-severity-low' : 'text-muted-foreground'}`} />
-          {mode === 'live' ? t('liveBadge') : '24h'}
+          <Maximize2 className="h-3 w-3" />
         </button>
+      )}
+
+      {liveChannel && (
+        <SpectrogramModal
+          channel={liveChannel}
+          cityName={city.name}
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+        />
       )}
 
       {/* Handle de arrastre (visible al hover) */}

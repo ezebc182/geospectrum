@@ -10,11 +10,14 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
+import { seismicAPI } from '@/lib/api';
 import {
   HELICORDER_DEFAULTS,
   TIME_CHUNK_OPTIONS,
@@ -25,6 +28,8 @@ import {
   loadHelicorderSettings,
   saveHelicorderSettings,
 } from '@/lib/helicorder-settings';
+import { getCityById } from '@/lib/seismic-cities';
+import { useActiveArea } from '@/lib/use-active-area';
 
 const TABS = [
   { id: 'helicorder', enabled: true },
@@ -57,6 +62,41 @@ export default function StationPage() {
     setFilter(s.filter);
   }, [channel]);
 
+  // El selector de área vive en el layout, así que ya se ve en esta pantalla.
+  // Lo que faltaba era consumirlo: cambiar de área era un no-op visual.
+  const { area: activeArea } = useActiveArea();
+
+  // Las coordenadas NO están en esta página ni en el catálogo de estaciones
+  // (verificado: station_catalog devuelve channel/city_id/network/station/
+  // is_live/is_primary, sin lat/lon). Se resuelven por ciudad:
+  //   channel → station-catalog → city_id → seismic-cities → {lat, lon}
+  // La precisión es a nivel ciudad, que alcanza para un indicador de contexto.
+  const { data: catalog } = useSWR('/spectrograms/station-catalog', () =>
+    seismicAPI.getStationCatalog(),
+  );
+
+  const stationMeta = useMemo(() => {
+    const entry = catalog?.find((c) => c.channel === channel);
+    if (!entry) return null;
+    const city = getCityById(entry.city_id);
+    return city ? { latitude: city.lat, longitude: city.lon } : null;
+  }, [catalog, channel]);
+
+  // El área por defecto es el mundo entero: decir "dentro del área" ahí no
+  // aporta nada, sólo ruido.
+  //
+  // OJO con la forma del tipo (verificado en `lib/types.ts:63-68` y `:105-108`):
+  //   - `is_default` está en la RAÍZ del ActiveAreaResponse, NO dentro de `area`
+  //   - los campos del bbox van SIN guion bajo: `minlat`, no `min_lat`
+  const bbox = activeArea?.is_default ? null : (activeArea?.area?.bbox ?? null);
+  const inside =
+    bbox && stationMeta
+      ? stationMeta.latitude >= bbox.minlat &&
+        stationMeta.latitude <= bbox.maxlat &&
+        stationMeta.longitude >= bbox.minlon &&
+        stationMeta.longitude <= bbox.maxlon
+      : null;
+
   const persist = (
     next: Partial<{
       timeChunk: number;
@@ -81,8 +121,10 @@ export default function StationPage() {
   return (
     <div className="p-6">
       <div className="mb-4 flex items-center gap-3">
-        <h1 className="text-xl font-bold text-white">{t('title')}</h1>
-        <span className="font-mono text-sm text-gray-400">{channel}</span>
+        {/* Tokens del tema y no grises fijos: con `text-white`/`text-gray-*`
+            esta pantalla era ilegible en tema claro (blanco sobre blanco). */}
+        <h1 className="text-xl font-bold text-foreground">{t('title')}</h1>
+        <span className="font-mono text-sm text-muted-foreground">{channel}</span>
       </div>
 
       <div role="tablist" className="mb-4 flex gap-2">
@@ -99,10 +141,10 @@ export default function StationPage() {
             onClick={() => tab.enabled && setActiveTab(tab.id)}
             className={`rounded px-3 py-1 text-sm ${
               !tab.enabled
-                ? 'bg-gray-800 text-gray-500'
+                ? 'bg-muted text-muted-foreground opacity-60'
                 : tab.id === activeTab
                   ? 'bg-teal-700 text-white'
-                  : 'bg-gray-700 text-gray-200'
+                  : 'bg-muted text-foreground hover:bg-muted/80'
             }`}
           >
             {t(`tabs.${tab.id}`)}
@@ -111,11 +153,26 @@ export default function StationPage() {
         ))}
       </div>
 
+      {inside !== null && (
+        <div
+          data-testid="station-area-context"
+          className="mb-3 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${inside ? 'bg-teal-400' : 'bg-amber-400'}`}
+          />
+          {inside ? t('insideArea') : t('outsideArea')}
+          <Link href="/stations" className="text-blue-400 hover:underline">
+            {t('seeAreaStations')}
+          </Link>
+        </div>
+      )}
+
       {activeTab === 'spectrogram' && <SpectrogramLarge channel={channel} />}
 
       {activeTab === 'helicorder' && (
         <>
-          <div className="mb-3 flex items-center gap-2 text-sm text-gray-300">
+          <div className="mb-3 flex items-center gap-2 text-sm text-foreground">
             <span>{t('timeChunk')}</span>
             {TIME_CHUNK_OPTIONS.map((m) => (
               <button
@@ -124,7 +181,9 @@ export default function StationPage() {
                 onClick={() => persist({ timeChunk: m })}
                 aria-pressed={m === timeChunk}
                 className={`rounded px-2 py-0.5 ${
-                  m === timeChunk ? 'bg-teal-700 text-white' : 'bg-gray-800'
+                  m === timeChunk
+                    ? 'bg-teal-700 text-white'
+                    : 'bg-muted text-foreground hover:bg-muted/80'
                 }`}
               >
                 {m}m
@@ -138,10 +197,10 @@ export default function StationPage() {
             porque un sismo real ES la cola superior de la distribución del
             día. Ninguna heurística reemplaza al operador moviendo la escala.
           */}
-          <fieldset className="mb-4 rounded border border-gray-700 p-3">
-            <legend className="px-1 text-sm text-gray-300">{t('settings')}</legend>
+          <fieldset className="mb-4 rounded border border-border p-3">
+            <legend className="px-1 text-sm text-foreground">{t('settings')}</legend>
             <div className="flex flex-wrap items-center gap-6">
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <span title={t('clipMultHint')}>{t('clipMult')}</span>
                 <input
                   type="range"
@@ -152,12 +211,12 @@ export default function StationPage() {
                   value={clipMult}
                   onChange={(e) => persist({ clipMult: clampClipMult(Number(e.target.value)) })}
                 />
-                <span className="w-12 font-mono text-xs text-gray-400">
+                <span className="w-12 font-mono text-xs text-muted-foreground">
                   {clipMult.toFixed(1)}×
                 </span>
               </label>
 
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <span title={t('barMultHint')}>{t('barMult')}</span>
                 <input
                   type="range"
@@ -168,14 +227,14 @@ export default function StationPage() {
                   value={barMult}
                   onChange={(e) => persist({ barMult: clampBarMult(Number(e.target.value)) })}
                 />
-                <span className="w-12 font-mono text-xs text-gray-400">
+                <span className="w-12 font-mono text-xs text-muted-foreground">
                   {barMult.toFixed(2)}×
                 </span>
               </label>
 
               {/* A diferencia de los sliders, esto vuelve a pedir la onda al
                   backend: el filtro cambia el dato, no cómo se dibuja. */}
-              <label className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <span title={t('filterHint')}>{t('filter')}</span>
                 <input
                   type="checkbox"
@@ -195,7 +254,7 @@ export default function StationPage() {
                     barMult: HELICORDER_DEFAULTS.barMult,
                   })
                 }
-                className="rounded bg-gray-800 px-2 py-0.5 text-sm text-gray-300 hover:bg-gray-700"
+                className="rounded bg-muted px-2 py-0.5 text-sm text-foreground hover:bg-muted/80"
               >
                 {t('reset')}
               </button>

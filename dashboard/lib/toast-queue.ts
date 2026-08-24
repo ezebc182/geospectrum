@@ -32,7 +32,7 @@ export interface Toast {
    * CLAVE del diccionario, NO el texto ya traducido.
    *
    * Invariante del proyecto (comentada en login/page.tsx, BetaSignupsPanel,
-   * ExportDataSection, spectrograms-live y GlobeEventPanel): guardar la clave
+   * ExportDataSection, spectrograms y GlobeEventPanel): guardar la clave
    * permite que un cambio de idioma en caliente re-traduzca lo que está en
    * pantalla. Guardar el string ya resuelto lo congelaría en el idioma en que
    * ocurrió la acción.

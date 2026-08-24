@@ -21,7 +21,6 @@ import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight, Minimize2, 
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 
 import { seismicAPI } from '@/lib/api';
-import { getActiveArea } from '@/lib/areas';
 import { areaViewBounds, globeFocusFromBounds, type GlobeFocus } from '@/lib/area-view-bounds';
 import {
   computeBroadcastStats,
@@ -44,6 +43,7 @@ import { HIGH_RISK_SEISMIC_CITIES } from '@/lib/seismic-cities';
 import { getMagnitudeSeverity, formatMagnitude, formatDepth } from '@/lib/utils';
 import { listWalls } from '@/lib/walls';
 import { useStationMetrics } from '@/lib/use-station-metrics';
+import { useActiveArea } from '@/lib/use-active-area';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
 import { asyncStateOf } from '@/lib/async-state';
@@ -210,11 +210,14 @@ export function GlobeBroadcastOverlay({
   // Área activa, para que cambiarla encuadre la cámara TAMBIÉN en transmisión
   // (antes el overlay se montaba sin focusArea y la cámara no se movía).
   //
-  // Se lee acá y no llega por prop a propósito: la key '/areas/active' es la
-  // misma que usa la página, así que SWR deduplica y esto no dispara un fetch
-  // extra — y el overlay queda autónomo como el resto de sus datos, sin
-  // depender de que quien lo monte se acuerde de cablearlo.
-  const { data: activeArea } = useSWR('/areas/active', getActiveArea);
+  // Se lee acá y no llega por prop a propósito: useActiveArea usa la misma
+  // key '/areas/active' que el resto de la app, así que SWR deduplica y esto
+  // no dispara un fetch extra — el overlay queda autónomo como el resto de
+  // sus datos, sin depender de que quien lo monte se acuerde de cablearlo.
+  // Además (y esto era lo que faltaba) el hook YA viene suscripto al evento
+  // de cambio de área: en /globe nadie más monta esta key, así que sin esa
+  // suscripción la cámara no se reencuadraba en caliente al cambiar de área.
+  const { area: activeArea } = useActiveArea();
 
   const focusArea: GlobeFocus | null = useMemo(() => {
     const area = activeArea?.area;

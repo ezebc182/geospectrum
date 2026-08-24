@@ -65,6 +65,7 @@ from src.services.usgs_service import fetch_usgs_events
 from src.services.inpres_service import fetch_inpres_events
 from src.services.emsc_service import fetch_emsc_events
 from src.services.emsc_detail_service import EMSCDetailService
+from src.services.spectrogram_downsample import downsample_columns, extract_shared_freqs
 from src.services.merge_service import merge_all_sources
 from src.services.report_service import build_report, count_by_source, CANONICAL_SOURCES
 from src.services.spectrogram_service import (
@@ -2412,18 +2413,118 @@ async def get_station_catalog() -> list[dict]:
 async def get_spectrogram_history(
     channel: str,
     minutes: int = Query(5, description="Minutos de historial a recuperar", ge=1, le=1440),
+    width: Optional[int] = Query(
+        None,
+        ge=1,
+        le=4000,
+        description="Ancho del canvas en píxeles: reduce las columnas a ese máximo",
+    ),
 ) -> dict:
     """
     Historial persistido de columnas de espectrograma para un canal SEED
     (ej. "IU.MAJO.00.BHZ"), para pintar el canvas antes de conectar el
     WebSocket en vivo. Requiere TimescaleDB configurado y el ingestor
     corriendo con column_writer activo.
+
+    `width` reduce las columnas EN EL BACKEND al ancho real del canvas. Sin
+    él, 24 h de un canal son ~21.600 columnas (1,3 MB de JSON contra 152 KB
+    del PNG que esto viene a reemplazar), y el canvas descarta todo lo que
+    exceda su ancho al pintar. Se conserva el PICO de cada bloque, no el
+    promedio: un sismo ES el pico, y promediar sobre una escala logarítmica
+    aplanaría justo el evento que se está buscando.
+
+    Es opcional a propósito: el canvas en vivo ya pide ventanas cortas y
+    agregar por default cambiaría lo que hoy funciona bien.
+
+    `coverage` informa el rango que la base tiene DE VERDAD. La ventana
+    pedida y la disponible no siempre coinciden (un ingestor caído deja
+    agujeros), y dibujar 24 h con 21 h de negro sin avisar es la misma
+    mentira que un espectrograma viejo con cara de fresco.
     """
     if column_writer is None:
-        return {"channel": channel, "columns": [], "error": "TimescaleDB no configurado"}
+        return {
+            "channel": channel,
+            "columns": [],
+            "coverage": None,
+            "error": "TimescaleDB no configurado",
+        }
 
     columns = await column_writer.fetch_history(channel, minutes)
-    return {"channel": channel, "columns": columns}
+    coverage = (
+        {"from": columns[0]["endtime"], "to": columns[-1]["endtime"]} if columns else None
+    )
+
+    if width is None:
+        return {"channel": channel, "columns": columns, "coverage": coverage}
+
+    columns = downsample_columns(columns, width)
+
+    # El eje de frecuencia es el mismo en todas las columnas de un canal:
+    # mandarlo una sola vez ahorra ~400 KB de la misma lista repetida. Si no
+    # coincide (el muestreo puede cambiar), `shared` es None y cada columna
+    # conserva el suyo.
+    shared = extract_shared_freqs(columns)
+    if shared is not None:
+        columns = [
+            {"endtime": c["endtime"], "power_db": c["power_db"]} for c in columns
+        ]
+
+    return {
+        "channel": channel,
+        "columns": columns,
+        "coverage": coverage,
+        "freqs": shared,
+    }
+
+
+@app.get("/stations/search", tags=["stations"])
+async def search_stations(
+    q: str = Query(..., min_length=2, max_length=5, description="Código de estación, ej. USC"),
+    limit: int = Query(25, ge=1, le=50),
+) -> dict:
+    """Busca estaciones en FDSN por CÓDIGO de estación (no por nombre de sitio).
+
+    Complementa a `/spectrograms/station-catalog`: ese devuelve las 75
+    candidatas del muro, esto llega a cualquier estación que FDSN conozca.
+
+    Verificado contra IRIS el 2026-08-23: `*USC*` devuelve 2 estaciones en
+    ~1,3 s, `NEV*` devuelve 204. FDSN no indexa el nombre del sitio, así que
+    buscar "nevado" no da resultados — el filtrado por ciudad se hace en el
+    cliente contra el catálogo. Ver `src/services/station_search.py`.
+
+    Un término que no parece un código devuelve `{"stations": []}` con 200,
+    no un 4xx: para el buscador "no hay coincidencias" no es un error.
+
+    IMPORTANTE: esta ruta va declarada ANTES de `/stations/{channel}/waveform`.
+    Si no, FastAPI matchea "search" como `{channel}`.
+    """
+    from src.services.station_search import (
+        build_station_pattern,
+        is_searchable_code,
+        normalize_fdsn_stations,
+    )
+
+    if not is_searchable_code(q):
+        return {"query": q, "stations": []}
+
+    pattern = build_station_pattern(q)
+
+    ttl = settings.spectrogram_cache_ttl_seconds
+    cache_key = f"station-search:{pattern}:{limit}"
+    if ttl > 0:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    service = get_spectrogram_service()
+    raw = await service.search_stations_by_code(pattern, limit=limit)
+    result = {"query": q, "stations": normalize_fdsn_stations(raw)}
+
+    # Sólo se cachea si hubo resultados: un vacío puede venir de un timeout
+    # transitorio, y guardarlo dejaría la búsqueda muerta por todo el TTL.
+    if ttl > 0 and result["stations"]:
+        cache.set(cache_key, result, ttl)
+    return result
 
 
 @app.get("/stations/search", tags=["stations"])

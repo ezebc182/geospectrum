@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useFormatter, useTranslations } from 'next-intl';
 import type { SeismicCity } from '@/lib/seismic-cities';
-import { Activity, AlertCircle, RefreshCw } from 'lucide-react';
+import { Activity, AlertCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import { seismicAPI } from '@/lib/api';
-import { SPECTROGRAM_FREQ_TICKS, freqTickOffset } from '@/lib/spectrogram-axis';
+import { SPECTROGRAM_FREQ_TICKS, freqTickOffset, timeAxisLabels } from '@/lib/spectrogram-axis';
 
 interface SpectrogramViewRealProps {
   city: SeismicCity;
@@ -19,6 +19,14 @@ interface SpectrogramViewRealProps {
   showLabel?: boolean;
   useRealData?: boolean; // Toggle entre datos simulados y reales
 }
+
+/**
+ * Horas de histórico pedidas al backend. Es la MISMA constante que viaja en
+ * el fetch (antes un `24` suelto en el llamado) y el respaldo del eje de
+ * tiempo cuando el metadata no trae `duration_hours` — un backend viejo o un
+ * mock de test que no lo incluya no debe dejar el eje sin marcas.
+ */
+const DURATION_HOURS = 24;
 
 /**
  * Código del error, no el texto resuelto: el mensaje visible se traduce en el
@@ -68,7 +76,7 @@ export function SpectrogramViewReal({
         city.lat,
         city.lon,
         city.network,
-        24 // 24 horas de datos
+        DURATION_HOURS
       );
 
       if (result.success && result.image && result.metadata?.network !== 'SYNTHETIC') {
@@ -209,19 +217,27 @@ export function SpectrogramViewReal({
         </div>
       )}
 
-      {/* Ejes de referencia.
+      {/* Ejes de referencia del PNG.
 
-          Las marcas se posicionan por cálculo y no con `justify-between`: el
-          eje que dibuja el backend es LINEAL de 0.1 a 20 Hz
-          (spectrogram_service.py usa set_ylim sin set_yscale('log')), así que
-          repartir las etiquetas a distancia uniforme las corría hasta 25
-          puntos porcentuales — 5 Hz se anunciaba a mitad de altura cuando en
-          realidad cae a tres cuartos.
+          IMPORTANTE — este eje es FIJO y puede no ser el del canal. El backend
+          renderiza siempre 0.1–20 Hz (`generate_spectrogram_image`), pero el
+          techo real sale de `min(MAX_FREQ_HZ, fs/2)` y depende del muestreo:
+          medido en `spectrogram_columns` hay canales de 10, 20 y 25 Hz. En uno
+          de 10, este eje miente por factor 2.
 
-          Por lo mismo las marcas son equiespaciadas en FRECUENCIA y no la
-          escala 20/10/5/1/0.1 de antes: en un eje lineal 1 Hz y 0.1 Hz caen
-          al 95% y al 100%, encimadas e ilegibles. */}
-      <div className="absolute right-0 top-0 bottom-0 w-10 text-[9px] text-gray-400 pointer-events-none">
+          No se puede corregir el eje de una imagen ya renderizada — habría que
+          cambiar el backend o dejar el PNG. Mientras tanto, lo honesto es
+          decirlo y ofrecer la salida: el canvas de /stations/[channel] deriva
+          el eje del dato real.
+
+          Las marcas se posicionan por cálculo y no con `justify-between`
+          porque el eje del backend es LINEAL: repartirlas a distancia uniforme
+          las corría hasta 25 puntos porcentuales. */}
+      <div
+        data-testid="spectrogram-freq-axis"
+        title={t('fixedAxisWarning')}
+        className="absolute right-0 top-0 bottom-0 w-10 text-[9px] text-gray-400 pointer-events-none"
+      >
         {SPECTROGRAM_FREQ_TICKS.map((hz) => (
           <span
             key={hz}
@@ -233,13 +249,36 @@ export function SpectrogramViewReal({
         ))}
       </div>
 
-      <div className="absolute bottom-0 left-0 right-12 h-4 flex justify-between items-center text-[9px] text-gray-400 px-2 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-        <span>-24h</span>
-        <span>-18h</span>
-        <span>-12h</span>
-        <span>-6h</span>
+      {/* El eje de tiempo sale de las horas realmente pedidas, no de una lista
+          escrita a mano: antes decía -24h/-18h/-12h/-6h aunque el rango fuera
+          otro. `metadata.duration_hours` es lo que el backend efectivamente
+          usó; si falta (backend viejo, mock de test) se cae a lo que este
+          fetch pidió. */}
+      <div
+        data-testid="spectrogram-time-axis"
+        className="absolute bottom-0 left-0 right-12 h-4 flex justify-between items-center text-[9px] text-gray-400 px-2 bg-gradient-to-t from-black/80 to-transparent pointer-events-none"
+      >
+        {timeAxisLabels(metadata?.duration_hours ?? DURATION_HOURS).map((label) => (
+          <span key={label}>{label}</span>
+        ))}
         <span>{t('axisNow')}</span>
       </div>
+
+      {/* Salida al eje honesto. Sólo con canal real: sin `channel` no hay
+          estación que abrir. */}
+      {metadata?.channel && metadata.network !== 'SYNTHETIC' && (
+        <Link
+          href={`/stations/${encodeURIComponent(
+            `${metadata.network}.${metadata.station}..${metadata.channel}`,
+          )}`}
+          data-testid="accurate-axis-link"
+          title={t('accurateAxis')}
+          aria-label={t('accurateAxis')}
+          className="absolute bottom-0 right-0 z-10 w-12 h-4 flex items-center justify-center text-blue-400 bg-gradient-to-t from-black/80 to-transparent hover:text-blue-300 pointer-events-auto"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      )}
     </div>
   );
 }

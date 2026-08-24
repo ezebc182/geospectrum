@@ -130,6 +130,73 @@ describe('SpectrogramViewReal — refresco', () => {
   });
 });
 
+describe('SpectrogramViewReal — eje de tiempo y frecuencia', () => {
+  // Estos tres tests no ejercitan el refresco periódico: corren con timers
+  // reales para poder usar `findBy*` sin colgarse (ver comentario más abajo,
+  // en el describe de link al detalle).
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Render con la respuesta default (metadata sin `channel`, como MAJO). */
+  function renderView() {
+    getSpectrogramMock.mockResolvedValue(okResponse('IMG'));
+    return renderCard();
+  }
+
+  /** Render con un metadata a medida, para casos que necesitan `channel`. */
+  function renderViewWithMetadata(metadata: Record<string, unknown>) {
+    getSpectrogramMock.mockResolvedValue({
+      success: true,
+      image: 'IMG',
+      metadata: { generated_at: '2026-08-18T10:00:00Z', ...metadata },
+    });
+    return renderCard();
+  }
+
+  it('rotula el eje de tiempo segun las horas que realmente pidio', async () => {
+    // Antes decía -24h/-18h/-12h/-6h fijo, sin relación con el rango real.
+    // Acá el fetch pide 24h (constante del componente) y el metadata no trae
+    // `duration_hours`, así que cae al valor pedido: mismo resultado.
+    renderView();
+    await screen.findByRole('img');
+    expect(screen.getByTestId('spectrogram-time-axis')).toHaveTextContent('-24h');
+  });
+
+  it('avisa que el eje de frecuencia es fijo y no el del canal', async () => {
+    // El backend renderiza SIEMPRE 0.1-20 Hz (generate_spectrogram_image), pero
+    // el techo real depende del muestreo: hay canales de 10, 20 y 25 Hz. Un eje
+    // fijo miente por factor 2 en los de 10. No se puede corregir la imagen ya
+    // renderizada, pero sí se puede decir qué eje es.
+    renderView();
+    await screen.findByRole('img');
+    expect(screen.getByTestId('spectrogram-freq-axis')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/0[.,]1.*20 ?Hz/i),
+    );
+  });
+
+  it('enlaza al espectrograma con eje real de la estacion', async () => {
+    // La salida honesta: el canvas de /stations/[channel] SÍ deriva el eje del
+    // dato. Si el PNG no puede decir la verdad, al menos indica dónde está.
+    renderViewWithMetadata({ network: 'AR', station: 'TEST', channel: 'HHZ' });
+    expect(await screen.findByTestId('accurate-axis-link')).toHaveAttribute(
+      'href',
+      '/stations/AR.TEST..HHZ',
+    );
+  });
+
+  it('usa duration_hours del metadata cuando el backend lo manda distinto al pedido', async () => {
+    // Si el backend alguna vez difiere de lo pedido (reintento con otra
+    // ventana, versión vieja vs nueva), el eje tiene que reflejar lo que
+    // EFECTIVAMENTE se renderizó, no lo que el frontend creyó pedir.
+    renderViewWithMetadata({ network: 'AR', station: 'TEST', duration_hours: 12 });
+    await screen.findByRole('img');
+    expect(screen.getByTestId('spectrogram-time-axis')).toHaveTextContent('-12h');
+    expect(screen.getByTestId('spectrogram-time-axis')).not.toHaveTextContent('-24h');
+  });
+});
+
 describe('SpectrogramViewReal — link al detalle de estación', () => {
   it('el SCNL enlaza a /stations con el canal escapado', async () => {
     getSpectrogramMock.mockResolvedValue({

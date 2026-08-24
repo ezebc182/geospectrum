@@ -54,7 +54,7 @@ export function AppSidebar() {
   const routes: NavRoute[] = [
     { href: '/', label: t('dashboard'), icon: Gauge },
     { href: '/explore', label: t('explore'), icon: Compass },
-    { href: '/spectrograms-live', label: t('spectrograms'), icon: RadioTower },
+    { href: '/spectrograms', label: t('spectrograms'), icon: RadioTower },
     { href: '/stations', label: t('stations'), icon: Antenna },
     { href: '/globe', label: t('globe'), icon: Globe2, tourId: 'nav-globe' },
     { href: '/analytics', label: t('analytics'), icon: LineChart },

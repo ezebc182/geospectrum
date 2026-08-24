@@ -331,10 +331,13 @@
       "updated": "Actualizado: {time}",
       "imageAlt": "Espectrograma de {city}",
       "axisNow": "Ahora",
+      "fixedAxisWarning": "Eje fijo 0,1–20 Hz. El rango real depende del muestreo de la estación.",
+      "accurateAxis": "Ver con eje real",
       "viewLive": "Ver en vivo",
       "viewHistory": "Ver histórico 24h",
       "liveBadge": "Vivo",
       "dragToReorder": "Arrastrar para reordenar",
+      "expand": "Ver el espectrograma ampliado",
       "removeCity": "Eliminar ciudad",
       "riskTooltip": "Riesgo sísmico de la zona (clasificación fija, no estado actual)",
       "riskLabel": {
@@ -350,10 +353,15 @@
         "eventsHour": "ev/h",
         "latency": "lat",
         "tooltip": "RSAM (media móvil 10 min) · frecuencia dominante · Frequency Index (− fluidos / + fractura) · pico dB (escala fija 20-120) · eventos por hora · latencia"
-      }
+      },
+      "modalTitle": "Espectrograma de {city}",
+      "viewStationDetail": "Ver detalle de la estación",
+      "closeModal": "Cerrar",
+      "noLiveStream": "Esta estación no transmite en tiempo real",
+      "notAllLive": "No todas las estaciones transmiten en tiempo real. Las que no, muestran las últimas 24 h."
     },
     "spectrogramsPage": {
-      "title": "Espectrogramas Sísmicos",
+      "title": "Espectrogramas",
       "subtitle": "Monitoreo de {count} ubicaciones · {live} con streaming en vivo",
       "columns": "{count} columnas",
       "addCity": "Agregar Ciudad",
@@ -868,6 +876,9 @@
     "spectrogramError": "No se pudo cargar el espectrograma de esta estación",
     "spectrogramEmpty": "Sin columnas guardadas para este canal — el ingestor de espectros sigue un conjunto acotado de estaciones",
     "mixedGrid": "Las columnas de esta ventana tienen grillas de frecuencia distintas; el eje cubre el rango de todas",
+    "resetZoom": "Ajustar todo",
+    "zoomHint": "Rueda: tiempo · Shift+rueda: frecuencia · Arrastrar: mover · Doble clic o Esc: ajustar todo",
+    "backToLive": "Volver a vivo",
     "tabs": {
       "helicorder": "Helicorder",
       "spectrogram": "Espectrograma",
@@ -875,7 +886,10 @@
       "rsam": "RSAM"
     },
     "filter": "Filtro 1-10 Hz",
-    "filterHint": "Butterworth pasabanda 1-10 Hz: quita la deriva lenta y el ruido agudo para que se lea la fase sísmica. Vuelve a pedir la onda al servidor."
+    "filterHint": "Butterworth pasabanda 1-10 Hz: quita la deriva lenta y el ruido agudo para que se lea la fase sísmica. Vuelve a pedir la onda al servidor.",
+    "insideArea": "Dentro del área activa",
+    "outsideArea": "Fuera del área activa",
+    "seeAreaStations": "Ver estaciones del área"
   },
   "stations": {
     "title": "Estaciones",

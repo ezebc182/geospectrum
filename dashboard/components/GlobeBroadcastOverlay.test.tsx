@@ -6,6 +6,7 @@ import { SWRConfig } from 'swr';
 import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
 import { globePointId } from '@/lib/globe-data';
+import { AREA_CHANGED_EVENT } from '@/lib/area-events';
 import { GlobeBroadcastOverlay, type GlobeBroadcastOverlayProps } from './GlobeBroadcastOverlay';
 
 const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock, getActiveAreaMock } =
@@ -696,6 +697,36 @@ describe('foco de eventos', () => {
       };
     }
 
+    // Cascadia: otra área real del proyecto, con centro bien distinto al de
+    // los Andes — sirve para distinguir "sigue mostrando el foco viejo" de
+    // "se reencuadró de verdad" tras un cambio de área.
+    function cascadiaArea() {
+      return {
+        area: {
+          id: 'area-cascadia',
+          slug: 'cascadia',
+          name: 'Cascadia',
+          is_system: true,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [
+              [
+                [-128, 40],
+                [-120, 40],
+                [-120, 50],
+                [-128, 50],
+                [-128, 40],
+              ],
+            ],
+          },
+          bbox: { minlat: 40, maxlat: 50, minlon: -128, maxlon: -120 },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        is_default: false,
+      };
+    }
+
     it('le pasa al globo el foco del área activa', async () => {
       // El bug: el overlay se montaba sin focusArea, así que en transmisión
       // cambiar de área no movía la cámara. SeismicGlobe ya sabe convivir con
@@ -732,6 +763,122 @@ describe('foco de eventos', () => {
       await waitFor(() => expect(searchEventsMock).toHaveBeenCalled());
       expect(capturedGlobeProps.focusArea ?? null).toBeNull();
     });
+
+    it('reencuadra la camara al cambiar de area, sin recargar la pagina', async () => {
+      // Residual de 50632ee: el overlay leía /areas/active por SWR pero no se
+      // suscribía al evento, así que en /globe (donde nadie más monta esa
+      // key) la cámara no se movía hasta que SWR revalidara por su cuenta.
+      searchEventsMock.mockResolvedValue([]);
+      getActiveAreaMock.mockResolvedValue(andesArea());
+
+      renderOverlay();
+
+      await waitFor(() => expect(capturedGlobeProps.focusArea).toBeTruthy());
+      const andesFocus = capturedGlobeProps.focusArea as { lat: number; lng: number };
+      expect(andesFocus.lat).toBeCloseTo(-35, 5);
+
+      getActiveAreaMock.mockResolvedValue(cascadiaArea());
+      act(() => {
+        window.dispatchEvent(new CustomEvent(AREA_CHANGED_EVENT));
+      });
+
+      await waitFor(
+        () => {
+          const focus = capturedGlobeProps.focusArea as { lat: number; lng: number };
+          expect(focus.lat).toBeCloseTo(45, 5);
+        },
+        { timeout: 2000 }
+      );
+    });
+  });
+});
+
+/**
+ * Los contadores en 0 con la lista llena (reporte del usuario, 2026-08-23).
+ *
+ * La pantalla mostraba `0` y no `—`, o sea que el fetch RESOLVIÓ con datos:
+ * el problema no era la petición sino el `now` contra el que se comparan.
+ * `statsNow` arranca en null y el fallback era `new Date(0)` — el 1 de enero
+ * de 1970 —, así que ningún evento caía dentro de "últimas 24 h".
+ */
+describe('estadísticas de la cartelera', () => {
+  it('cuenta los eventos recibidos en vez de mostrar 0', async () => {
+    const eventos = [
+      makeEvento({ id: 'a', hora_utc: new Date(Date.now() - 30 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'b', hora_utc: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'c', hora_utc: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() }),
+    ];
+    searchEventsMock.mockResolvedValue(eventos);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+
+    // El contador de ÚLTIMAS 24 H tiene que reflejar los 3 eventos. Con el
+    // fallback a 1970 quedaba en 0 pese a tener la lista entera cargada.
+    // Se ancla en la etiqueta y se lee su hermano: buscar un "3" suelto
+    // engancharía cualquier otro número de la cartelera.
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('3');
+    });
+  });
+
+  it('no cuenta eventos anteriores a la ventana de 24 h', async () => {
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'viejo', hora_utc: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('0');
+    });
+  });
+});
+
+/**
+ * El globo se montaba pelado mientras cargaba: `eventos ?? []` colapsa
+ * "todavía no llegó" y "no hubo sismos" en el mismo valor, así que la Tierra
+ * giraba sin puntos y el feed quedaba vacío, sin decir cuál de las dos cosas
+ * estaba pasando (pedido del usuario, 2026-08-24).
+ */
+describe('estado de carga del feed', () => {
+  it('avisa que está cargando en vez de mostrar el feed vacío', async () => {
+    // Promesa que no resuelve: deja la vista en el estado de carga.
+    searchEventsMock.mockReturnValue(new Promise(() => {}));
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.loadingEvents)).toBeTruthy();
+    });
+  });
+
+  it('distingue "sin sismos" de "cargando" cuando la respuesta viene vacía', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.noEvents)).toBeTruthy();
+    });
+    expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+  });
+
+  it('no muestra ningún cartel cuando hay eventos', async () => {
+    searchEventsMock.mockResolvedValue([makeEvento({ id: 'a' })]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+    });
+    expect(screen.queryByText(es.globe.broadcast.noEvents)).toBeNull();
   });
 });
 
