@@ -26,6 +26,14 @@
     --accent-foreground: 172 80% 20%;
     --destructive: 4 90% 55%;
     --destructive-foreground: 0 0% 100%;
+    /* Estados de UI. `--destructive` ya existía; éxito y aviso se
+       improvisaban con 5 verdes y 4 ámbares distintos (emerald-600,
+       teal-500, primary, severity-low, green-400). El verde se alinea con
+       --severity-low para no meter un teal nuevo en la paleta. */
+    --success: 160 84% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 45%;
+    --warning-foreground: 0 0% 100%;
     --border: 210 20% 88%;
     --input: 210 20% 88%;
     --ring: 172 80% 32%;
@@ -65,6 +73,12 @@
     --accent-foreground: 172 60% 75%;
     --destructive: 4 85% 60%;
     --destructive-foreground: 0 0% 100%;
+    /* Más claros que en light: sobre fondo oscuro un verde al 32% no
+       alcanza el contraste mínimo de texto. */
+    --success: 160 70% 45%;
+    --success-foreground: 0 0% 8%;
+    --warning: 38 95% 58%;
+    --warning-foreground: 0 0% 8%;
     --border: 216 30% 18%;
     --input: 216 30% 18%;
     --ring: 172 55% 38%;

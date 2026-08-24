@@ -42,5 +42,12 @@ echo "✅ Iniciando servicio en http://localhost:8000"
 echo "   Docs: http://localhost:8000/docs"
 echo "   Health: http://localhost:8000/health"
 echo ""
+# Este script levanta SOLO el API. Los espectrogramas en vivo los produce un
+# proceso APARTE que hay que arrancar en otra terminal — y olvidarlo no da
+# ningún error: la UI sigue mostrando el último dato que quedó en la base,
+# por viejo que sea (66 h el 2026-08-21). Por eso se avisa acá.
+echo "ℹ️  Los espectrogramas en vivo necesitan el ingestor SeedLink, que es"
+echo "   un proceso aparte. En otra terminal:  ./scripts/run-ingestor.sh"
+echo ""
 
 python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000

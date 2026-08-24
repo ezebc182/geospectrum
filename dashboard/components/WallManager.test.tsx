@@ -1,5 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+// El hook useToast exige el provider: montar un componente que notifica
+// sin él tira a propósito, para que el fallo se vea en el test y no en prod.
+import { ToastProvider } from '@/components/ui/toast';
 import { SWRConfig } from 'swr';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import es from '@/messages/es.json';
@@ -36,9 +39,11 @@ vi.mock('./SpectronetWall', () => ({
 function renderManager() {
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
-      <SWRConfig value={{ provider: () => new Map() }}>
+      <ToastProvider>
+        <SWRConfig value={{ provider: () => new Map() }}>
         <WallManager />
       </SWRConfig>
+    </ToastProvider>
     </NextIntlClientProvider>
   );
 }

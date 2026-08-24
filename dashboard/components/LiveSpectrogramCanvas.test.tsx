@@ -143,3 +143,82 @@ describe('LiveSpectrogramCanvas — hora en UTC', () => {
     expect(screen.getByText(/UTC/)).toBeTruthy();
   });
 });
+
+/**
+ * La UI no debe afirmar "en vivo" sobre un dato que ya no lo es.
+ *
+ * Caso real (2026-08-23): once tarjetas de producción rotuladas "1:57 AM UTC"
+ * con la misma cara que un dato de hace 5 segundos. El backend tenía columnas
+ * de hace UN segundo — lo congelado era la pestaña, no el servidor. Ese
+ * cartel llevó a diagnosticar un backend caído que estaba sano.
+ */
+describe('LiveSpectrogramCanvas — frescura del dato', () => {
+  const AHORA = new Date('2026-08-23T22:59:00Z');
+
+  /** Monta el canvas y le entrega una columna con el endtime pedido. */
+  async function montarConColumna(endtime: string) {
+    render(
+      <NextIntlClientProvider locale="es" messages={es} formats={formats}>
+        <LiveSpectrogramCanvas channel="IU.MAJO.00.BHZ" label="Tokyo" />
+      </NextIntlClientProvider>
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      MockWebSocket.instances[0]!.onmessage?.({
+        data: JSON.stringify({
+          channel: 'IU.MAJO.00.BHZ',
+          endtime,
+          freqs: [1, 2],
+          power_db: [40, 50],
+        }),
+      });
+    });
+  }
+
+  const cartelViejo = () => screen.queryByText(es.common.live.staleLabel);
+
+  beforeEach(() => {
+    vi.setSystemTime(AHORA);
+  });
+
+  it('no muestra el cartel de viejo con una columna recién llegada', async () => {
+    await montarConColumna('2026-08-23T22:58:48.000000Z'); // 12s de antigüedad
+    expect(cartelViejo()).toBeNull();
+  });
+
+  it('muestra el cartel de viejo cuando el dato pasó los 5 minutos', async () => {
+    await montarConColumna('2026-08-23T22:50:00.000000Z'); // 9 min
+    expect(cartelViejo()).toBeTruthy();
+  });
+
+  it('avisa cuando el canal enmudece, sin recibir ninguna columna nueva', async () => {
+    // El caso más traicionero: nada dispara un render, así que sin el tick
+    // interno la tarjeta se quedaría rotulada "en vivo" para siempre.
+    await montarConColumna('2026-08-23T22:58:48.000000Z');
+    expect(cartelViejo()).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(6 * 60 * 1000); // 6 min de silencio
+    });
+
+    expect(cartelViejo()).toBeTruthy();
+  });
+
+  it('avisa si se corta el socket, por reciente que sea el último dato', async () => {
+    // El bug de la pestaña congelada: lastUpdate queda clavado en el último
+    // mensaje y la etiqueta lo muestra como si siguiera valiendo.
+    await montarConColumna('2026-08-23T22:58:55.000000Z'); // 5s: fresquísimo
+    expect(cartelViejo()).toBeNull();
+
+    act(() => {
+      MockWebSocket.instances[0]!.onclose?.();
+    });
+
+    expect(cartelViejo()).toBeTruthy();
+  });
+});

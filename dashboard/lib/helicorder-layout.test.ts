@@ -8,6 +8,7 @@ import {
   rowColor,
   rowCount,
   rowForOffset,
+  splitClippedSegment,
   xFractionForOffset,
 } from './helicorder-layout';
 
@@ -132,6 +133,66 @@ describe('autoClipValue', () => {
   it('nunca devuelve 0 — sería una división por cero al escalar', () => {
     expect(autoClipValue([0, 0, 0], [0, 0, 0])).toBe(1);
     expect(autoClipValue([], [])).toBe(1);
+  });
+});
+
+/**
+ * Bug de QA: el trazo se pintaba entero de rojo si CUALQUIER extremo tocaba el
+ * clip, así que la parte fuerte de un sismo salía como bloque rojo sólido que
+ * tapaba la forma de onda. En SWARM el rojo marca sólo el tramo que se
+ * desborda; el cuerpo queda azul.
+ */
+describe('splitClippedSegment', () => {
+  const CLIP = 100;
+
+  it('un trazo que entra entero es un solo segmento sin clip', () => {
+    expect(splitClippedSegment(-50, 50, CLIP)).toEqual([{ lo: -50, hi: 50, clipped: false }]);
+  });
+
+  it('un trazo que se pasa arriba se parte: cuerpo azul + punta roja', () => {
+    const segs = splitClippedSegment(-50, 250, CLIP);
+    expect(segs).toHaveLength(2);
+    expect(segs[0]).toEqual({ lo: -50, hi: CLIP, clipped: false });
+    // La punta roja llega al clip y tiene grosor: con altura 0 sería invisible
+    // y la saturación dejaría de señalizarse.
+    expect(segs[1].clipped).toBe(true);
+    expect(segs[1].hi).toBe(CLIP);
+    expect(segs[1].hi - segs[1].lo).toBeGreaterThan(0);
+  });
+
+  it('un trazo que se pasa de los dos lados deja el cuerpo azul entre las dos puntas', () => {
+    const segs = splitClippedSegment(-250, 250, CLIP);
+    expect(segs).toContainEqual({ lo: -CLIP, hi: CLIP, clipped: false });
+    expect(segs.filter((s) => s.clipped)).toHaveLength(2);
+  });
+
+  it('el cuerpo azul NUNCA desaparece cuando hay clip — es el bug que tapaba el sismo', () => {
+    for (const [lo, hi] of [
+      [-250, 250],
+      [-50, 300],
+      [-300, 50],
+      [-1e6, 1e6],
+    ]) {
+      const segs = splitClippedSegment(lo, hi, CLIP);
+      const cuerpo = segs.find((s) => !s.clipped);
+      expect(cuerpo, `trazo ${lo}..${hi}`).toBeDefined();
+      // El cuerpo tiene que tener altura real, no ser un punto.
+      expect(cuerpo!.hi - cuerpo!.lo, `trazo ${lo}..${hi}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('ningún segmento se sale de ±clip', () => {
+    for (const [lo, hi] of [
+      [-250, 250],
+      [-50, 300],
+      [-1e6, 1e6],
+    ]) {
+      for (const s of splitClippedSegment(lo, hi, CLIP)) {
+        expect(Math.abs(s.lo)).toBeLessThanOrEqual(CLIP);
+        expect(Math.abs(s.hi)).toBeLessThanOrEqual(CLIP);
+        expect(s.hi).toBeGreaterThanOrEqual(s.lo);
+      }
+    }
   });
 });
 

@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Radio, Settings2, LayoutGrid, ChevronLeft, ChevronRight, Minimize2, Maximize2 } from 'lucide-react';
 import { useFormatter, useNow, useTranslations } from 'next-intl';
 
 import { seismicAPI } from '@/lib/api';
@@ -33,6 +33,7 @@ import {
   topRegions,
 } from '@/lib/broadcast-stats';
 import { FOCUS_INTERVAL_MS, pickSpotlight, readFocusMode, type FocusMode } from '@/lib/event-focus';
+import { globePointId } from '@/lib/globe-data';
 import { GLOBAL_WALL_ID, WALL_PARAM, WALL_STORAGE_KEY, readWallSelection, resolveWall } from '@/lib/wall-selection';
 import { buildSpotlightCard } from '@/components/spotlight-card';
 import { LiveIndicator } from '@/components/LiveIndicator';
@@ -45,12 +46,25 @@ import { listWalls } from '@/lib/walls';
 import { useStationMetrics } from '@/lib/use-station-metrics';
 import type { GlobeSpotlight } from '@/components/SeismicGlobe';
 import type { SeismicEvent } from '@/lib/types';
+import { asyncStateOf } from '@/lib/async-state';
+import { LoadingBlock } from '@/components/ui/loading';
 
 // three.js accede a `window` al importarse: mismo motivo que en la página
 // del globo, el componente solo puede cargarse client-side.
+//
+// El `loading` NO es decorativo: sin él, mientras baja el chunk de three.js
+// (que no es chico) el área del globo queda literalmente en blanco. El
+// dynamic de LandingHero ya tenía placeholder; este se había quedado sin uno.
 const SeismicGlobe = dynamic(
   () => import('@/components/SeismicGlobe').then((m) => m.SeismicGlobe),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center">
+        <div className="h-64 w-64 animate-pulse rounded-full bg-primary/10 md:h-96 md:w-96" />
+      </div>
+    ),
+  }
 );
 
 // Ventana y piso de magnitud de la vista (explícitos: los defaults del
@@ -153,18 +167,32 @@ const SEVERITY_CHIP: Record<ReturnType<typeof getMagnitudeSeverity>, string> = {
   critical: 'bg-severity-critical/15 text-severity-critical',
 };
 
-interface GlobeBroadcastOverlayProps {
+export interface GlobeBroadcastOverlayProps {
   onClose: () => void;
+  /** Pantalla completa (portal a <body> + fixed). En `false` se renderiza
+   *  embebido en el layout de la página, con `embeddedHeight` de alto. */
+  fullscreen?: boolean;
+  /** Alto en px cuando `fullscreen` es `false`. Ignorado en fullscreen,
+   *  que siempre usa el viewport. */
+  embeddedHeight?: number;
+  /** Evento que arranca como spotlight (viene del `?event=` de un link
+   *  compartido). Gana UNA vez: después el ciclo sigue según `focusMode`. */
+  initialEventId?: string | null;
 }
 
-export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
+export function GlobeBroadcastOverlay({
+  onClose,
+  fullscreen = true,
+  embeddedHeight,
+  initialEventId,
+}: GlobeBroadcastOverlayProps) {
   const t = useTranslations('globe.broadcast');
   // Estado del stream de eventos (PR-W4). El hook comparte UNA conexión con
   // el sidebar y escribe los eventos que llegan directamente en el caché de
   // SWR bajo esta misma key, así toda la cadena de useMemo de abajo sigue
   // funcionando sin cambios.
   const { status: liveStatus, isLive, receivedCount } = useLiveEvents();
-  const { data: eventos } = useSWR('broadcast-events', broadcastFetcher, {
+  const { data: eventos, error: eventosError } = useSWR('broadcast-events', broadcastFetcher, {
     // Fallback automático (decisión del usuario, 2026-08-21): con el WS vivo
     // el polling se apaga; si se cae, vuelve solo. El usuario nunca se queda
     // sin datos, y no hay dos fuentes escribiendo la misma key a la vez.
@@ -338,6 +366,13 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     });
   };
 
+  // Marca que ya estamos en el navegador. El portal a `document.body` (ver el
+  // return) no puede correr durante el prerender del servidor, donde no hay
+  // DOM. Un efecto sólo corre en el cliente, así que esto es `false` en SSR y
+  // en el primer render del cliente — que es justo lo que hidrata parejo.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // El globo pide alto en píxeles (no %): se sigue el viewport a mano.
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   useEffect(() => {
@@ -350,16 +385,17 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      // Escape sale por capas: primero la cartelera, después la transmisión.
+      // Escape sale por capas: primero la cartelera, después la pantalla
+      // completa. Embebido no hay pantalla completa de la que salir.
       if (billboard) {
         setBillboard(false);
-      } else {
+      } else if (fullscreen) {
         onClose();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, billboard]);
+  }, [onClose, billboard, fullscreen]);
 
   // Countdown sincronizado con el ciclo de SWR: se rearma con cada tanda de
   // datos. Es informativo (el refresco real lo maneja SWR), por eso clava en
@@ -386,6 +422,13 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   );
 
   const feed = useMemo(() => latestEvents(eventos ?? [], FEED_SIZE), [eventos]);
+
+  // El `?? []` de arriba es cómodo para calcular, pero borra la diferencia
+  // entre "todavía no llegó" y "no hubo sismos": con la lista vacía el globo
+  // se dibujaba pelado y el feed quedaba en blanco, sin decir cuál de las dos
+  // cosas estaba pasando. El estado se deriva del dato CRUDO, antes del
+  // fallback (ver lib/async-state.ts).
+  const eventosState = asyncStateOf(eventos, eventosError);
 
   // `now` de next-intl: envejece el "hace X min" del spotlight y el resalte
   // de eventos nuevos sin regenerar todo por segundo.
@@ -426,6 +469,16 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
 
   const [spotlightEvent, setSpotlightEvent] = useState<SeismicEvent | null>(null);
   const lastFocusedIdRef = useRef<string | null>(null);
+  // El id del link (`initialEventId`) gana la primera elección y se consume:
+  // si siguiera ganando, el ciclo automático quedaría trabado en ese evento
+  // para siempre y la transmisión dejaría de rotar.
+  const initialEventConsumedRef = useRef(false);
+  // Se marca en el mismo golpe que `initialEventConsumedRef`, pero se lee y
+  // resetea aparte: el efecto de "modo latest" (más abajo) corre en el MISMO
+  // commit que el del pick inicial cuando el pool recién se pobló, y sin esta
+  // bandera pickearía el evento más nuevo y pisaría el spotlight del link
+  // antes de que el usuario llegue a verlo.
+  const justAppliedInitialRef = useRef(false);
   const pickSpotlightNow = () => {
     const pool = eventosRef.current;
     if (pool.length === 0) return;
@@ -433,6 +486,21 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     if (elegido === null) return;
     lastFocusedIdRef.current = elegido.id;
     setSpotlightEvent(elegido);
+  };
+
+  const applyInitialEventIfPending = () => {
+    if (initialEventConsumedRef.current || !initialEventId) return false;
+    initialEventConsumedRef.current = true;
+    const delLink = eventosRef.current.find((e) => globePointId(e) === initialEventId);
+    if (!delLink) {
+      // Si el evento del link ya no está en la ventana de 24 h, se sigue
+      // con la elección normal en vez de dejar la transmisión sin spotlight.
+      return false;
+    }
+    lastFocusedIdRef.current = delLink.id;
+    setSpotlightEvent(delLink);
+    justAppliedInitialRef.current = true;
+    return true;
   };
 
   useEffect(() => {
@@ -444,7 +512,18 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     // primer pick exitoso, así que esto corre una única vez; refetches
     // posteriores (mismo pool ya poblado, otra referencia) no lo repiten en
     // modo random — en latest lo cubre el efecto dedicado de más abajo.
-    if (lastFocusedIdRef.current === null && eventosRef.current.length > 0) {
+    if (eventosRef.current.length === 0) return;
+    // El spotlight del link se intenta consumir ACÁ, antes que nada: este
+    // efecto está declarado primero, así que corre antes que el de modo
+    // latest en el mismo commit. Si el efecto de latest lo intentara por su
+    // cuenta, ambos correrían en el mismo ciclo (el pool recién poblado) y
+    // el de latest pisaría el spotlight del link con el evento más nuevo.
+    // La guardia de arriba (pool vacío) es clave: SWR resuelve async, así
+    // que el primer render de este efecto corre con `eventos` todavía
+    // `undefined` — si se consumiera `initialEventId` ahí, se perdería para
+    // siempre antes de que lleguen los datos reales.
+    if (applyInitialEventIfPending()) return;
+    if (lastFocusedIdRef.current === null) {
       pickSpotlightNow();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -468,6 +547,12 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
   // ahí la cadencia la marca únicamente el interval de arriba.
   useEffect(() => {
     if (focusMode !== 'latest') return;
+    // El efecto de arriba (mismo commit, mismo cambio de `eventos`) ya puede
+    // haber aplicado el spotlight del link: no pisarlo con el más nuevo.
+    if (justAppliedInitialRef.current) {
+      justAppliedInitialRef.current = false;
+      return;
+    }
     pickSpotlightNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventos, focusMode]);
@@ -537,20 +622,29 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     document.querySelector('[data-testid="feed-row-focused"]')?.scrollIntoView({ block: 'nearest' });
   }, [spotlightEvent]);
 
-  // Portal a <body>: el layout de (app) tiene ancestros con transform
-  // (SidebarInset, indicadores) que convierten `fixed` en "fixed relativo
-  // al ancestro" — el overlay quedaba DEBAJO del navbar de la app en vez
-  // de tapar el viewport entero. Visto en producción el 2026-08-20.
+  // En fullscreen el globo ocupa el viewport; embebido, el alto que le pasa
+  // la página. Se mantiene `viewportHeight` como fuente en fullscreen porque
+  // ya sigue el resize de la ventana.
+  const globeHeight = fullscreen ? viewportHeight : (embeddedHeight ?? null);
+
   const overlay = (
     // overflow-hidden en la raíz: ningún panel del HUD genera scroll; el
     // único scroll permitido es el interno del feed de eventos.
-    <div className="fixed inset-0 z-[100] overflow-hidden bg-background">
+    <div
+      data-testid="broadcast-root"
+      className={
+        fullscreen
+          ? 'fixed inset-0 z-[100] overflow-hidden bg-background'
+          : 'relative w-full overflow-hidden rounded-xl border border-border bg-background'
+      }
+      style={fullscreen ? undefined : { height: embeddedHeight }}
+    >
       {/* Globo full-bleed detrás del HUD */}
       <div className="absolute inset-0">
-        {viewportHeight !== null && (
+        {globeHeight !== null && (
           <SeismicGlobe
             eventos={eventos ?? []}
-            height={viewportHeight}
+            height={globeHeight}
             showControls={false}
             pointScale={1.6}
             // Misma altitud full-bleed que el hero de la landing: con el
@@ -662,6 +756,21 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
           últimos minutos llevan punto pulsante — la "notificación" del HUD. */}
       {panels.feed && (
       <aside className="absolute top-14 bottom-9 right-0 z-10 w-80 overflow-y-auto border-l border-border bg-background/85 backdrop-blur">
+        {eventosState === 'loading' && (
+          <div className="p-3">
+            <LoadingBlock label={t('loadingEvents')} lines={6} />
+          </div>
+        )}
+        {eventosState === 'empty' && (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            {t('noEvents')}
+          </p>
+        )}
+        {eventosState === 'error' && (
+          <p role="alert" className="px-3 py-6 text-center text-sm text-destructive">
+            {t('loadError')}
+          </p>
+        )}
         <ul data-testid="broadcast-feed" className="divide-y divide-border/60">
           {feed.map((evento) => {
             const severity = getMagnitudeSeverity(evento.mag);
@@ -765,12 +874,17 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
             <Settings2 className="h-4 w-4" />
           </button>
           <button
+            type="button"
             onClick={onClose}
-            aria-label={t('exit')}
-            title={t('exit')}
-            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            title={fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            className="rounded-lg p-1.5 transition-colors hover:bg-muted/60"
           >
-            <X className="h-4 w-4" />
+            {fullscreen ? (
+              <Minimize2 className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
 
           {/* Popover simple (sin Radix: un dropdown con inputs se come el
@@ -1015,5 +1129,19 @@ export function GlobeBroadcastOverlay({ onClose }: GlobeBroadcastOverlayProps) {
     </div>
   );
 
-  return createPortal(overlay, document.body);
+  // Portal SÓLO en fullscreen: el layout de (app) tiene ancestros con
+  // transform (SidebarInset, indicadores) que convierten `fixed` en "fixed
+  // relativo al ancestro" y el overlay quedaba debajo del navbar (visto en
+  // producción el 2026-08-20). Embebido no hay `fixed` que rescatar, y
+  // portalear lo sacaría del flujo donde justamente lo queremos.
+  //
+  // `mounted` es imprescindible: 'use client' NO evita el prerender en el
+  // servidor, y ahí `document` no existe. Antes no saltaba porque el overlay
+  // se montaba recién al hacer clic (ya en el navegador); desde que /globe
+  // ES la transmisión, este componente es lo primero que renderiza la ruta y
+  // pasa por SSR. Sin el guard: "document is not defined".
+  if (fullscreen) {
+    return mounted ? createPortal(overlay, document.body) : null;
+  }
+  return overlay;
 }

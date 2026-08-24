@@ -11,6 +11,9 @@
 import * as React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+// El hook useToast exige el provider: montar un componente que notifica
+// sin él tira a propósito, para que el fallo se vea en el test y no en prod.
+import { ToastProvider } from '@/components/ui/toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import es from '@/messages/es.json';
@@ -52,7 +55,9 @@ function renderSwitcher(user: UserPublic | null) {
   useAuthMock.mockReturnValue({ user });
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
-      <LocaleSwitcher />
+      <ToastProvider>
+        <LocaleSwitcher />
+    </ToastProvider>
     </NextIntlClientProvider>,
   );
 }

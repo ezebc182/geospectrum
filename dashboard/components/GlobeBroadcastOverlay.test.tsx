@@ -5,7 +5,8 @@ import { SWRConfig } from 'swr';
 
 import es from '@/messages/es.json';
 import type { SeismicEvent } from '@/lib/types';
-import { GlobeBroadcastOverlay } from './GlobeBroadcastOverlay';
+import { globePointId } from '@/lib/globe-data';
+import { GlobeBroadcastOverlay, type GlobeBroadcastOverlayProps } from './GlobeBroadcastOverlay';
 
 const { searchEventsMock, getLiveChannelsMock, getGlobalWallMock, listWallsMock, getActiveAreaMock } =
   vi.hoisted(() => ({
@@ -68,7 +69,12 @@ function makeEvento(overrides: Partial<SeismicEvent> = {}): SeismicEvent {
   };
 }
 
-function renderOverlay(onClose = vi.fn()) {
+// Acepta props parciales para no duplicar el helper en cada task que agrega
+// props al overlay (fullscreen/embeddedHeight, etc.). Devuelve el resultado
+// de `render` (incluye `container`, necesario para los tests del modo
+// embebido) más `onClose`, que la mayoría de los tests existentes usa como
+// si fuera el valor de retorno directo.
+function renderOverlay(props?: Partial<GlobeBroadcastOverlayProps>) {
   if (getLiveChannelsMock.getMockImplementation() === undefined) {
     getLiveChannelsMock.mockResolvedValue([]);
   }
@@ -85,16 +91,17 @@ function renderOverlay(onClose = vi.fn()) {
   if (getActiveAreaMock.getMockImplementation() === undefined) {
     getActiveAreaMock.mockResolvedValue(null);
   }
-  render(
+  const onClose = props?.onClose ?? vi.fn();
+  const renderResult = render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
       {/* Caché de SWR fresco por test: la clave 'broadcast-events' es la
           misma en todos y el caché de módulo filtraría datos entre tests. */}
       <SWRConfig value={{ provider: () => new Map() }}>
-        <GlobeBroadcastOverlay onClose={onClose} />
+        <GlobeBroadcastOverlay {...props} onClose={onClose} />
       </SWRConfig>
     </NextIntlClientProvider>
   );
-  return onClose;
+  return { ...renderResult, onClose };
 }
 
 // jsdom no implementa scrollIntoView: el useEffect que resalta la fila
@@ -237,13 +244,69 @@ describe('GlobeBroadcastOverlay', () => {
 
   it('cierra con Escape y con el botón de salir', async () => {
     searchEventsMock.mockResolvedValue([]);
-    const onClose = renderOverlay();
+    const { onClose } = renderOverlay();
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Salir del modo transmisión' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salir de pantalla completa' }));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('la X llama a onClose para salir de pantalla completa', async () => {
+    const onClose = vi.fn();
+    renderOverlay({ onClose });
+    fireEvent.click(screen.getByRole('button', { name: 'Salir de pantalla completa' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('embebido, el boton pide volver a pantalla completa', () => {
+    renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    expect(screen.getByRole('button', { name: 'Pantalla completa' })).toBeTruthy();
+  });
+
+  it('embebido, Escape con la cartelera cerrada no hace nada', () => {
+    // Rama vacía del efecto: en modo embebido no hay pantalla completa de la
+    // que salir, así que Escape sin cartelera abierta no debe llamar onClose.
+    // Borde frágil: Task 3 toca este mismo efecto.
+    const { onClose } = renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('no revienta al prerenderizar en el servidor (sin DOM)', async () => {
+    // Regresión: `'use client'` NO evita el prerender en el servidor, y ahí
+    // `document` no existe. Mientras el overlay se montaba recién al hacer
+    // clic esto no salía; desde que /globe ES la transmisión, el componente
+    // es lo primero que renderiza la ruta y pasa por SSR.
+    // Sin el guard `mounted`: "document is not defined".
+    const { renderToString } = await import('react-dom/server');
+    searchEventsMock.mockResolvedValue([]);
+
+    expect(() =>
+      renderToString(
+        <NextIntlClientProvider locale="es-AR" messages={es}>
+          <SWRConfig value={{ provider: () => new Map() }}>
+            <GlobeBroadcastOverlay fullscreen onClose={vi.fn()} />
+          </SWRConfig>
+        </NextIntlClientProvider>
+      )
+    ).not.toThrow();
+  });
+
+  it('en fullscreen usa fixed y portalea a body', () => {
+    const { container } = renderOverlay();
+    // El portal saca el overlay del container de RTL.
+    expect(container.querySelector('.fixed')).toBeNull();
+    expect(document.body.querySelector('.fixed.inset-0')).toBeTruthy();
+  });
+
+  it('embebido renderiza en el árbol, sin fixed, con el alto pedido', () => {
+    const { container } = renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    const root = container.querySelector('[data-testid="broadcast-root"]');
+    expect(root).toBeTruthy();
+    expect(root?.className).not.toContain('fixed');
+    expect((root as HTMLElement).style.height).toBe('720px');
   });
 });
 
@@ -367,7 +430,7 @@ describe('cartelera (billboard)', () => {
   it('Escape con la cartelera abierta cierra la cartelera, no la transmisión', async () => {
     searchEventsMock.mockResolvedValue([]);
     getLiveChannelsMock.mockResolvedValue(NUEVE_CANALES);
-    const onClose = renderOverlay();
+    const { onClose } = renderOverlay();
     await waitFor(() => expect(screen.getByTestId('spectro-strips')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Modo cartelera' }));
@@ -457,6 +520,50 @@ describe('foco de eventos', () => {
       expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
     });
     window.history.replaceState(null, '', '/');
+  });
+
+  it('arranca con el evento del link como spotlight (Task 3)', async () => {
+    const ahora = Date.now();
+    const LINK_PLACE = 'Viejo, Chile';
+    const eventos = [
+      // El más viejo: en modo latest (default) NO es el que ganaría solo.
+      makeEvento({
+        id: 'viejo',
+        lugar: LINK_PLACE,
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: 'Nuevo, Japón',
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ];
+    searchEventsMock.mockResolvedValue(eventos);
+    renderOverlay({ initialEventId: globePointId(eventos[0]) });
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(LINK_PLACE);
+    });
+  });
+
+  it('sin initialEventId el spotlight lo elige el focusMode (Task 3)', async () => {
+    const ahora = Date.now();
+    const NEWEST_MOCK_PLACE = 'Nuevo, Japón';
+    searchEventsMock.mockResolvedValue([
+      makeEvento({
+        id: 'viejo',
+        lugar: 'Viejo, Chile',
+        hora_utc: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+      makeEvento({
+        id: 'nuevo',
+        lugar: NEWEST_MOCK_PLACE,
+        hora_utc: new Date(ahora - 5 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    renderOverlay();
+    await waitFor(() => {
+      expect(screen.getByTestId('feed-row-focused').textContent).toContain(NEWEST_MOCK_PLACE);
+    });
   });
 
   it('el clic en un evento del globo lo enfoca y resalta en el sidebar', async () => {
@@ -625,5 +732,94 @@ describe('foco de eventos', () => {
       await waitFor(() => expect(searchEventsMock).toHaveBeenCalled());
       expect(capturedGlobeProps.focusArea ?? null).toBeNull();
     });
+  });
+});
+
+/**
+ * Los contadores en 0 con la lista llena (reporte del usuario, 2026-08-23).
+ *
+ * La pantalla mostraba `0` y no `—`, o sea que el fetch RESOLVIÓ con datos:
+ * el problema no era la petición sino el `now` contra el que se comparan.
+ * `statsNow` arranca en null y el fallback era `new Date(0)` — el 1 de enero
+ * de 1970 —, así que ningún evento caía dentro de "últimas 24 h".
+ */
+describe('estadísticas de la cartelera', () => {
+  it('cuenta los eventos recibidos en vez de mostrar 0', async () => {
+    const eventos = [
+      makeEvento({ id: 'a', hora_utc: new Date(Date.now() - 30 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'b', hora_utc: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }),
+      makeEvento({ id: 'c', hora_utc: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() }),
+    ];
+    searchEventsMock.mockResolvedValue(eventos);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+
+    // El contador de ÚLTIMAS 24 H tiene que reflejar los 3 eventos. Con el
+    // fallback a 1970 quedaba en 0 pese a tener la lista entera cargada.
+    // Se ancla en la etiqueta y se lee su hermano: buscar un "3" suelto
+    // engancharía cualquier otro número de la cartelera.
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('3');
+    });
+  });
+
+  it('no cuenta eventos anteriores a la ventana de 24 h', async () => {
+    searchEventsMock.mockResolvedValue([
+      makeEvento({ id: 'viejo', hora_utc: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() }),
+    ]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      const label = screen.getByText(es.globe.broadcast.last24h);
+      expect(label.parentElement?.textContent).toContain('0');
+    });
+  });
+});
+
+/**
+ * El globo se montaba pelado mientras cargaba: `eventos ?? []` colapsa
+ * "todavía no llegó" y "no hubo sismos" en el mismo valor, así que la Tierra
+ * giraba sin puntos y el feed quedaba vacío, sin decir cuál de las dos cosas
+ * estaba pasando (pedido del usuario, 2026-08-24).
+ */
+describe('estado de carga del feed', () => {
+  it('avisa que está cargando en vez de mostrar el feed vacío', async () => {
+    // Promesa que no resuelve: deja la vista en el estado de carga.
+    searchEventsMock.mockReturnValue(new Promise(() => {}));
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.loadingEvents)).toBeTruthy();
+    });
+  });
+
+  it('distingue "sin sismos" de "cargando" cuando la respuesta viene vacía', async () => {
+    searchEventsMock.mockResolvedValue([]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText(es.globe.broadcast.noEvents)).toBeTruthy();
+    });
+    expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+  });
+
+  it('no muestra ningún cartel cuando hay eventos', async () => {
+    searchEventsMock.mockResolvedValue([makeEvento({ id: 'a' })]);
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(searchEventsMock).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(es.globe.broadcast.loadingEvents)).toBeNull();
+    });
+    expect(screen.queryByText(es.globe.broadcast.noEvents)).toBeNull();
   });
 });

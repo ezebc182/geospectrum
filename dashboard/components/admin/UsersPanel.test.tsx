@@ -216,7 +216,11 @@ describe('UsersPanel — errores del backend', () => {
       await screen.findByText('No podés gestionar una cuenta con un rol igual o superior al tuyo.'),
     ).toBeTruthy();
     // La lista sigue en pantalla: el error no la reemplaza.
-    expect(screen.getByRole('list').textContent).toContain('viewer@example.com');
+    // El viewport del ToastProvider también expone role="list" (es un <ol>):
+    // se ancla en la <ul> de usuarios para que la aserción no sea ambigua.
+    expect(screen.getAllByRole('list').find((el) => el.tagName === 'UL')?.textContent).toContain(
+      'viewer@example.com',
+    );
   });
 
   it('distingue el 409 de auto-gestión del 409 de estado ya alcanzado', async () => {
@@ -424,7 +428,11 @@ describe('UsersPanel — errores del cambio de rol', () => {
     expect(
       await screen.findByText('No podés gestionar una cuenta con un rol igual o superior al tuyo.'),
     ).toBeTruthy();
-    expect(screen.getByRole('list').textContent).toContain('viewer@example.com');
+    // El viewport del ToastProvider también expone role="list" (es un <ol>):
+    // se ancla en la <ul> de usuarios para que la aserción no sea ambigua.
+    expect(screen.getAllByRole('list').find((el) => el.tagName === 'UL')?.textContent).toContain(
+      'viewer@example.com',
+    );
   });
 
   it('un fallo sin status cae al genérico de rol con el email interpolado', async () => {

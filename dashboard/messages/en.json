@@ -12,8 +12,11 @@
       "connected": "Live",
       "connecting": "Connecting…",
       "reconnecting": "Reconnecting…",
-      "offline": "Offline"
-    }
+      "offline": "Offline",
+      "staleLabel": "No recent data",
+      "staleTooltip": "The latest data is over 5 minutes old — this is not live"
+    },
+    "languageSyncFailed": "Language changed in this browser, but it could not be saved to your account."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -37,7 +40,8 @@
       "admin": "Admin",
       "moderador": "Moderator",
       "viewer": "Viewer"
-    }
+    },
+    "stations": "Stations"
   },
   "auth": {
     "badge": "Invitation-only access",
@@ -266,6 +270,8 @@
     "broadcast": {
       "enter": "Broadcast mode",
       "exit": "Exit broadcast mode",
+      "exitFullscreen": "Exit fullscreen",
+      "enterFullscreen": "Fullscreen",
       "title": "GeoSpectrum Live",
       "last24h": "Last 24 h",
       "todayM5": "Today ≥M5.0",
@@ -300,7 +306,10 @@
       "tickerSinceM5": "Last M≥5.0: {rel}",
       "tickerNoM5": "No M≥5.0 events in the last 24 hours",
       "tickerTopRegion": "Most active region: {region} with {count} events",
-      "tickerMaxMag": "Maximum magnitude in the last 24 h: M{mag}"
+      "tickerMaxMag": "Maximum magnitude in the last 24 h: M{mag}",
+      "loadingEvents": "Loading events…",
+      "noEvents": "No earthquakes in the last 24 hours",
+      "loadError": "Could not load the seismic report."
     }
   },
   "charts": {
@@ -398,7 +407,8 @@
         "saveError": "The wall could not be saved",
         "needSession": "Sign in to save walls",
         "preview": "Preview",
-        "wallsTitle": "My walls"
+        "wallsTitle": "My walls",
+        "deleted": "Wall deleted."
       }
     }
   },
@@ -492,7 +502,7 @@
       "approveError": "Could not approve {email}. Try again in a few seconds.",
       "loadError": "Could not load the list. Check your session and try again.",
       "empty": "No one has signed up yet. When someone joins from the landing page, they show up here (and you get an email notice).",
-      "approved": "Approved",
+      "approved": "{email} has been approved.",
       "pending": "Pending",
       "approving": "Approving…",
       "approve": "Approve"
@@ -548,7 +558,8 @@
       "revokeDialogTitle": "Revoke the invitation?",
       "revokeDialogDescription": "The link sent to <mono>{email}</mono> stops working immediately. This action cannot be undone — if you change your mind you will have to create a new invitation.",
       "revokeCancel": "Cancel",
-      "revokeConfirm": "Revoke"
+      "revokeConfirm": "Revoke",
+      "revoked": "Invitation for {email} revoked."
     },
     "users": {
       "title": "Users",
@@ -597,7 +608,10 @@
         "deactivateGeneric": "Could not deactivate {email}. Try again in a few seconds.",
         "reactivateGeneric": "Could not reactivate {email}. Try again in a few seconds.",
         "roleGeneric": "Could not change the role of {email}. Try again in a few seconds."
-      }
+      },
+      "roleChanged": "Role updated for {email}.",
+      "deactivated": "{email} has been deactivated.",
+      "reactivated": "{email} is active again."
     }
   },
   "onboarding": {
@@ -843,11 +857,44 @@
     "title": "Station detail",
     "timeChunk": "Row time span",
     "comingSoon": "coming soon",
+    "settings": "Scale",
+    "clipMult": "Clipping threshold",
+    "clipMultHint": "Raise it when the event shows all red and flattened against the row edge",
+    "barMult": "Amplitude",
+    "barMultHint": "Exaggerates the trace without moving the clipping threshold",
+    "reset": "Reset",
+    "freqAxis": "Frequency (Hz)",
+    "powerAxis": "dB",
+    "spectrogramError": "Could not load the spectrogram for this station",
+    "spectrogramEmpty": "No stored columns for this channel — the spectrogram ingestor follows a limited set of stations",
+    "mixedGrid": "Columns in this window use different frequency grids; the axis covers the range of all of them",
     "tabs": {
       "helicorder": "Helicorder",
       "spectrogram": "Spectrogram",
       "wave": "Wave + Spectrum",
       "rsam": "RSAM"
-    }
+    },
+    "filter": "1-10 Hz filter",
+    "filterHint": "Butterworth 1-10 Hz bandpass: removes slow drift and high-frequency noise so the seismic phase reads clearly. Refetches the waveform."
+  },
+  "stations": {
+    "title": "Stations",
+    "subtitle": "Search a station to see its helicorder and spectrogram",
+    "searchPlaceholder": "Network, station, channel or city (e.g. USC, tokyo)",
+    "searchLabel": "Search stations",
+    "clearSearch": "Clear search",
+    "catalogHeading": "In the catalog",
+    "worldHeading": "Other stations worldwide",
+    "searching": "Searching FDSN…",
+    "countLabel": "{count, plural, =0 {no stations} one {# station} other {# stations}}",
+    "live": "Recent data",
+    "primary": "Primary",
+    "noCatalogMatches": "No catalog station matches",
+    "noWorldMatches": "FDSN returned no stations for that code",
+    "worldHint": "Global search matches the station CODE (USC, MAJO), not place names",
+    "catalogError": "Could not load the station catalog",
+    "searchError": "FDSN search failed; the local catalog is still available",
+    "loading": "Loading catalog…",
+    "retry": "Retry"
   }
 }

@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 
 import { APP_TIME_ZONE, formats } from '@/i18n/request';
 import es from '@/messages/es.json';
+import { ToastProvider } from '@/components/ui/toast';
 
 /**
  * La zona de la app, re-exportada desde `i18n/request.ts` — NO declarada acá.
@@ -44,7 +45,11 @@ export function IntlTestProvider({ children, locale = 'es-AR', messages = es }: 
       formats={formats}
       timeZone={APP_TIME_ZONE}
     >
-      {children}
+      {/* Igual que en app/layout.tsx: el ToastProvider vive DENTRO del de
+          i18n porque el toast guarda claves y las traduce al renderizar.
+          Montarlo acá replica el árbol real — un componente que notifica
+          debe poder testearse sin que cada test arme el andamio. */}
+      <ToastProvider>{children}</ToastProvider>
     </NextIntlClientProvider>
   );
 }

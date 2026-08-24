@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
+import { ToastProvider } from '@/components/ui/toast';
 import { getLocale } from 'next-intl/server';
 import { Familjen_Grotesk, IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
@@ -45,7 +46,11 @@ export default async function RootLayout({
             los diccionarios no dependen de theme/auth/tooltip. Sin props:
             hereda locale, messages y formats del request config server. */}
         <NextIntlClientProvider>
-          <Providers>{children}</Providers>
+          {/* Dentro del provider de i18n: el toast recibe CLAVES y las
+              traduce al renderizar (ver lib/toast-queue.ts). */}
+          <ToastProvider>
+            <Providers>{children}</Providers>
+          </ToastProvider>
         </NextIntlClientProvider>
       </body>
     </html>

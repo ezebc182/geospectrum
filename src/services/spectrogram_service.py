@@ -397,6 +397,110 @@ class SpectrogramService:
             logger.error(f"Error getting stations: {e}")
             return []
 
+    # Servidores que se consultan al buscar por código, en orden. Es un
+    # subconjunto deliberado de FDSN_SERVERS (que tiene 6): medido el
+    # 2026-08-23, un término sin coincidencias recorría los 6 a ~1,3 s cada
+    # uno y tardaba 8,2 s en responder "no hay nada" — inaceptable mientras
+    # el usuario tipea. IRIS es global y el más completo; si IRIS no tiene el
+    # código, los regionales casi nunca aportan algo distinto. GEOFON queda
+    # como respaldo por si IRIS está caído, no por cobertura.
+    SEARCH_SERVERS = ("IRIS", "GEOFON")
+
+    def _search_stations_sync(self, pattern: str, limit: int) -> list:
+        """Wrapper síncrono de get_stations por patrón de código (para el executor).
+
+        A diferencia de `_get_stations_sync`, que busca por coordenadas, esto
+        busca por CÓDIGO de estación con wildcards (`*USC*`). Ver
+        `src/services/station_search.py` para la limitación verificada: FDSN no
+        filtra por nombre de sitio, y el patrón no puede pasar de 5 caracteres.
+
+        Corta en el primer servidor que devuelve algo: recorrerlos todos para
+        juntar más resultados multiplicaría la latencia en un buscador
+        interactivo.
+        """
+        if not self.clients:
+            return []
+
+        candidates = [(n, self.clients[n]) for n in self.SEARCH_SERVERS if n in self.clients]
+        if not candidates:
+            # Ningún servidor preferido disponible: se cae al primero que haya
+            # antes que devolver vacío por configuración.
+            candidates = list(self.clients.items())[:1]
+
+        for server_name, client in candidates:
+            try:
+                inventory = client.get_stations(
+                    station=pattern,
+                    level="channel",
+                    channel="BHZ,HHZ,EHZ,SHZ",
+                )
+            except Exception as e:
+                # Un 204 (sin coincidencias) llega acá como excepción de ObsPy:
+                # es un resultado vacío legítimo, no una falla del servidor.
+                logger.debug(f"{server_name}: sin resultados para '{pattern}': {e}")
+                continue
+
+            found = []
+            for net in inventory:
+                for sta in net:
+                    site_name = None
+                    if getattr(sta, "site", None) is not None:
+                        site_name = getattr(sta.site, "name", None)
+                    found.append(
+                        {
+                            "network": net.code,
+                            "station": sta.code,
+                            "channels": [ch.code for ch in sta],
+                            "site_name": site_name,
+                            "latitude": sta.latitude,
+                            "longitude": sta.longitude,
+                            "source_server": server_name,
+                        }
+                    )
+                    if len(found) >= limit:
+                        break
+                if len(found) >= limit:
+                    break
+
+            if found:
+                logger.info(f"{server_name}: {len(found)} estaciones para '{pattern}'")
+                return found
+
+        return []
+
+    async def search_stations_by_code(
+        self,
+        pattern: str,
+        limit: int = 25,
+        timeout: int = 15,
+    ) -> list:
+        """Estaciones cuyo código coincide con `pattern` (ej. `*USC*`).
+
+        Devuelve lista vacía (nunca lanza) ante timeout o error: el buscador
+        del frontend ya muestra los resultados del catálogo local, y una
+        excepción acá dejaría sin respuesta una búsqueda que sí tenía algo
+        que mostrar.
+
+        El timeout es más corto que el de `get_stations_near_location` (15 s
+        contra 30 s) porque esto corre mientras el usuario escribe: una espera
+        de 30 s en un buscador es una pantalla colgada.
+        """
+        if not self.clients:
+            return []
+
+        try:
+            loop = asyncio.get_event_loop()
+            return await asyncio.wait_for(
+                loop.run_in_executor(_executor, self._search_stations_sync, pattern, limit),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout buscando estaciones con patrón '{pattern}'")
+            return []
+        except Exception as e:
+            logger.error(f"Error buscando estaciones con patrón '{pattern}': {e}")
+            return []
+
     def _get_waveform_sync(
         self,
         network: str,

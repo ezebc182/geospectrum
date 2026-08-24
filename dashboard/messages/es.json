@@ -12,8 +12,11 @@
       "connected": "En vivo",
       "connecting": "Conectando…",
       "reconnecting": "Reconectando…",
-      "offline": "Sin conexión"
-    }
+      "offline": "Sin conexión",
+      "staleLabel": "Sin datos recientes",
+      "staleTooltip": "El último dato es de hace más de 5 minutos: esto no es el ahora"
+    },
+    "languageSyncFailed": "El idioma cambió en este navegador, pero no se pudo guardar en tu cuenta."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -37,7 +40,8 @@
       "admin": "Admin",
       "moderador": "Moderador",
       "viewer": "Viewer"
-    }
+    },
+    "stations": "Estaciones"
   },
   "auth": {
     "badge": "Acceso por invitación",
@@ -266,6 +270,8 @@
     "broadcast": {
       "enter": "Modo transmisión",
       "exit": "Salir del modo transmisión",
+      "exitFullscreen": "Salir de pantalla completa",
+      "enterFullscreen": "Pantalla completa",
       "title": "GeoSpectrum en vivo",
       "last24h": "Últimas 24 h",
       "todayM5": "Hoy ≥M5.0",
@@ -300,7 +306,10 @@
       "tickerSinceM5": "Último M≥5.0: {rel}",
       "tickerNoM5": "Sin eventos M≥5.0 en las últimas 24 horas",
       "tickerTopRegion": "Región más activa: {region} con {count} eventos",
-      "tickerMaxMag": "Magnitud máxima de las últimas 24 h: M{mag}"
+      "tickerMaxMag": "Magnitud máxima de las últimas 24 h: M{mag}",
+      "loadingEvents": "Cargando eventos…",
+      "noEvents": "Sin sismos en las últimas 24 horas",
+      "loadError": "No se pudo cargar el reporte sísmico."
     }
   },
   "charts": {
@@ -398,7 +407,8 @@
         "saveError": "No se pudo guardar el muro",
         "needSession": "Iniciá sesión para guardar muros",
         "preview": "Vista previa",
-        "wallsTitle": "Mis muros"
+        "wallsTitle": "Mis muros",
+        "deleted": "Muro eliminado."
       }
     }
   },
@@ -492,7 +502,7 @@
       "approveError": "No se pudo aprobar a {email}. Probá de nuevo en unos segundos.",
       "loadError": "No se pudo cargar la lista. Verificá tu sesión e intentá de nuevo.",
       "empty": "Todavía no hay interesados. Cuando alguien se anote en la landing, aparece acá (y te llega un aviso por email).",
-      "approved": "Aprobado",
+      "approved": "{email} fue aprobado.",
       "pending": "Pendiente",
       "approving": "Aprobando…",
       "approve": "Aprobar"
@@ -548,7 +558,8 @@
       "revokeDialogTitle": "¿Revocar la invitación?",
       "revokeDialogDescription": "El link enviado a <mono>{email}</mono> deja de funcionar de inmediato. Esta acción no se puede deshacer — si te arrepentís vas a tener que crear una invitación nueva.",
       "revokeCancel": "Cancelar",
-      "revokeConfirm": "Revocar"
+      "revokeConfirm": "Revocar",
+      "revoked": "Invitación de {email} revocada."
     },
     "users": {
       "title": "Usuarios",
@@ -597,7 +608,10 @@
         "deactivateGeneric": "No se pudo desactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
         "reactivateGeneric": "No se pudo reactivar la cuenta de {email}. Intentá de nuevo en unos segundos.",
         "roleGeneric": "No se pudo cambiar el rol de {email}. Intentá de nuevo en unos segundos."
-      }
+      },
+      "roleChanged": "Rol actualizado para {email}.",
+      "deactivated": "{email} quedó desactivado.",
+      "reactivated": "{email} volvió a estar activo."
     }
   },
   "onboarding": {
@@ -843,11 +857,44 @@
     "title": "Detalle de estación",
     "timeChunk": "Franja por fila",
     "comingSoon": "próximamente",
+    "settings": "Escala",
+    "clipMult": "Umbral de saturación",
+    "clipMultHint": "Subilo si el sismo se ve todo rojo y aplastado contra el borde de la fila",
+    "barMult": "Amplitud",
+    "barMultHint": "Exagera la traza sin mover el umbral de saturación",
+    "reset": "Restablecer",
+    "freqAxis": "Frecuencia (Hz)",
+    "powerAxis": "dB",
+    "spectrogramError": "No se pudo cargar el espectrograma de esta estación",
+    "spectrogramEmpty": "Sin columnas guardadas para este canal — el ingestor de espectros sigue un conjunto acotado de estaciones",
+    "mixedGrid": "Las columnas de esta ventana tienen grillas de frecuencia distintas; el eje cubre el rango de todas",
     "tabs": {
       "helicorder": "Helicorder",
       "spectrogram": "Espectrograma",
       "wave": "Onda + Espectro",
       "rsam": "RSAM"
-    }
+    },
+    "filter": "Filtro 1-10 Hz",
+    "filterHint": "Butterworth pasabanda 1-10 Hz: quita la deriva lenta y el ruido agudo para que se lea la fase sísmica. Vuelve a pedir la onda al servidor."
+  },
+  "stations": {
+    "title": "Estaciones",
+    "subtitle": "Buscá una estación para ver su helicorder y espectrograma",
+    "searchPlaceholder": "Red, estación, canal o ciudad (ej. USC, tokyo)",
+    "searchLabel": "Buscar estaciones",
+    "clearSearch": "Limpiar búsqueda",
+    "catalogHeading": "En el catálogo",
+    "worldHeading": "Otras estaciones del mundo",
+    "searching": "Buscando en FDSN…",
+    "countLabel": "{count, plural, =0 {sin estaciones} one {# estación} other {# estaciones}}",
+    "live": "Con datos recientes",
+    "primary": "Principal",
+    "noCatalogMatches": "Ninguna estación del catálogo coincide",
+    "noWorldMatches": "FDSN no devolvió estaciones para ese código",
+    "worldHint": "La búsqueda global es por CÓDIGO de estación (USC, MAJO), no por nombre de lugar",
+    "catalogError": "No se pudo cargar el catálogo de estaciones",
+    "searchError": "Falló la búsqueda en FDSN; el catálogo local sigue disponible",
+    "loading": "Cargando catálogo…",
+    "retry": "Reintentar"
   }
 }

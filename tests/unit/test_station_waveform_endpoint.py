@@ -72,6 +72,34 @@ def test_sin_datos_fdsn_da_404(client):
     assert "XX.NADA..BHZ" in resp.json()["detail"]
 
 
+@pytest.mark.parametrize(
+    "minutes,horas_esperadas",
+    [
+        (60, 1),  # exacto: una hora es una hora
+        (90, 2),  # 90 // 60 daba 1 y se perdía media hora en silencio
+        (61, 2),  # un minuto de más ya obliga a pedir la hora siguiente
+        (1440, 24),  # el día entero del helicorder no cambia
+        (1, 1),  # nunca menos de una hora: FDSN se pide por horas
+    ],
+)
+def test_no_recorta_la_ventana_pedida(client, minutes, horas_esperadas):
+    """`minutes // 60` (división ENTERA) achicaba el pedido sin avisar.
+
+    Cualquier ventana no múltiplo de 60 se truncaba hacia abajo: pedir 90 min
+    devolvía 60 y el cliente no tenía forma de notarlo. Se redondea hacia
+    ARRIBA porque pedir de más y recortar es correcto — pedir de menos y
+    devolver la ventana equivocada, no.
+    """
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(return_value=_stream())
+        resp = client.get(f"/stations/IU.MAJO..BHZ/waveform?minutes={minutes}&points=100")
+
+    assert resp.status_code == 200
+    assert gs.return_value.get_waveform_data.await_args.kwargs["duration_hours"] == (
+        horas_esperadas
+    )
+
+
 def test_usa_el_trace_mas_largo_cuando_hay_gaps(client):
     """Un stream partido por gaps trae varios traces: se dibuja el más largo,
     no el primero (que puede ser un fragmento de segundos)."""

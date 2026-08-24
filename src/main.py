@@ -14,6 +14,7 @@ Endpoints:
 
 import asyncio
 import logging
+import math
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
@@ -2425,6 +2426,56 @@ async def get_spectrogram_history(
     return {"channel": channel, "columns": columns}
 
 
+@app.get("/stations/search", tags=["stations"])
+async def search_stations(
+    q: str = Query(..., min_length=2, max_length=5, description="Código de estación, ej. USC"),
+    limit: int = Query(25, ge=1, le=50),
+) -> dict:
+    """Busca estaciones en FDSN por CÓDIGO de estación (no por nombre de sitio).
+
+    Complementa a `/spectrograms/station-catalog`: ese devuelve las 75
+    candidatas del muro, esto llega a cualquier estación que FDSN conozca.
+
+    Verificado contra IRIS el 2026-08-23: `*USC*` devuelve 2 estaciones en
+    ~1,3 s, `NEV*` devuelve 204. FDSN no indexa el nombre del sitio, así que
+    buscar "nevado" no da resultados — el filtrado por ciudad se hace en el
+    cliente contra el catálogo. Ver `src/services/station_search.py`.
+
+    Un término que no parece un código devuelve `{"stations": []}` con 200,
+    no un 4xx: para el buscador "no hay coincidencias" no es un error.
+
+    IMPORTANTE: esta ruta va declarada ANTES de `/stations/{channel}/waveform`.
+    Si no, FastAPI matchea "search" como `{channel}`.
+    """
+    from src.services.station_search import (
+        build_station_pattern,
+        is_searchable_code,
+        normalize_fdsn_stations,
+    )
+
+    if not is_searchable_code(q):
+        return {"query": q, "stations": []}
+
+    pattern = build_station_pattern(q)
+
+    ttl = settings.spectrogram_cache_ttl_seconds
+    cache_key = f"station-search:{pattern}:{limit}"
+    if ttl > 0:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    service = get_spectrogram_service()
+    raw = await service.search_stations_by_code(pattern, limit=limit)
+    result = {"query": q, "stations": normalize_fdsn_stations(raw)}
+
+    # Sólo se cachea si hubo resultados: un vacío puede venir de un timeout
+    # transitorio, y guardarlo dejaría la búsqueda muerta por todo el TTL.
+    if ttl > 0 and result["stations"]:
+        cache.set(cache_key, result, ttl)
+    return result
+
+
 @app.get("/stations/{channel}/waveform", tags=["stations"])
 async def get_station_waveform(
     channel: str,
@@ -2461,7 +2512,11 @@ async def get_station_waveform(
         station=sta,
         location=loc or "*",
         channel=cha,
-        duration_hours=max(1, minutes // 60),
+        # Redondeo hacia ARRIBA: con `//` cualquier ventana no múltiplo de 60
+        # se truncaba en silencio (90 min devolvían 60) y el cliente recibía
+        # menos de lo que pidió sin forma de notarlo. Pedirle de más a FDSN y
+        # recortar es correcto; devolver la ventana equivocada, no.
+        duration_hours=max(1, math.ceil(minutes / 60)),
     )
     if stream is None or len(stream) == 0:
         raise HTTPException(status_code=404, detail=f"Sin datos FDSN para {channel}")
