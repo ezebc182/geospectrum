@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fullViewport, zoomTime, type Viewport } from './spectrogram-viewport';
+import { fullViewport, isFullView, panViewport, zoomFreq, zoomTime, type Viewport } from './spectrogram-viewport';
 
 const LIMITS: Viewport = { fMin: 0, fMax: 20, startMs: 1_000_000, endMs: 2_000_000 };
 
@@ -40,5 +40,58 @@ describe('zoomTime', () => {
     const v = zoomTime(LIMITS, 0.5, 1, LIMITS);
     expect(v.endMs).toBeLessThanOrEqual(LIMITS.endMs);
     expect(v.startMs).toBeGreaterThanOrEqual(LIMITS.startMs);
+  });
+});
+
+describe('zoomFreq', () => {
+  it('acerca en frecuencia sin tocar el rango temporal', () => {
+    const v = zoomFreq(LIMITS, 0.5, 0.5, LIMITS);
+    expect(v.fMax - v.fMin).toBe(10);
+    expect(v.startMs).toBe(LIMITS.startMs);
+    expect(v.endMs).toBe(LIMITS.endMs);
+  });
+
+  it('no deja acercarse por debajo del span mínimo en Hz', () => {
+    let v: Viewport = LIMITS;
+    for (let i = 0; i < 20; i++) v = zoomFreq(v, 0.5, 0.5, LIMITS);
+    expect(v.fMax - v.fMin).toBeGreaterThanOrEqual(0.5);
+  });
+});
+
+describe('panViewport', () => {
+  it('corre la ventana en tiempo por una fracción del span visible', () => {
+    const acercado = zoomTime(LIMITS, 0.5, 0.5, LIMITS); // span 500_000
+    const v = panViewport(acercado, 0.1, 0, LIMITS);
+    expect(v.startMs).toBeCloseTo(acercado.startMs + 50_000, 0);
+    expect(v.endMs - v.startMs).toBe(500_000);
+  });
+
+  it('no deja panear fuera del dominio del dato', () => {
+    const acercado = zoomTime(LIMITS, 0.5, 0.5, LIMITS);
+    const v = panViewport(acercado, 99, 0, LIMITS);
+    expect(v.endMs).toBe(LIMITS.endMs);
+    expect(v.endMs - v.startMs).toBe(500_000);
+  });
+
+  it('en vista completa el pan no mueve nada', () => {
+    const v = panViewport(LIMITS, 0.5, 0.5, LIMITS);
+    expect(v).toEqual(LIMITS);
+  });
+});
+
+describe('isFullView', () => {
+  it('reconoce la vista completa', () => {
+    expect(isFullView(LIMITS, LIMITS)).toBe(true);
+  });
+
+  it('reconoce que hay zoom activo', () => {
+    expect(isFullView(zoomTime(LIMITS, 0.5, 0.5, LIMITS), LIMITS)).toBe(false);
+  });
+
+  it('tolera el error de coma flotante de acercar y alejar', () => {
+    // Con zoom sobre fracciones no exactas, quedan residuos de coma flotante
+    const v1 = zoomTime(LIMITS, 1 / 3, 0.5, LIMITS);
+    const v2 = zoomTime(v1, 3, 0.5, LIMITS);
+    expect(isFullView(v2, LIMITS)).toBe(true);
   });
 });

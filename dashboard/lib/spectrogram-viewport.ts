@@ -86,3 +86,75 @@ export function zoomTime(
   );
   return { ...v, startMs, endMs };
 }
+
+export function zoomFreq(
+  v: Viewport,
+  factor: number,
+  anchorFraction: number,
+  limits: Viewport,
+): Viewport {
+  // El eje de frecuencia se dibuja con el máximo ARRIBA, así que una fracción
+  // de 0 en pantalla es el tope del rango. Se invierte acá y no en el llamador
+  // para que quien maneje el mouse no tenga que saberlo.
+  const [fMin, fMax] = zoomRange(
+    v.fMin, v.fMax, factor, 1 - anchorFraction,
+    limits.fMin, limits.fMax, MIN_FREQ_SPAN_HZ,
+  );
+  return { ...v, fMin, fMax };
+}
+
+/**
+ * Corre la ventana. Las fracciones son del span VISIBLE, no del total: así un
+ * arrastre de N píxeles mueve siempre los mismos N píxeles de contenido, con
+ * zoom o sin él.
+ */
+export function panViewport(
+  v: Viewport,
+  dxFraction: number,
+  dyFraction: number,
+  limits: Viewport,
+): Viewport {
+  const timeSpan = v.endMs - v.startMs;
+  const freqSpan = v.fMax - v.fMin;
+
+  const dt = timeSpan * dxFraction;
+  const df = freqSpan * dyFraction;
+
+  const [startMs, endMs] = shiftRange(
+    v.startMs + dt, v.endMs + dt, limits.startMs, limits.endMs,
+  );
+  const [fMin, fMax] = shiftRange(
+    v.fMin + df, v.fMax + df, limits.fMin, limits.fMax,
+  );
+  return { fMin, fMax, startMs, endMs };
+}
+
+/** Empuja un rango dentro de los límites preservando su ancho. */
+function shiftRange(
+  min: number, max: number, limitMin: number, limitMax: number,
+): [number, number] {
+  const span = max - min;
+  if (span >= limitMax - limitMin) return [limitMin, limitMax];
+  if (min < limitMin) return [limitMin, limitMin + span];
+  if (max > limitMax) return [limitMax - span, limitMax];
+  return [min, max];
+}
+
+/**
+ * ¿Está mostrando todo? Con tolerancia relativa: acercar y alejar deja residuo
+ * de coma flotante, y comparar por igualdad exacta dejaría el botón "reset"
+ * encendido para siempre después del primer zoom.
+ */
+export function isFullView(v: Viewport, limits: Viewport): boolean {
+  const timeSpan = limits.endMs - limits.startMs;
+  const freqSpan = limits.fMax - limits.fMin;
+  const cerca = (a: number, b: number, escala: number) =>
+    Math.abs(a - b) <= Math.max(1e-5, escala * 1e-5);
+
+  return (
+    cerca(v.startMs, limits.startMs, timeSpan) &&
+    cerca(v.endMs, limits.endMs, timeSpan) &&
+    cerca(v.fMin, limits.fMin, freqSpan) &&
+    cerca(v.fMax, limits.fMax, freqSpan)
+  );
+}
