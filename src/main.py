@@ -14,6 +14,7 @@ Endpoints:
 
 import asyncio
 import logging
+import math
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
@@ -2511,7 +2512,11 @@ async def get_station_waveform(
         station=sta,
         location=loc or "*",
         channel=cha,
-        duration_hours=max(1, minutes // 60),
+        # Redondeo hacia ARRIBA: con `//` cualquier ventana no múltiplo de 60
+        # se truncaba en silencio (90 min devolvían 60) y el cliente recibía
+        # menos de lo que pidió sin forma de notarlo. Pedirle de más a FDSN y
+        # recortar es correcto; devolver la ventana equivocada, no.
+        duration_hours=max(1, math.ceil(minutes / 60)),
     )
     if stream is None or len(stream) == 0:
         raise HTTPException(status_code=404, detail=f"Sin datos FDSN para {channel}")
