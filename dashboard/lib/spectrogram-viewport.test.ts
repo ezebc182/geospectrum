@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fullViewport, isFullView, panViewport, zoomFreq, zoomTime, type Viewport } from './spectrogram-viewport';
+import { fullViewport, isFullView, panViewport, visibleColumnRange, zoomFreq, zoomTime, type Viewport } from './spectrogram-viewport';
 
 const LIMITS: Viewport = { fMin: 0, fMax: 20, startMs: 1_000_000, endMs: 2_000_000 };
 
@@ -93,5 +93,43 @@ describe('isFullView', () => {
     const v1 = zoomTime(LIMITS, 1 / 3, 0.5, LIMITS);
     const v2 = zoomTime(v1, 3, 0.5, LIMITS);
     expect(isFullView(v2, LIMITS)).toBe(true);
+  });
+});
+
+describe('visibleColumnRange', () => {
+  const cols = Array.from({ length: 100 }, (_, i) => ({
+    endtime: new Date(1_000_000 + i * 10_000).toISOString(),
+  }));
+
+  it('en vista completa devuelve todas las columnas', () => {
+    const [lo, hi] = visibleColumnRange(cols, LIMITS);
+    expect(lo).toBe(0);
+    expect(hi).toBe(100);
+  });
+
+  it('recorta a las columnas dentro de la ventana', () => {
+    const v = { ...LIMITS, startMs: 1_300_000, endMs: 1_500_000 };
+    const [lo, hi] = visibleColumnRange(cols, v);
+    // Los índices 30..50 caen en la ventana.
+    expect(lo).toBeLessThanOrEqual(30);
+    expect(hi).toBeGreaterThanOrEqual(51);
+    expect(hi - lo).toBeLessThan(30);
+  });
+
+  it('incluye una columna de más en cada borde para no dejar franja vacía', () => {
+    const v = { ...LIMITS, startMs: 1_300_000, endMs: 1_500_000 };
+    const [lo, hi] = visibleColumnRange(cols, v);
+    expect(lo).toBe(29);
+    expect(hi).toBe(52);
+  });
+
+  it('devuelve rango vacío si ninguna columna cae en la ventana', () => {
+    const v = { ...LIMITS, startMs: 5_000_000, endMs: 6_000_000 };
+    const [lo, hi] = visibleColumnRange(cols, v);
+    expect(hi).toBeLessThanOrEqual(lo + 1);
+  });
+
+  it('no rompe con la lista vacía', () => {
+    expect(visibleColumnRange([], LIMITS)).toEqual([0, 0]);
   });
 });

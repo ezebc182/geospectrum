@@ -158,3 +158,41 @@ export function isFullView(v: Viewport, limits: Viewport): boolean {
     cerca(v.fMax, limits.fMax, freqSpan)
   );
 }
+
+/**
+ * Rango `[lo, hi)` de columnas que tocan la ventana visible.
+ *
+ * Búsqueda binaria porque el ingestor las inserta en orden y `/history` las
+ * devuelve ordenadas por `endtime`. Con zoom el bucle de dibujo corre en cada
+ * tick de la rueda; recorrer 4000 columnas para pintar 40 colgaría la pantalla.
+ *
+ * Se agrega una columna de margen a cada lado: la del borde se dibuja con
+ * ancho hacia adentro, y sin el margen quedaría una franja sin pintar contra
+ * el filo del recuadro.
+ */
+export function visibleColumnRange<T extends { endtime: string }>(
+  cols: readonly T[],
+  v: Viewport,
+): [number, number] {
+  if (cols.length === 0) return [0, 0];
+
+  const lo = lowerBound(cols, v.startMs);
+  const hi = lowerBound(cols, v.endMs);
+
+  return [Math.max(0, lo - 1), Math.min(cols.length, hi + 2)];
+}
+
+/** Primer índice cuyo `endtime` es >= `ms`. */
+function lowerBound<T extends { endtime: string }>(cols: readonly T[], ms: number): number {
+  let lo = 0;
+  let hi = cols.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const t = Date.parse(cols[mid].endtime);
+    // Un timestamp roto no debe abortar la búsqueda: se lo trata como pasado
+    // remoto, que es lo que hace el resto del pipeline con las columnas malas.
+    if (!Number.isFinite(t) || t < ms) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
