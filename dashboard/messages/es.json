@@ -869,6 +869,9 @@
     "spectrogramError": "No se pudo cargar el espectrograma de esta estación",
     "spectrogramEmpty": "Sin columnas guardadas para este canal — el ingestor de espectros sigue un conjunto acotado de estaciones",
     "mixedGrid": "Las columnas de esta ventana tienen grillas de frecuencia distintas; el eje cubre el rango de todas",
+    "resetZoom": "Ajustar todo",
+    "zoomHint": "Rueda: tiempo · Shift+rueda: frecuencia · Arrastrar: mover · Doble clic o Esc: ajustar todo",
+    "backToLive": "Volver a vivo",
     "tabs": {
       "helicorder": "Helicorder",
       "spectrogram": "Espectrograma",

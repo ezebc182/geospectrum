@@ -869,6 +869,9 @@
     "spectrogramError": "Could not load the spectrogram for this station",
     "spectrogramEmpty": "No stored columns for this channel — the spectrogram ingestor follows a limited set of stations",
     "mixedGrid": "Columns in this window use different frequency grids; the axis covers the range of all of them",
+    "resetZoom": "Fit all",
+    "zoomHint": "Wheel: time · Shift+wheel: frequency · Drag: pan · Double-click or Esc: fit all",
+    "backToLive": "Back to live",
     "tabs": {
       "helicorder": "Helicorder",
       "spectrogram": "Spectrogram",

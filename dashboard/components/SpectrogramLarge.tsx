@@ -32,6 +32,15 @@ import {
   timeAxis,
   timeToFraction,
 } from '@/lib/spectrogram-time-axis';
+import {
+  type Viewport,
+  fullViewport,
+  isFullView,
+  panViewport,
+  visibleColumnRange,
+  zoomFreq,
+  zoomTime,
+} from '@/lib/spectrogram-viewport';
 
 interface SpectrogramLargeProps {
   channel: string;
@@ -71,6 +80,12 @@ export function SpectrogramLarge({
   const [status, setStatus] = useState<'loading' | 'ready' | 'live' | 'empty' | 'error'>(
     'loading',
   );
+  // El viewport es estado PROPIO, no derivado de las columnas. Esa es toda la
+  // diferencia: si se derivara, cada mensaje del WS re-encuadraría la vista y
+  // sería imposible mirar un evento con zoom mientras sigue llegando señal.
+  // `null` = sin zoom, se muestra el dominio completo del dato.
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
 
   // Historial inicial.
   useEffect(() => {
@@ -132,6 +147,12 @@ export function SpectrogramLarge({
   );
   const tAxis = useMemo(() => timeAxis(columns.map((c) => c.endtime)), [columns]);
 
+  // Límites = dominio del dato. Crecen cuando llega señal nueva.
+  const limits = useMemo(() => fullViewport(fAxis, tAxis), [fAxis, tAxis]);
+  // Vista efectiva: la del usuario si tocó algo, si no el dominio completo.
+  const view = viewport ?? limits;
+  const zoomed = viewport !== null && !isFullView(viewport, limits);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -140,21 +161,35 @@ export function SpectrogramLarge({
     const plotW = width - MARGIN_LEFT - MARGIN_RIGHT;
     const plotH = height - MARGIN_TOP - MARGIN_BOTTOM;
 
+    // Los ejes de DIBUJO salen del viewport, no del dato. Las funciones
+    // freqToFraction/timeToFraction son puras y toman el eje por parámetro,
+    // así que alcanza con pasarles otro objeto: no hay que tocar el mapeo.
+    const viewF = { fMin: view.fMin, fMax: view.fMax, mixedGrid: fAxis.mixedGrid };
+    const viewT = { startMs: view.startMs, endMs: view.endMs };
+
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = '#000000';
     ctx.fillRect(MARGIN_LEFT, MARGIN_TOP, plotW, plotH);
 
     // --- columnas ---
-    // El ancho de columna sale del tiempo, no de dividir el ancho por la
-    // cantidad: con huecos en la serie, repartir parejo movería los eventos de
-    // su hora real.
-    const colW = Math.max(1, Math.ceil(plotW / Math.max(1, columns.length)));
+    // Sin clip, las columnas que caen fuera de la ventana pintan encima de los
+    // rótulos de los ejes. Se restaura antes de dibujar los ejes, que van
+    // fuera del área recortada.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(MARGIN_LEFT, MARGIN_TOP, plotW, plotH);
+    ctx.clip();
 
-    for (const col of columns) {
+    const [lo, hi] = visibleColumnRange(columns, view);
+    const visibles = hi - lo;
+    const colW = Math.max(1, Math.ceil(plotW / Math.max(1, visibles)));
+
+    for (let ci = lo; ci < hi; ci++) {
+      const col = columns[ci];
       const ms = Date.parse(col.endtime);
       if (!Number.isFinite(ms)) continue;
-      const x = MARGIN_LEFT + timeToFraction(ms, tAxis) * (plotW - colW);
+      const x = MARGIN_LEFT + timeToFraction(ms, viewT) * (plotW - colW);
 
       const n = Math.min(col.freqs.length, col.power_db.length);
       for (let i = 0; i < n; i++) {
@@ -162,15 +197,17 @@ export function SpectrogramLarge({
         if (!Number.isFinite(hz)) continue;
         // Cada bin cubre hasta el siguiente: sin esto quedan rayas negras
         // entre bins cuando el canvas es más alto que la cantidad de bins.
-        const yTop = MARGIN_TOP + freqToFraction(hz, fAxis) * plotH;
+        const yTop = MARGIN_TOP + freqToFraction(hz, viewF) * plotH;
         const hzNext = i + 1 < n ? col.freqs[i + 1] : hz;
-        const yNext = MARGIN_TOP + freqToFraction(hzNext, fAxis) * plotH;
+        const yNext = MARGIN_TOP + freqToFraction(hzNext, viewF) * plotH;
         const h = Math.max(1, Math.abs(yTop - yNext));
 
         ctx.fillStyle = jet2(powerDbToT(col.power_db[i]));
         ctx.fillRect(Math.round(x), Math.round(yTop - h), colW, Math.ceil(h));
       }
     }
+
+    ctx.restore();
 
     // --- eje de frecuencia ---
     ctx.fillStyle = '#cccccc';
@@ -179,8 +216,8 @@ export function SpectrogramLarge({
     ctx.textBaseline = 'middle';
     ctx.strokeStyle = '#444444';
 
-    for (const hz of niceFrequencyTicks(fAxis.fMin, fAxis.fMax)) {
-      const y = MARGIN_TOP + freqToFraction(hz, fAxis) * plotH;
+    for (const hz of niceFrequencyTicks(viewF.fMin, viewF.fMax)) {
+      const y = MARGIN_TOP + freqToFraction(hz, viewF) * plotH;
       ctx.fillText(`${hz}`, MARGIN_LEFT - 8, y);
       ctx.beginPath();
       ctx.moveTo(MARGIN_LEFT - 4, y);
@@ -198,15 +235,70 @@ export function SpectrogramLarge({
     // --- eje de tiempo (UTC, como el resto de la app) ---
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    for (const ms of niceTimeTicks(tAxis.startMs, tAxis.endMs)) {
-      const x = MARGIN_LEFT + timeToFraction(ms, tAxis) * plotW;
+    for (const ms of niceTimeTicks(viewT.startMs, viewT.endMs)) {
+      const x = MARGIN_LEFT + timeToFraction(ms, viewT) * plotW;
       ctx.fillText(new Date(ms).toISOString().slice(11, 16), x, height - MARGIN_BOTTOM + 6);
       ctx.beginPath();
       ctx.moveTo(x, height - MARGIN_BOTTOM);
       ctx.lineTo(x, height - MARGIN_BOTTOM + 4);
       ctx.stroke();
     }
-  }, [columns, fAxis, tAxis, width, height, t]);
+  }, [columns, view, fAxis.mixedGrid, width, height, t]);
+
+  const fractionsFromEvent = (e: { clientX: number; clientY: number }) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return { fx: 0.5, fy: 0.5 };
+    const plotW = width - MARGIN_LEFT - MARGIN_RIGHT;
+    const plotH = height - MARGIN_TOP - MARGIN_BOTTOM;
+    // El canvas puede estar escalado por CSS: se pasa de px de pantalla a px
+    // del canvas antes de calcular la fracción, o el ancla cae desplazada.
+    const scaleX = width / rect.width;
+    const scaleY = height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX - MARGIN_LEFT;
+    const y = (e.clientY - rect.top) * scaleY - MARGIN_TOP;
+    return {
+      fx: Math.min(1, Math.max(0, x / plotW)),
+      fy: Math.min(1, Math.max(0, y / plotH)),
+    };
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const { fx, fy } = fractionsFromEvent(e);
+    // deltaY negativo = rueda hacia adelante = acercar.
+    const factor = e.deltaY < 0 ? 0.8 : 1.25;
+    setViewport((prev) =>
+      e.shiftKey
+        ? zoomFreq(prev ?? limits, factor, fy, limits)
+        : zoomTime(prev ?? limits, factor, fx, limits),
+    );
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const start = dragRef.current;
+    if (!start) return;
+    const plotW = width - MARGIN_LEFT - MARGIN_RIGHT;
+    const plotH = height - MARGIN_TOP - MARGIN_BOTTOM;
+    // Arrastrar a la derecha muestra el pasado: el contenido acompaña al dedo.
+    const dx = -(e.clientX - start.x) / plotW;
+    const dy = (e.clientY - start.y) / plotH;
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    setViewport((prev) => panViewport(prev ?? limits, dx, dy, limits));
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const resetZoom = () => setViewport(null);
 
   if (status === 'error') {
     return (
@@ -227,7 +319,19 @@ export function SpectrogramLarge({
           ref={canvasRef}
           width={width}
           height={height}
-          className="block rounded"
+          tabIndex={0}
+          role="img"
+          aria-label={t('zoomHint')}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onDoubleClick={resetZoom}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') resetZoom();
+          }}
+          className={`block rounded outline-none ${zoomed ? 'cursor-grab' : ''}`}
         />
         <Colorbar height={height - MARGIN_TOP - MARGIN_BOTTOM} label={t('powerAxis')} />
       </div>
@@ -242,6 +346,17 @@ export function SpectrogramLarge({
           {t('mixedGrid')}
         </p>
       )}
+      {zoomed && (
+        <button
+          type="button"
+          data-testid="spectrogram-reset-zoom"
+          onClick={resetZoom}
+          className="mt-2 rounded bg-teal-600 px-2 py-1 text-xs font-semibold text-white hover:bg-teal-500"
+        >
+          {t('resetZoom')}
+        </button>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground">{t('zoomHint')}</p>
     </div>
   );
 }

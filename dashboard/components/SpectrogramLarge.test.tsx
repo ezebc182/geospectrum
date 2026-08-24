@@ -5,7 +5,7 @@
  * el espectrograma podría salir negro sin que nada falle.
  */
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +27,11 @@ function makeColumn(offsetMin: number, freqs = grid(40, 0.25, 10)) {
   };
 }
 
+/** Columnas por defecto para los tests de zoom/pan: no les importa el contenido, sólo que haya varias. */
+function sampleColumns() {
+  return [makeColumn(0), makeColumn(5), makeColumn(10), makeColumn(15), makeColumn(20)];
+}
+
 function stubFetch(columns: unknown[]) {
   vi.stubGlobal(
     'fetch',
@@ -34,15 +39,65 @@ function stubFetch(columns: unknown[]) {
   );
 }
 
+/** Igual que `stubFetch`, con nombre acorde al brief para los tests de zoom/pan. */
+function mockHistory({ columns }: { columns: unknown[] }) {
+  stubFetch(columns);
+}
+
 /** WebSocket inerte: el componente lo abre siempre y jsdom no lo trae. */
 class FakeWS {
+  static instances: FakeWS[] = [];
   onmessage: ((e: { data: string }) => void) | null = null;
+  constructor() {
+    FakeWS.instances.push(this);
+  }
   close() {}
 }
 
+/** Simula la llegada de una columna nueva por WS a la última conexión abierta. */
+function emitWsColumn(col: { endtime: string; freqs: number[]; power_db: number[] }) {
+  const ws = FakeWS.instances.at(-1);
+  ws?.onmessage?.({ data: JSON.stringify({ channel: 'x', ...col }) });
+}
+
+/** Contexto de canvas mockeado más reciente, con `clip` espiable. */
+let mockCtx: ReturnType<typeof buildMockContext> | null = null;
+
+function buildMockContext() {
+  return {
+    fillRect: vi.fn(),
+    fillText: vi.fn(),
+    beginPath: vi.fn(),
+    stroke: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    rotate: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    fillStyle: '',
+    strokeStyle: '',
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+  };
+}
+
+function getMockContext() {
+  if (!mockCtx) throw new Error('getMockContext: todavía no se montó ningún canvas mockeado');
+  return mockCtx;
+}
+
 beforeEach(() => {
+  FakeWS.instances = [];
   vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket);
   stubFetch([makeColumn(0), makeColumn(5), makeColumn(10)]);
+  mockCtx = buildMockContext();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+    mockCtx as unknown as CanvasRenderingContext2D,
+  );
 });
 
 afterEach(() => {
@@ -122,6 +177,8 @@ describe('SpectrogramLarge', () => {
       rotate: vi.fn(),
       moveTo: vi.fn((x: number, y: number) => coords.push(x, y)),
       lineTo: vi.fn((x: number, y: number) => coords.push(x, y)),
+      rect: vi.fn(),
+      clip: vi.fn(),
       fillStyle: '',
       strokeStyle: '',
       font: '',
@@ -137,5 +194,98 @@ describe('SpectrogramLarge', () => {
     await waitFor(() => expect(ctx.fillRect).toHaveBeenCalled());
     const malos = coords.filter((c) => !Number.isFinite(c));
     expect(malos, `${malos.length} coordenadas no finitas`).toHaveLength(0);
+  });
+
+  it('arranca sin zoom y no muestra el boton de reset', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    await screen.findByTestId('spectrogram-large-canvas');
+    expect(screen.queryByTestId('spectrogram-reset-zoom')).toBeNull();
+  });
+
+  it('la rueda del mouse acerca en tiempo y muestra el boton de reset', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+
+    expect(await screen.findByTestId('spectrogram-reset-zoom')).toBeTruthy();
+  });
+
+  it('el boton de reset vuelve a la vista completa', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    fireEvent.click(await screen.findByTestId('spectrogram-reset-zoom'));
+
+    await waitFor(() => expect(screen.queryByTestId('spectrogram-reset-zoom')).toBeNull());
+  });
+
+  it('el doble clic sobre el canvas resetea el zoom', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+    fireEvent.doubleClick(canvas);
+
+    await waitFor(() => expect(screen.queryByTestId('spectrogram-reset-zoom')).toBeNull());
+  });
+
+  it('la tecla Escape resetea el zoom', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+    fireEvent.keyDown(canvas, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByTestId('spectrogram-reset-zoom')).toBeNull());
+  });
+
+  it('con zoom activo, una columna nueva del WS NO mueve la vista', async () => {
+    // El bug que este test previene: el useEffect de dibujo depende de las
+    // columnas, y si el viewport se derivara de ellas cada mensaje del WS le
+    // correría el encuadre al usuario debajo del mouse.
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    const canvas = await screen.findByTestId('spectrogram-large-canvas');
+
+    fireEvent.wheel(canvas, { deltaY: -100, clientX: 300, clientY: 200 });
+    await screen.findByTestId('spectrogram-reset-zoom');
+
+    // Rótulos del eje de tiempo ANTES del mensaje del WS: son la huella de
+    // qué ventana temporal se está dibujando ahora mismo.
+    const ctx = getMockContext();
+    const ticksAntes = ctx.fillText.mock.calls.map((c) => c[0]).join('|');
+
+    emitWsColumn({
+      // Muy lejos en el futuro a propósito: si la vista se re-encuadrara con
+      // el dato completo, el eje de tiempo pasaría a cubrir hasta acá y los
+      // rótulos cambiarían. Si la vista queda quieta, no cambian.
+      endtime: new Date(Date.now() + 3_600_000).toISOString(),
+      freqs: [1, 2],
+      power_db: [50, 60],
+    });
+
+    // Sigue habiendo zoom: la vista no se re-encuadró sola.
+    await waitFor(() => expect(screen.getByTestId('spectrogram-reset-zoom')).toBeTruthy());
+
+    const ticksDespues = ctx.fillText.mock.calls.map((c) => c[0]).join('|');
+    expect(ticksDespues).toBe(ticksAntes);
+  });
+
+  it('recorta el dibujo al area de plot para no pisar los rotulos', async () => {
+    mockHistory({ columns: sampleColumns() });
+    renderSpec('AR.TEST..HHZ');
+    await screen.findByTestId('spectrogram-large-canvas');
+
+    const ctx = getMockContext();
+    expect(ctx.clip).toHaveBeenCalled();
   });
 });
