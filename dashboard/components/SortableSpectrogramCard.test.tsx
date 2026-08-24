@@ -106,7 +106,7 @@ function renderCard(props: { liveChannel?: string; metrics?: StationMetrics }) {
 
 describe('SortableSpectrogramCard — modo inicial', () => {
   it('arranca en vivo cuando el canal llega DESPUÉS del primer render', () => {
-    // El caso real: /spectrograms-live pide los canales en vivo en un
+    // El caso real: /spectrograms pide los canales en vivo en un
     // useEffect asíncrono, así que el primer render de la tarjeta siempre ve
     // liveChannel=undefined. Con el modo resuelto sólo en el useState inicial,
     // la tarjeta quedaba clavada en "24h" para siempre — y pedía un PNG a FDSN

@@ -1,5 +1,5 @@
 /**
- * Pestaña "Muro" de /spectrograms-live (PR-W2): la vista de tarjetas es el
+ * Pestaña "Muro" de /spectrograms (PR-W2): la vista de tarjetas es el
  * default y la pestaña Muro monta WallManager solo cuando ?tab=wall.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,7 @@ const { searchParamsMock, routerMock, pathnameMock } = vi.hoisted(() => ({
   // identidad inestable en deps cuelga vitest — ver globe/broadcast-default.test.tsx).
   searchParamsMock: { current: new URLSearchParams() },
   routerMock: { replace: vi.fn() },
-  pathnameMock: { current: '/spectrograms-live' },
+  pathnameMock: { current: '/spectrograms' },
 }));
 
 vi.mock('next/navigation', () => ({

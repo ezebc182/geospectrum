@@ -355,10 +355,11 @@
       "modalTitle": "{city} spectrogram",
       "viewStationDetail": "View station detail",
       "closeModal": "Close",
-      "noLiveStream": "This station does not stream in real time"
+      "noLiveStream": "This station does not stream in real time",
+      "notAllLive": "Not all stations stream in real time. Those that don't show the last 24 h."
     },
     "spectrogramsPage": {
-      "title": "Seismic Spectrograms",
+      "title": "Spectrograms",
       "subtitle": "Monitoring {count} locations · {live} with live streaming",
       "columns": "{count} columns",
       "addCity": "Add City",
