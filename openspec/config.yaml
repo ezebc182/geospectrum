@@ -11,7 +11,10 @@ context: |
 rules:
   proposal:
     - Include rollback plan for risky changes
-    - Identify affected modules/packages (backend src/{adapters,api,services,workers} vs dashboard/{app,components,hooks,lib})
+    # OJO: `src/workers/` NO EXISTE (verificado 2026-08-24). Lo que parece un
+    # worker (el ingestor de SeedLink que puebla RSAM) vive en
+    # src/services/seedlink_ingestor.py.
+    - Identify affected modules/packages (backend src/{adapters,api,services} vs dashboard/{app,components,hooks,lib})
   specs:
     - Use Given/When/Then format for scenarios
     - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
@@ -28,8 +31,15 @@ rules:
     tdd: false
     test_command: "cd seismic-monitor && pytest"
   verify:
-    test_command: "cd seismic-monitor && pytest"
-    build_command: "cd seismic-monitor/dashboard && npm run build"
+    # El venv está en venv/ (NO .venv/): `pytest` pelado revienta con
+    # ModuleNotFoundError de asyncpg.
+    test_command: "./venv/bin/python -m pytest"
+    # NUNCA `next build`: comparte el directorio .next con el server de dev y lo
+    # rompe (ENOENT de vendor-chunks en la pantalla del usuario, con el server
+    # corriendo). `tsc --noEmit` verifica los tipos sin escribir nada — probado
+    # el 2026-08-24: exit 0 y `git status` sin cambios.
+    # Nota: package.json no tiene script de tsc, por eso se invoca el binario.
+    build_command: "cd dashboard && ./node_modules/.bin/tsc --noEmit"
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas (large removals)

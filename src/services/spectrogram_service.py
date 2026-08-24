@@ -508,17 +508,34 @@ class SpectrogramService:
         channel: str = "BHZ",
         duration_hours: int = 24,
         source_server: Optional[str] = None,
+        starttime: Optional[datetime] = None,
+        endtime: Optional[datetime] = None,
     ) -> Optional[any]:
         """
         Synchronous wrapper for ObsPy get_waveforms (for thread executor)
         Intenta múltiples servidores FDSN si no se especifica uno
+
+        Dos modos de ventana, excluyentes:
+        - ABSOLUTA: con `starttime`/`endtime` se piden esos límites tal cual. Es
+          el flujo de SWARM (descargar una ventana pasada y analizarla) y lo que
+          hace posible mirar un evento de ayer.
+        - RELATIVA (default): sin ellos, la ventana es `duration_hours` hacia
+          atrás desde AHORA, idéntico al comportamiento histórico.
+
+        El loop de failover entre servidores es el MISMO para los dos modos: sólo
+        cambia de dónde salen `start_time`/`end_time`.
         """
         if not self.clients:
             logger.error("No FDSN clients available")
             return None
 
-        end_time = UTCDateTime()
-        start_time = end_time - (duration_hours * 3600)
+        if starttime is not None and endtime is not None:
+            # Ventana absoluta: se respeta lo pedido sin anclar a "ahora".
+            start_time = UTCDateTime(starttime)
+            end_time = UTCDateTime(endtime)
+        else:
+            end_time = UTCDateTime()
+            start_time = end_time - (duration_hours * 3600)
 
         logger.info(f"Fetching waveform: {network}.{station}.{location}.{channel}")
         logger.info(f"Time range: {start_time} to {end_time}")
@@ -569,6 +586,8 @@ class SpectrogramService:
         duration_hours: int = 24,
         timeout: int = 30,  # Incrementado para múltiples servidores
         source_server: Optional[str] = None,
+        starttime: Optional[datetime] = None,
+        endtime: Optional[datetime] = None,
     ) -> Optional[any]:
         """
         Obtener datos de forma de onda desde FDSN
@@ -578,9 +597,12 @@ class SpectrogramService:
             station: Código de estación
             location: Código de ubicación (default: '*' = cualquiera)
             channel: Código de canal (default: 'BHZ' = vertical broadband)
-            duration_hours: Duración en horas hacia atrás
+            duration_hours: Duración en horas hacia atrás (modo RELATIVO)
             timeout: Timeout en segundos
             source_server: Servidor FDSN preferido (opcional)
+            starttime: Inicio de la ventana ABSOLUTA (UTC-aware). Con `endtime`,
+                ignora `duration_hours` y no ancla la ventana a "ahora".
+            endtime: Fin de la ventana absoluta (UTC-aware).
 
         Returns:
             Stream de ObsPy con datos de onda o None
@@ -594,6 +616,8 @@ class SpectrogramService:
             loop = asyncio.get_event_loop()
             stream = await asyncio.wait_for(
                 loop.run_in_executor(
+                    # `run_in_executor` sólo pasa argumentos POSICIONALES: este
+                    # orden debe coincidir con la firma de `_get_waveform_sync`.
                     _executor,
                     self._get_waveform_sync,
                     network,
@@ -602,6 +626,8 @@ class SpectrogramService:
                     channel,
                     duration_hours,
                     source_server,
+                    starttime,
+                    endtime,
                 ),
                 timeout=timeout,
             )

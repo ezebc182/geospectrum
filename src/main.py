@@ -17,6 +17,7 @@ import logging
 import math
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Optional
 from uuid import UUID
 
@@ -2577,16 +2578,34 @@ async def search_stations(
     return result
 
 
+# Techo de la ventana absoluta. Mismo límite que `minutes` (le=1440), y por la
+# misma razón: ObsPy descomprime a float64 (~8x en RAM), así que una ventana sin
+# techo es una forma barata de tumbar el proceso.
+MAX_WAVEFORM_WINDOW_HOURS = 24
+
+
 @app.get("/stations/{channel}/waveform", tags=["stations"])
 async def get_station_waveform(
     channel: str,
-    minutes: int = Query(1440, ge=1, le=1440, description="Ventana hacia atrás"),
+    # `minutes` arranca en None a propósito: FastAPI no distingue un default de
+    # un valor pasado igual al default, así que con `1440` era imposible saber
+    # si el cliente lo mandó. Sin eso no se puede validar la exclusión mutua con
+    # `start`/`end`. El default real se aplica más abajo.
+    minutes: int | None = Query(None, ge=1, le=1440, description="Ventana hacia atrás"),
     points: int = Query(38400, ge=100, le=50000, description="Pares min/max a devolver"),
     filter: str = Query("none", pattern="^(none|bp)$", description="bp = Butterworth 1-10 Hz"),
+    start: datetime | None = Query(None, description="Inicio de ventana absoluta (ISO-8601)"),
+    end: datetime | None = Query(None, description="Fin de ventana absoluta (ISO-8601)"),
 ) -> dict:
     """Forma de onda decimada min/max para el detalle de estación (helicorder).
 
     `channel` es el SCNL completo, ej. "IU.MAJO.00.BHZ" (location puede ser vacío).
+
+    Dos modos de ventana, mutuamente excluyentes:
+
+    - **Absoluta**: `?start=2019-04-18T20:00:00Z&end=2019-04-18T20:10:00Z`. Es el
+      flujo de SWARM y lo que hace posible mirar un evento pasado.
+    - **Relativa** (default): `?minutes=90`, hacia atrás desde ahora.
 
     La decimación es server-side a propósito: 24 h de un canal de 20-40 Hz son
     millones de muestras, y mandarlas crudas al navegador no tiene sentido
@@ -2600,8 +2619,46 @@ async def get_station_waveform(
         raise HTTPException(status_code=422, detail="channel debe ser NET.STA.LOC.CHA")
     net, sta, loc, cha = parts
 
+    # --- Validación de la ventana (ANTES de cualquier fetch a FDSN: una ventana
+    # inválida no debe producir tráfico saliente) ------------------------------
+    if (start is None) != (end is None):
+        raise HTTPException(status_code=422, detail="start y end deben ir juntos")
+
+    if start is not None and minutes is not None:
+        raise HTTPException(
+            status_code=422, detail="start/end y minutes son mutuamente excluyentes"
+        )
+
+    if start is not None and end is not None:
+        # Normalización en el BORDE: un datetime sin tzinfo se interpreta como
+        # UTC, nunca como hora local del servidor. En este repo un `utcnow()`
+        # naive ya rotuló las 02:10 como "5:10 UTC".
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        start = start.astimezone(timezone.utc)
+        end = end.astimezone(timezone.utc)
+
+        if end <= start:
+            raise HTTPException(status_code=422, detail="end debe ser posterior a start")
+        if (end - start) > timedelta(hours=MAX_WAVEFORM_WINDOW_HOURS):
+            raise HTTPException(
+                status_code=422, detail="la ventana no puede superar 24 horas"
+            )
+
+    # El default de `minutes` se resuelve acá, no en la firma.
+    effective_minutes = minutes if minutes is not None else 1440
+
     ttl = settings.spectrogram_cache_ttl_seconds
-    cache_key = f"waveform:{channel}:{minutes}:{points}:{filter}"
+    # La ventana absoluta REEMPLAZA a `minutes` en la key, no se suma: incluir
+    # ambos daría dos keys distintas para la misma ventana efectiva. El prefijo
+    # `m` evita que un `minutes` pueda colisionar con un timestamp.
+    if start is not None and end is not None:
+        window_part = f"{start.isoformat()}~{end.isoformat()}"
+    else:
+        window_part = f"m{effective_minutes}"
+    cache_key = f"waveform:{channel}:{window_part}:{points}:{filter}"
     if ttl > 0:
         cached = cache.get(cache_key)
         if cached is not None:
@@ -2617,7 +2674,9 @@ async def get_station_waveform(
         # se truncaba en silencio (90 min devolvían 60) y el cliente recibía
         # menos de lo que pidió sin forma de notarlo. Pedirle de más a FDSN y
         # recortar es correcto; devolver la ventana equivocada, no.
-        duration_hours=max(1, math.ceil(minutes / 60)),
+        duration_hours=max(1, math.ceil(effective_minutes / 60)),
+        starttime=start,
+        endtime=end,
     )
     if stream is None or len(stream) == 0:
         raise HTTPException(status_code=404, detail=f"Sin datos FDSN para {channel}")
