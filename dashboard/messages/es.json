@@ -889,7 +889,15 @@
     "filterHint": "Butterworth pasabanda 1-10 Hz: quita la deriva lenta y el ruido agudo para que se lea la fase sísmica. Vuelve a pedir la onda al servidor.",
     "insideArea": "Dentro del área activa",
     "outsideArea": "Fuera del área activa",
-    "seeAreaStations": "Ver estaciones del área"
+    "seeAreaStations": "Ver estaciones del área",
+    "waveBack": "Volver atrás",
+    "waveReset": "Ventana inicial",
+    "waveZoomHint": "Arrastrá sobre la onda para ampliar ese tramo",
+    "waveLoading": "Cargando la onda…",
+    "waveError": "No se pudo cargar la onda de esta ventana",
+    "waveEmpty": "Hacé clic en el helicorder para abrir una ventana de onda",
+    "showAllTools": "Mostrar todas las herramientas",
+    "showAllToolsHint": "Las herramientas de análisis aparecen a medida que usás la vista de onda. Activá esto para verlas todas ahora."
   },
   "stations": {
     "title": "Estaciones",

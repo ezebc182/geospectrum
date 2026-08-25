@@ -17,7 +17,19 @@ import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
+import { WaveView } from '@/components/WaveView';
+import { useWaveWindow } from '@/hooks/use-wave-window';
 import { seismicAPI } from '@/lib/api';
+import {
+  PROGRESS_DEFAULTS,
+  loadProgress,
+  recordInteraction,
+  revealAllTools,
+  saveProgress,
+  visibleTools,
+  type UserProgress,
+} from '@/lib/progressive-disclosure';
+import type { TimeWindow } from '@/lib/waveform-scale';
 import {
   HELICORDER_DEFAULTS,
   TIME_CHUNK_OPTIONS,
@@ -34,7 +46,9 @@ import { useActiveArea } from '@/lib/use-active-area';
 const TABS = [
   { id: 'helicorder', enabled: true },
   { id: 'spectrogram', enabled: true },
-  { id: 'wave', enabled: false },
+  // `wave` se habilita en la Fase 2 porque ya tiene vista: una pestaña
+  // habilitada apuntando a una pantalla vacía es peor que decir "próximamente".
+  { id: 'wave', enabled: true },
   { id: 'rsam', enabled: false },
 ] as const;
 
@@ -61,6 +75,58 @@ export default function StationPage() {
     setBarMult(s.barMult);
     setFilter(s.filter);
   }, [channel]);
+
+  /**
+   * Ventana seleccionada en el helicorder. Es la semilla del wave view: el hook
+   * la clampea y pide el dato.
+   */
+  const [selectedWindow, setSelectedWindow] = useState<TimeWindow | null>(null);
+
+  /**
+   * Progreso del usuario, por efecto y NO por `useState(loadProgress())`: leer
+   * localStorage durante el render da un HTML distinto en servidor y cliente
+   * (hydration mismatch). Es el mismo motivo por el que los settings del
+   * helicorder también entran por efecto, unas líneas más arriba.
+   */
+  const [userProgress, setUserProgress] = useState<UserProgress>(PROGRESS_DEFAULTS);
+  useEffect(() => {
+    setUserProgress(loadProgress());
+    // Sin `channel` en deps: el progreso es GLOBAL, mide qué aprendió el
+    // usuario y no cómo quiere ver un canal.
+  }, []);
+
+  const tools = visibleTools(userProgress);
+
+  const bumpProgress = (event: 'window' | 'spectrum' | 'rsam') => {
+    setUserProgress((current) => {
+      const next = recordInteraction(current, event);
+      saveProgress(next);
+      return next;
+    });
+  };
+
+  const handleRevealAll = () => {
+    setUserProgress((current) => {
+      const next = revealAllTools(current);
+      saveProgress(next);
+      return next;
+    });
+  };
+
+  const wave = useWaveWindow(channel, selectedWindow ?? undefined, filter);
+
+  /** El clic del helicorder abre esa ventana en el wave view y cambia de pestaña. */
+  const handleSelectWindow = (w: TimeWindow) => {
+    setSelectedWindow(w);
+    setActiveTab('wave');
+    bumpProgress('window');
+  };
+
+  /** El zoom por arrastre también cuenta como ventana abierta. */
+  const handleZoomWindow = (w: TimeWindow) => {
+    wave.setWindow(w);
+    bumpProgress('window');
+  };
 
   // El selector de área vive en el layout, así que ya se ve en esta pantalla.
   // Lo que faltaba era consumirlo: cambiar de área era un no-op visual.
@@ -269,8 +335,48 @@ export default function StationPage() {
             clipMult={clipMult}
             barMult={barMult}
             filter={filter}
+            onSelectWindow={handleSelectWindow}
           />
         </>
+      )}
+
+      {activeTab === 'wave' &&
+        (wave.window ? (
+          <WaveView
+            window={wave.window}
+            data={wave.data}
+            status={wave.status}
+            canGoBack={wave.canGoBack}
+            onSelectWindow={handleZoomWindow}
+            onGoBack={wave.goBack}
+            onReset={wave.reset}
+            filter={filter}
+            onFilterChange={(f) => persist({ filter: f })}
+          />
+        ) : (
+          // Sin ventana elegida no hay nada que dibujar. Se explica cómo abrir
+          // una en vez de mostrar un canvas en blanco.
+          <div
+            data-testid="wave-empty"
+            className="rounded border border-border p-4 text-sm text-muted-foreground"
+          >
+            {t('waveEmpty')}
+          </div>
+        ))}
+
+      {/* Escape hatch de la progresividad: quien ya sabe no tiene que ganarse
+          las herramientas de nuevo. Persiste entre visitas, y desaparece una
+          vez activado porque ya no queda nada que revelar. */}
+      {!userProgress.revealAll && !tools.picking && (
+        <label className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={false}
+            onChange={handleRevealAll}
+            aria-label={t('showAllTools')}
+          />
+          <span title={t('showAllToolsHint')}>{t('showAllTools')}</span>
+        </label>
       )}
     </div>
   );

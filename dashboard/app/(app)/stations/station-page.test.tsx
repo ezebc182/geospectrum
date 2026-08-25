@@ -32,17 +32,21 @@ vi.mock('next/navigation', () => ({
   useParams: () => paramsMock,
 }));
 
+// La ventana que el helicorder simulado "señala" va inline en el mock: `vi.mock`
+// se hoistea por encima de cualquier constante del módulo.
 vi.mock('@/components/HelicorderCanvas', () => ({
   HelicorderCanvas: ({
     channel,
     clipMult,
     barMult,
     timeChunkMinutes,
+    onSelectWindow,
   }: {
     channel: string;
     clipMult?: number;
     barMult?: number;
     timeChunkMinutes: number;
+    onSelectWindow?: (w: { startMs: number; endMs: number }) => void;
   }) => (
     <div
       data-testid="helicorder-canvas"
@@ -50,6 +54,15 @@ vi.mock('@/components/HelicorderCanvas', () => ({
       data-clip-mult={String(clipMult)}
       data-bar-mult={String(barMult)}
       data-chunk={String(timeChunkMinutes)}
+      // Refleja si la página cableó el callback: sin esto, "el clic abre la
+      // ventana" pasaría igual con la prop nunca conectada.
+      data-selectable={onSelectWindow ? 'true' : 'false'}
+      onClick={() =>
+        onSelectWindow?.({
+          startMs: Date.UTC(2026, 7, 24, 12, 0, 0),
+          endMs: Date.UTC(2026, 7, 24, 12, 2, 0),
+        })
+      }
     />
   ),
 }));
@@ -206,13 +219,52 @@ describe('StationPage', () => {
     expect(screen.getByTestId('helicorder-canvas')).toBeTruthy();
   });
 
-  it('las pestañas de los PRs C-D siguen deshabilitadas', () => {
+  it('sólo RSAM sigue deshabilitada; onda se habilitó en la Fase 2', () => {
     renderPage();
-    expect(screen.getByRole('tab', { name: /onda/i })).toHaveProperty('disabled', true);
+    // La Fase 2 habilitó `wave` porque ya tiene vista. La regla del plan es que
+    // una pestaña NO queda habilitada apuntando a una pantalla vacía: mientras
+    // no haya ventana elegida, la vista explica cómo abrir una.
+    expect(screen.getByRole('tab', { name: /onda/i })).toHaveProperty('disabled', false);
     expect(screen.getByRole('tab', { name: /rsam/i })).toHaveProperty('disabled', true);
-    // Helicorder (PR A) y Espectrograma (PR B) están vivas.
     expect(screen.getByRole('tab', { name: /helicorder/i })).toHaveProperty('disabled', false);
     expect(screen.getByRole('tab', { name: /espectrograma/i })).toHaveProperty('disabled', false);
+  });
+
+  describe('cableado del wave view (Fase 2)', () => {
+    it('el helicorder recibe el callback de selección', () => {
+      // Sin este aserto, el test del clic pasaría igual con la prop nunca
+      // cableada: el mock llamaría a un `onSelectWindow` opcional inexistente
+      // y no rompería nada.
+      renderPage();
+      expect(
+        screen.getByTestId('helicorder-canvas').getAttribute('data-selectable'),
+      ).toBe('true');
+    });
+
+    it('el clic en el helicorder cambia a la pestaña Onda con esa ventana', async () => {
+      renderPage();
+      fireEvent.click(screen.getByTestId('helicorder-canvas'));
+
+      await waitFor(() => expect(screen.getByTestId('wave-view')).toBeTruthy());
+      // La pestaña activa cambió: el usuario ve la onda, no se queda en el
+      // helicorder preguntándose qué pasó con su clic.
+      const seleccionadas = screen
+        .getAllByRole('tab')
+        .filter((b) => b.getAttribute('aria-selected') === 'true');
+      expect(seleccionadas).toHaveLength(1);
+      expect(seleccionadas[0].textContent).toMatch(/onda/i);
+      // Y el helicorder se desmontó, así que no hay dos vistas compitiendo.
+      expect(screen.queryByTestId('helicorder-canvas')).toBeNull();
+    });
+
+    it('la pestaña Onda sin ventana elegida explica cómo abrir una', () => {
+      // La regla del plan: una pestaña habilitada NO puede apuntar a una
+      // pantalla vacía.
+      renderPage();
+      fireEvent.click(screen.getByRole('tab', { name: /onda/i }));
+      expect(screen.getByTestId('wave-empty')).toBeTruthy();
+      expect(screen.queryByTestId('wave-view')).toBeNull();
+    });
   });
 
   it('sólo la pestaña activa está aria-selected, no todas las habilitadas', () => {

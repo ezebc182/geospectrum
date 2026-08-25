@@ -198,7 +198,7 @@ existen todavía y no hacen falta.
 
 ### 2.A — Escalado puro
 
-- [ ] 2.1 Crear `dashboard/lib/waveform-scale.ts` con `TimeWindow`,
+- [x] 2.1 Crear `dashboard/lib/waveform-scale.ts` con `TimeWindow`,
       `MIN_WINDOW_MS = 1_000`, `MAX_WINDOW_MS = 24*60*60*1000`, y las firmas
       `timeToX`, `xToTime`, `clampWindow`, `zoomWindow`, `dragSelection` del
       diseño. `clampWindow` expande **simétrico alrededor del centro** (mover sólo
@@ -209,7 +209,7 @@ existen todavía y no hacen falta.
       *Por qué `MIN_WINDOW_MS` no es un número de gusto*: `timeToX` divide por
       `(endMs - startMs)`; con 0 da `Infinity`/`NaN` y el canvas no dibuja NADA
       sin lanzar ninguna excepción.
-- [ ] 2.2 Crear `dashboard/lib/waveform-scale.test.ts` con la tabla completa de
+- [x] 2.2 Crear `dashboard/lib/waveform-scale.test.ts` con la tabla completa de
       tests del diseño, todos con valores esperados a mano:
       ida y vuelta `xToTime(timeToX(t)) ≈ t` para 5 valores de `t`;
       `timeToX(start) === 0` y `timeToX(end) === 1000`;
@@ -220,14 +220,14 @@ existen todavía y no hacen falta.
       verificara "la duración se redujo a la mitad" no distinguiría ambos);
       `dragSelection(800, 200) === dragSelection(200, 800)`;
       `dragSelection` con Δx=1 ⇒ `null`.
-- [ ] 2.3 **Mutación #10**: `MIN_WINDOW_MS 1000 → 0` en `waveform-scale.ts`.
+- [x] 2.3 **Mutación #10**: `MIN_WINDOW_MS 1000 → 0` en `waveform-scale.ts`.
       Aplicar → `rg -n "MIN_WINDOW_MS" dashboard/lib/waveform-scale.ts` para
       confirmar → correr vitest → registrar en `mutation-log.md` que el test de
       ventana degenerada quedó rojo → revertir.
 
 ### 2.B — El hook (las 3 trampas de React son criterios de aceptación)
 
-- [ ] 2.4 Crear `dashboard/hooks/use-wave-window.ts` con el contrato del diseño:
+- [x] 2.4 Crear `dashboard/hooks/use-wave-window.ts` con el contrato del diseño:
       `{window, data, status, canGoBack, setWindow, goBack, reset}`.
       **Criterios de aceptación explícitos, no comentarios:**
       1. El estado de la ventana **arranca en `null`** y se siembra por un efecto
@@ -240,14 +240,14 @@ existen todavía y no hacen falta.
          vez y nunca más (pisado TRES veces en este repo).
       3. El `AbortController` va en `useRef` pero se **usa dentro del mismo efecto
          que lo crea**; ningún efecto lee un ref que no está en sus deps.
-- [ ] 2.5 Implementar las tres defensas de race condition del diagrama de
+- [x] 2.5 Implementar las tres defensas de race condition del diagrama de
       secuencia: ① abortar el request en vuelo al iniciar el siguiente;
       ④ descartar la respuesta si el `AbortSignal` ya está abortado;
       ⑤ **guarda de ventana tardía**: comparar la ventana de la respuesta contra la
       ventana ACTUAL del estado antes de aplicar; distinta ⇒ se descarta.
       Cleanup del efecto con `abort()` + flag `cancelled` al desmontar (mismo
       patrón que `HelicorderCanvas.tsx:87,113-115`).
-- [ ] 2.6 Crear `dashboard/hooks/use-wave-window.test.ts` con `fetch` mockeado:
+- [x] 2.6 Crear `dashboard/hooks/use-wave-window.test.ts` con `fetch` mockeado:
       dos zooms seguidos ⇒ el primero queda abortado; **una respuesta tardía de
       una ventana vieja NO pisa el estado** (este es el test que prueba la guarda
       ⑤); la pila permite volver atrás `W2 → W1 → W0` y una tercera vez sigue en
@@ -257,29 +257,29 @@ existen todavía y no hacen falta.
 
 ### 2.C — El componente y la pestaña
 
-- [ ] 2.7 Crear `dashboard/components/WaveView.tsx`: dibuja la onda de UNA ventana
+- [x] 2.7 Crear `dashboard/components/WaveView.tsx`: dibuja la onda de UNA ventana
       y captura el arrastre. **No decide la ventana ni hace fetch** (eso es del
       hook) y **no tiene geometría propia** (delega en `waveform-scale.ts`).
       Durante el `mousemove` sólo pinta el rectángulo de selección; el fetch sale
       recién en el `mouseup`.
-- [ ] 2.8 Exponer el toggle del filtro Butterworth en `WaveView`. **El backend ya
+- [x] 2.8 Exponer el toggle del filtro Butterworth en `WaveView`. **El backend ya
       lo tiene y el frontend ya lo manda** (`HelicorderCanvas.tsx:98`): esta tarea
       es exponer el control existente, no construir el filtro. Cambiar el filtro
       **re-pide** (cambia el dato), a diferencia de `clipMult`/`barMult` del
       helicorder que sólo repintan.
-- [ ] 2.9 En `dashboard/app/(app)/stations/[channel]/page.tsx:37`, pasar la
+- [x] 2.9 En `dashboard/app/(app)/stations/[channel]/page.tsx:37`, pasar la
       pestaña `wave` a `enabled: true` y renderizar `WaveView`. Cablear
       `onSelectWindow` en el `HelicorderCanvas` de esa página para que el clic
       cambie a la pestaña `wave` con la ventana traducida.
       **Regla**: una pestaña NO queda habilitada apuntando a una vista vacía.
-- [ ] 2.10 Crear `dashboard/components/WaveView.test.tsx`: la pestaña `wave` no
+- [x] 2.10 Crear `dashboard/components/WaveView.test.tsx`: la pestaña `wave` no
       muestra el rótulo "próximamente"; un arrastre dispara **una petición nueva**
       (aserto sobre el contador de llamadas al fetch, **no sobre el resultado
       visual**: un re-render sin petición se ve parecido y es incorrecto).
 
 ### 2.D — Progresividad (arranca acá: antes no hay nada que revelar)
 
-- [ ] 2.11 Crear `dashboard/lib/progressive-disclosure.ts` con el contrato completo
+- [x] 2.11 Crear `dashboard/lib/progressive-disclosure.ts` con el contrato completo
       del diseño: `UserProgress`, `ToolId`, `ToolVisibility`,
       `DISCLOSURE_THRESHOLDS`, `PROGRESS_DEFAULTS`, `MAX_COUNTER = 9_999`,
       `visibleTools`, `recordInteraction`, `revealAllTools`, `progressStorageKey`
@@ -288,7 +288,7 @@ existen todavía y no hacen falta.
       El progreso es global porque mide **qué aprendió el usuario**, no cómo
       quiere ver un canal: quien ya marcó fases en `AK.FIRE..BHZ` no es
       principiante al abrir `IU.MAJO.00.BHZ`.
-- [ ] 2.12 Implementar la tolerancia copiando el patrón de
+- [x] 2.12 Implementar la tolerancia copiando el patrón de
       `dashboard/lib/helicorder-settings.ts:102-141`:
       `typeof localStorage === 'undefined'` ⇒ defaults (SSR y modo privado son el
       caso normal, no un error); `JSON.parse` en `try/catch` ⇒ defaults;
@@ -296,7 +296,7 @@ existen todavía y no hacen falta.
       `"3"` ⇒ entero en `[0, MAX_COUNTER]`); `revealAll` sólo `true` si es
       **literalmente** `true` (un `"true"` string NO cuenta); `saveProgress` en
       `try/catch` para la cuota llena.
-- [ ] 2.13 Crear `dashboard/lib/progressive-disclosure.test.ts` con los pares de
+- [x] 2.13 Crear `dashboard/lib/progressive-disclosure.test.ts` con los pares de
       borde de la spec: para CADA umbral, "justo debajo ⇒ oculto" y "justo encima
       ⇒ visible" (**el par es obligatorio**: con un solo test, cambiar `>=` por
       `>` o el umbral a 0 quedaría en verde); `revealAll` gana sobre cualquier
@@ -305,28 +305,28 @@ existen todavía y no hacen falta.
       `revealAll`; **subir los umbrales por encima del progreso registrado esconde
       la herramienta y NO borra el progreso** (esto prueba que la regla se evalúa
       en cada render y que no se persiste el nivel resuelto).
-- [ ] 2.14 **Mutación #12**: `spectrumAfterWindows 3 → 0` en
+- [x] 2.14 **Mutación #12**: `spectrumAfterWindows 3 → 0` en
       `progressive-disclosure.ts`. Aplicar → confirmar con
       `rg -n "spectrumAfterWindows" dashboard/lib/progressive-disclosure.ts` →
       correr vitest → registrar que el test "justo debajo ⇒ oculto" quedó rojo →
       revertir.
-- [ ] 2.15 Cablear el progreso en la página de estación: **cargarlo en un
+- [x] 2.15 Cablear el progreso en la página de estación: **cargarlo en un
       `useEffect`, NUNCA en `useState(loadProgress())`** — leer `localStorage`
       durante el render da HTML distinto en servidor y cliente (hydration
       mismatch); es el mismo motivo por el que `page.tsx:49-63` ya carga los
       settings por efecto. Registrar `recordInteraction(p, 'window')` en cada
       ventana abierta (clic del helicorder o zoom).
-- [ ] 2.16 Agregar el escape hatch "mostrar todas las herramientas" en la UI,
+- [x] 2.16 Agregar el escape hatch "mostrar todas las herramientas" en la UI,
       persistente entre visitas.
 
 ### 2.E — i18n y cierre de fase
 
-- [ ] 2.17 Agregar todas las cadenas nuevas de la Fase 2 en
+- [x] 2.17 Agregar todas las cadenas nuevas de la Fase 2 en
       `dashboard/messages/es.json` **Y** `dashboard/messages/en.json`. Cero
       literales de interfaz en el JSX. Correr
       `./node_modules/.bin/vitest run messages/parity.test.ts` (el test de paridad
       ya existe en `dashboard/messages/parity.test.ts`).
-- [ ] 2.18 Suite completa verde en ambos lados + `tsc --noEmit` en 0. Conteo
+- [x] 2.18 Suite completa verde en ambos lados + `tsc --noEmit` en 0. Conteo
       frontend `>=` baseline.
 - [ ] 2.19 **QA visual del usuario — Fase 2.** Entregarle: (a) levantar el stack
       (backend + `npm run dev`, sin `next build`); (b) URL exacta
