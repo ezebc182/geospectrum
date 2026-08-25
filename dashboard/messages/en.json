@@ -900,7 +900,12 @@
     "showAllToolsHint": "Analysis tools appear as you use the wave view. Turn this on to see them all now.",
     "helicorderLoading": "Loading 24 hours of signal… this can take a while",
     "helicorderNoData": "The FDSN source has no data for this channel in the last 24 hours",
-    "helicorderError": "Could not load this channel's signal — try again in a few minutes"
+    "helicorderError": "Could not load this channel's signal — try again in a few minutes",
+    "spectrumShow": "Window spectrum",
+    "spectrumHint": "Power vs Hz of the selected window, computed on the undecimated signal",
+    "spectrumLoading": "Computing the window spectrum…",
+    "spectrumError": "Could not compute the spectrum for this window",
+    "spectrumPeak": "Dominant peak: {hz} Hz"
   },
   "stations": {
     "title": "Stations",

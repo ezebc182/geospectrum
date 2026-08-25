@@ -17,6 +17,7 @@ import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
+import { SpectrumView } from '@/components/SpectrumView';
 import { WaveView } from '@/components/WaveView';
 import { useWaveWindow } from '@/hooks/use-wave-window';
 import { seismicAPI } from '@/lib/api';
@@ -114,6 +115,18 @@ export default function StationPage() {
   };
 
   const wave = useWaveWindow(channel, selectedWindow ?? undefined, filter);
+
+  /**
+   * El espectro es opt-in por clic y no un panel siempre montado: cada
+   * apertura cuenta como interacción para la progresividad, y montarlo
+   * siempre dispararía un fetch de FFT por cada zoom aunque nadie lo mire.
+   */
+  const [showSpectrum, setShowSpectrum] = useState(false);
+  const handleToggleSpectrum = () => {
+    const next = !showSpectrum;
+    setShowSpectrum(next);
+    if (next) bumpProgress('spectrum');
+  };
 
   /** El clic del helicorder abre esa ventana en el wave view y cambia de pestaña. */
   const handleSelectWindow = (w: TimeWindow) => {
@@ -342,17 +355,45 @@ export default function StationPage() {
 
       {activeTab === 'wave' &&
         (wave.window ? (
-          <WaveView
-            window={wave.window}
-            data={wave.data}
-            status={wave.status}
-            canGoBack={wave.canGoBack}
-            onSelectWindow={handleZoomWindow}
-            onGoBack={wave.goBack}
-            onReset={wave.reset}
-            filter={filter}
-            onFilterChange={(f) => persist({ filter: f })}
-          />
+          <>
+            <WaveView
+              window={wave.window}
+              data={wave.data}
+              status={wave.status}
+              canGoBack={wave.canGoBack}
+              onSelectWindow={handleZoomWindow}
+              onGoBack={wave.goBack}
+              onReset={wave.reset}
+              filter={filter}
+              onFilterChange={(f) => persist({ filter: f })}
+            />
+
+            {tools.spectrum && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  aria-pressed={showSpectrum}
+                  onClick={handleToggleSpectrum}
+                  title={t('spectrumHint')}
+                  className={`rounded px-3 py-1 text-sm ${
+                    showSpectrum
+                      ? 'bg-teal-700 text-white'
+                      : 'bg-muted text-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {t('spectrumShow')}
+                </button>
+                {showSpectrum && (
+                  <div className="mt-2">
+                    {/* La ventana del espectro es la VIGENTE del wave view
+                        (wave.window), no la semilla del clic: el espectro
+                        sigue al zoom, como en SWARM. */}
+                    <SpectrumView channel={channel} window={wave.window} filter={filter} />
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           // Sin ventana elegida no hay nada que dibujar. Se explica cómo abrir
           // una en vez de mostrar un canvas en blanco.

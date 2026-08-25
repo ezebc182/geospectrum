@@ -2689,6 +2689,101 @@ async def get_station_waveform(
     return result
 
 
+# Techo de la ventana del espectro, más estricto que las 24 h de waveform: la
+# FFT es sobre la señal COMPLETA sin decimar. A 50 Hz, 24 h son 4,3 M de
+# muestras en float64 (~35 MB por array) y np.kaiser + rfft crean temporales
+# del mismo tamaño.
+MAX_SPECTRUM_WINDOW_HOURS = 1
+
+
+@app.get("/stations/{channel}/spectra", tags=["stations"])
+async def get_station_spectrum(
+    channel: str,
+    start: datetime = Query(..., description="Inicio ISO-8601 UTC"),
+    end: datetime = Query(..., description="Fin ISO-8601 UTC"),
+    filter: str = Query("none", pattern="^(none|bp)$", description="bp = Butterworth 1-10 Hz"),
+) -> dict:
+    """Espectro 1D (Power vs Hz) de una ventana concreta — paridad SWARM.
+
+    `start`/`end` son obligatorios: un espectro "de las últimas 24 h" no tiene
+    sentido físico (promediaría el día entero en una sola FFT). Este endpoint
+    existe para la ventana que el usuario seleccionó en la onda.
+    """
+    import numpy as np
+
+    from src.services.signal_spectrum import effective_max_freq_hz, window_spectrum_db
+    from src.services.station_waveform import butterworth_bandpass
+
+    parts = channel.split(".")
+    if len(parts) != 4:
+        raise HTTPException(status_code=422, detail="channel debe ser NET.STA.LOC.CHA")
+    net, sta, loc, cha = parts
+
+    # Misma normalización de borde que waveform: naive ⇒ UTC, nunca hora local.
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    start = start.astimezone(timezone.utc)
+    end = end.astimezone(timezone.utc)
+
+    if end <= start:
+        raise HTTPException(status_code=422, detail="end debe ser posterior a start")
+    if (end - start) > timedelta(hours=MAX_SPECTRUM_WINDOW_HOURS):
+        raise HTTPException(
+            status_code=422,
+            detail="el espectro se calcula sobre ventanas de hasta 1 hora",
+        )
+
+    # Sin `points`: el espectro no se decima, así que no hay parámetro de
+    # resolución. La longitud de salida la determinan la ventana y fs.
+    cache_key = f"spectra:{channel}:{start.isoformat()}~{end.isoformat()}:{filter}"
+    ttl = settings.spectrogram_cache_ttl_seconds
+    if ttl > 0:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    service = get_spectrogram_service()
+    stream = await service.get_waveform_data(
+        network=net,
+        station=sta,
+        location=loc or "*",
+        channel=cha,
+        duration_hours=MAX_SPECTRUM_WINDOW_HOURS,
+        starttime=start,
+        endtime=end,
+    )
+    if stream is None or len(stream) == 0:
+        raise HTTPException(status_code=404, detail=f"Sin datos FDSN para {channel}")
+
+    trace = max(stream, key=lambda tr: tr.stats.npts)
+    fs = float(trace.stats.sampling_rate)
+    signal = np.asarray(trace.data, dtype=np.float64)
+    if signal.size < 2:
+        raise HTTPException(
+            status_code=422, detail="ventana demasiado corta para calcular espectro"
+        )
+    if filter == "bp":
+        signal = butterworth_bandpass(signal, fs)
+
+    freqs, power_db = window_spectrum_db(signal, fs)
+    result = {
+        "channel": channel,
+        "sampling_rate": fs,
+        "max_freq_hz": effective_max_freq_hz(fs),
+        "starttime": str(trace.stats.starttime),
+        "endtime": str(trace.stats.endtime),
+        "npts": int(signal.size),
+        "filter": filter,
+        "freqs": np.round(freqs, 4).tolist(),
+        "power_db": np.round(power_db, 2).tolist(),
+    }
+    if ttl > 0:
+        cache.set(cache_key, result, ttl)
+    return result
+
+
 # =============================================================================
 # Spectrograms
 # =============================================================================
