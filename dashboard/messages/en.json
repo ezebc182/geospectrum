@@ -897,7 +897,10 @@
     "waveError": "Could not load the waveform for this window",
     "waveEmpty": "Click the helicorder to open a waveform window",
     "showAllTools": "Show all tools",
-    "showAllToolsHint": "Analysis tools appear as you use the wave view. Turn this on to see them all now."
+    "showAllToolsHint": "Analysis tools appear as you use the wave view. Turn this on to see them all now.",
+    "helicorderLoading": "Loading 24 hours of signal… this can take a while",
+    "helicorderNoData": "The FDSN source has no data for this channel in the last 24 hours",
+    "helicorderError": "Could not load this channel's signal — try again in a few minutes"
   },
   "stations": {
     "title": "Stations",

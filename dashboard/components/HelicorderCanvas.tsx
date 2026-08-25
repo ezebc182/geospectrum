@@ -13,6 +13,7 @@
 
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import {
   HELICORDER_CLIP_COLOR,
@@ -91,8 +92,12 @@ export function HelicorderCanvas({
   onSelectWindow,
   selectionWindowSeconds = DEFAULT_WINDOW_SECONDS,
 }: HelicorderCanvasProps) {
+  const t = useTranslations('station');
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  // 'noData' y 'failed' son errores DISTINTOS para el operador: el 404 del
+  // backend significa "FDSN no tiene señal de este canal" (pasa seguido con
+  // estaciones dadas de baja) y no se arregla reintentando.
+  const [status, setStatus] = useState<'loading' | 'ready' | 'noData' | 'failed'>('loading');
   // La onda se guarda en estado para que mover los sliders repinte SIN volver
   // a pedir 24 h al backend: clipMult y barMult no cambian el dato, sólo cómo
   // se dibuja.
@@ -113,13 +118,16 @@ export function HelicorderCanvas({
           `${API_BASE}/stations/${encodeURIComponent(channel)}/waveform` +
             `?minutes=${TOTAL_MINUTES}&points=${points}&filter=${filter}`,
         );
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) {
+          if (!cancelled) setStatus(res.status === 404 ? 'noData' : 'failed');
+          return;
+        }
         const wf: WaveformResponse = await res.json();
         if (cancelled) return;
         setWaveform(wf);
         setStatus('ready');
       } catch {
-        if (!cancelled) setStatus('error');
+        if (!cancelled) setStatus('failed');
       }
     };
 
@@ -238,13 +246,16 @@ export function HelicorderCanvas({
     // mueve, y sin ellas el slider no repintaría nunca.
   }, [waveform, timeChunkMinutes, width, height, clipMult, barMult]);
 
-  if (status === 'error') {
+  if (status === 'noData' || status === 'failed') {
     return (
       <div
         data-testid="helicorder-error"
-        className="rounded border border-red-800 bg-red-950/40 p-4 text-sm text-red-300"
+        role="alert"
+        className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
       >
-        {channel}
+        <span className="font-mono">{channel}</span>
+        {' — '}
+        {t(status === 'noData' ? 'helicorderNoData' : 'helicorderError')}
       </div>
     );
   }
@@ -286,7 +297,7 @@ export function HelicorderCanvas({
   };
 
   return (
-    <div className="rounded bg-white" style={{ width, height }}>
+    <div className="relative rounded bg-white" style={{ width, height }}>
       <canvas
         data-testid="helicorder-canvas"
         ref={canvasRef}
@@ -295,6 +306,19 @@ export function HelicorderCanvas({
         className={onSelectWindow ? 'block cursor-pointer' : 'block'}
         onClick={onSelectWindow ? handleClick : undefined}
       />
+      {status === 'loading' && (
+        <div
+          data-testid="helicorder-loading"
+          role="status"
+          className="absolute inset-0 flex items-center justify-center gap-3 bg-white/60 text-sm text-slate-700"
+        >
+          <span
+            aria-hidden
+            className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"
+          />
+          {t('helicorderLoading')}
+        </div>
+      )}
     </div>
   );
 }
