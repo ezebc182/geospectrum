@@ -9,11 +9,12 @@
  * con valores calculados a mano, sin montar un canvas ni un DOM.
  */
 
-/** Ventana temporal absoluta, en milisegundos epoch. */
-export interface TimeWindow {
-  startMs: number;
-  endMs: number;
-}
+// `TimeWindow` vive en `waveform-scale.ts`, que es la lib de geometría
+// temporal. Se re-exporta desde acá porque este módulo ya era el punto de
+// import de quienes lo usan (`HelicorderCanvas.tsx`), pero la definición es
+// UNA SOLA: dos declaraciones del mismo concepto se separan con el tiempo.
+export type { TimeWindow } from './waveform-scale';
+import type { TimeWindow } from './waveform-scale';
 
 export interface HelicorderHit {
   /** Coordenada del clic relativa al canvas, en píxeles CSS. */

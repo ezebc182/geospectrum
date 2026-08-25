@@ -889,7 +889,15 @@
     "filterHint": "Butterworth 1-10 Hz bandpass: removes slow drift and high-frequency noise so the seismic phase reads clearly. Refetches the waveform.",
     "insideArea": "Inside the active area",
     "outsideArea": "Outside the active area",
-    "seeAreaStations": "See stations in this area"
+    "seeAreaStations": "See stations in this area",
+    "waveBack": "Go back",
+    "waveReset": "Initial window",
+    "waveZoomHint": "Drag across the trace to zoom into that span",
+    "waveLoading": "Loading waveform…",
+    "waveError": "Could not load the waveform for this window",
+    "waveEmpty": "Click the helicorder to open a waveform window",
+    "showAllTools": "Show all tools",
+    "showAllToolsHint": "Analysis tools appear as you use the wave view. Turn this on to see them all now."
   },
   "stations": {
     "title": "Stations",
