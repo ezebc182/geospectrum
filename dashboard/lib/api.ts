@@ -152,6 +152,37 @@ class SeismicAPI {
   async getGlobalWall(): Promise<WallResponse> {
     return this.fetchJSON<WallResponse>('/walls/global');
   }
+
+  /**
+   * Espectro 1D (Power vs Hz) de una ventana concreta — paridad SWARM.
+   * `start`/`end` son obligatorios en el backend: un espectro "de las últimas
+   * 24 h" no tiene sentido físico.
+   */
+  async getStationSpectrum(
+    channel: string,
+    window: { startMs: number; endMs: number },
+    filter: 'none' | 'bp' = 'none',
+  ): Promise<SpectrumResponse> {
+    const start = encodeURIComponent(new Date(window.startMs).toISOString());
+    const end = encodeURIComponent(new Date(window.endMs).toISOString());
+    return this.fetchJSON<SpectrumResponse>(
+      `/stations/${encodeURIComponent(channel)}/spectra?start=${start}&end=${end}&filter=${filter}`,
+    );
+  }
+}
+
+/** Respuesta de GET /stations/{channel}/spectra (Fase 3). */
+export interface SpectrumResponse {
+  channel: string;
+  sampling_rate: number;
+  /** min(25 Hz, Nyquist): el eje del gráfico se dibuja con ESTO, nunca con una constante. */
+  max_freq_hz: number;
+  starttime: string;
+  endtime: string;
+  npts: number;
+  filter: string;
+  freqs: number[];
+  power_db: number[];
 }
 
 // Singleton

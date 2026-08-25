@@ -222,7 +222,7 @@ export function WaveView({
       {status === 'error' && (
         <div
           data-testid="wave-error"
-          className="mb-3 rounded border border-red-800 bg-red-950/40 p-3 text-sm text-red-300"
+          className="mb-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
         >
           {t('waveError')}
         </div>

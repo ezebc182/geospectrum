@@ -346,29 +346,29 @@ existen todavía y no hacen falta.
 **Estado desplegable al cerrar la fase**: endpoint `/spectra` + `SpectrumView`
 detrás de su umbral de progresividad. Las Fases 4 y 5 siguen sin existir.
 
-- [ ] 3.1 Crear `src/services/signal_spectrum.py` con `window_spectrum_db(data, fs)`
+- [x] 3.1 Crear `src/services/signal_spectrum.py` con `window_spectrum_db(data, fs)`
       y `effective_max_freq_hz(fs)` según el diseño. **IMPORTA** `KAISER_BETA`,
       `DB_MULTIPLIER`, `MAX_FREQ_HZ` y `_EPS` de `src/services/swarm_spectra.py`.
       **PROHIBIDO declarar literales `5` para beta o `20` para el multiplicador en
       este módulo**: el corte 1D y el 2D de la misma ventana tienen que dar los
       mismos números (Decision 5). Ventaneo sobre la ventana COMPLETA (una sola
       FFT), no por bins como el espectrograma.
-- [ ] 3.2 Test `tests/unit/test_signal_spectrum.py` — sinusoide sintética de 5.0 Hz
+- [x] 3.2 Test `tests/unit/test_signal_spectrum.py` — sinusoide sintética de 5.0 Hz
       muestreada a 100.0 Hz, de duración suficiente para resolución < 0.5 Hz: el
       `argmax(power_db)` cae en un bin a ±0.5 Hz de 5.0 Hz.
-- [ ] 3.3 Test de `effective_max_freq_hz`: `fs=20 ⇒ 10.0` y `fs=100 ⇒ 25.0`.
+- [x] 3.3 Test de `effective_max_freq_hz`: `fs=20 ⇒ 10.0` y `fs=100 ⇒ 25.0`.
       **El valor 10.0 es distinto tanto de `MAX_FREQ_HZ` (25.0) como de `fs`
       (20.0)**: un test cuyo valor esperado coincidiera con la constante no podría
       distinguir la implementación correcta de una que devuelve la constante —
       exactamente el defecto de "valor esperado igual al fallback" que este repo
       ya produjo.
-- [ ] 3.4 Test del invariante de longitud: `len(freqs) == len(power_db)`. Un
+- [x] 3.4 Test del invariante de longitud: `len(freqs) == len(power_db)`. Un
       desalineo de un elemento corre TODO el espectro y no lanza ninguna excepción.
-- [ ] 3.5 Test de que el espectro NO se calcula sobre datos decimados: comparar el
+- [x] 3.5 Test de que el espectro NO se calcula sobre datos decimados: comparar el
       espectro del módulo contra el que resultaría de aplicar la FFT a los pares
       min/max de `build_waveform_response` para la misma señal; sólo el primero
       pone el pico en el bin real.
-- [ ] 3.6 **Mutaciones #6, #7 y #8** (una fila cada una en `mutation-log.md`):
+- [x] 3.6 **Mutaciones #6, #7 y #8** (una fila cada una en `mutation-log.md`):
       #6 `KAISER_BETA 5 → 8` en `swarm_spectra.py` ⇒ debe poner rojo un test del
       espectro 1D (si queda verde, hay una copia escondida de la constante);
       #7 `DB_MULTIPLIER 20 → 10` ⇒ debe poner rojo un test que verifique un
@@ -378,36 +378,36 @@ detrás de su umbral de progresividad. Las Fases 4 y 5 siguen sin existir.
       #8 `MAX_FREQ_HZ 25 → 50` ⇒ debe poner rojo el test de dos canales, dos ejes.
       En las tres: confirmar con `rg -n "KAISER_BETA|DB_MULTIPLIER|MAX_FREQ_HZ" src/services/swarm_spectra.py`
       ANTES de leer el resultado, y revertir después.
-- [ ] 3.7 Agregar `GET /stations/{channel}/spectra` en `src/main.py` con la firma
+- [x] 3.7 Agregar `GET /stations/{channel}/spectra` en `src/main.py` con la firma
       del diseño. `start`/`end` son **obligatorios** acá (un espectro "de las
       últimas 24 h" no tiene sentido físico: promediaría el día entero en una sola
       FFT). Reusar el helper de validación de ventana de la Fase 1.
-- [ ] 3.8 Validaciones adicionales del endpoint: `end - start > 1 h` ⇒ 422
+- [x] 3.8 Validaciones adicionales del endpoint: `end - start > 1 h` ⇒ 422
       `el espectro se calcula sobre ventanas de hasta 1 hora` (el techo protege la
       RAM: la FFT es sobre la señal SIN decimar; a 50 Hz, 24 h son 4,3 M de
       muestras en float64 ≈ 35 MB por array, y `np.kaiser` + `rfft` crean
       temporales del mismo tamaño); señal de menos de 2 muestras ⇒ 422; sin datos
       FDSN ⇒ 404 con `{"detail": ...}`; `end <= start` ⇒ 422.
-- [ ] 3.9 `cache_key = f"spectra:{channel}:{start_utc.isoformat()}~{end_utc.isoformat()}:{filter}"`
+- [x] 3.9 `cache_key = f"spectra:{channel}:{start_utc.isoformat()}~{end_utc.isoformat()}:{filter}"`
       — sin `points`: el espectro no se decima, así que no hay parámetro de
       resolución. Test de que dos ventanas distintas no colisionan.
-- [ ] 3.10 Tests del endpoint en `tests/unit/`: la respuesta declara
+- [x] 3.10 Tests del endpoint en `tests/unit/`: la respuesta declara
       `sampling_rate` y `max_frequency_hz`; con `fs=40.0` ⇒ `max_frequency_hz ==
       20.0` (manda Nyquist sobre `MAX_FREQ_HZ`); dos canales `fs=20` y `fs=100` ⇒
       ejes `10.0` y `25.0`, **y los dos ejes NO son iguales entre sí**.
-- [ ] 3.11 Crear `dashboard/components/SpectrumView.tsx`: dibuja Power vs Hz con el
+- [x] 3.11 Crear `dashboard/components/SpectrumView.tsx`: dibuja Power vs Hz con el
       eje derivado de `sampling_rate`/`max_frequency_hz` **de la respuesta**.
       **Ninguna constante de frecuencia máxima vive en TS**: medido en producción,
       el techo varía entre 10, 20 y 25 Hz y un eje constante miente por factor 2,5.
       El componente no calcula FFT.
-- [ ] 3.12 Cablear `SpectrumView` detrás de `visibleTools(progress).spectrum` y
+- [x] 3.12 Cablear `SpectrumView` detrás de `visibleTools(progress).spectrum` y
       registrar `recordInteraction(p, 'spectrum')` en cada uso.
-- [ ] 3.13 Test de `SpectrumView` que verifique que el eje se dibuja con el valor
+- [x] 3.13 Test de `SpectrumView` que verifique que el eje se dibuja con el valor
       de la respuesta: dos respuestas mockeadas con `max_frequency_hz` distinto
       producen ejes distintos.
-- [ ] 3.14 Método de `/spectra` en `dashboard/lib/api.ts` + cadenas nuevas en
+- [x] 3.14 Método de `/spectra` en `dashboard/lib/api.ts` + cadenas nuevas en
       `es.json` **Y** `en.json` con el test de paridad verde.
-- [ ] 3.15 Suite completa verde + `tsc --noEmit` en 0 + curl real contra
+- [x] 3.15 Suite completa verde + `tsc --noEmit` en 0 + curl real contra
       `/stations/{channel}/spectra` con una ventana concreta.
 - [ ] 3.16 **QA visual del usuario — Fase 3.** Entregarle: URL
       `http://localhost:3000/es/stations/AK.FIRE..BHZ` con la pestaña `wave`

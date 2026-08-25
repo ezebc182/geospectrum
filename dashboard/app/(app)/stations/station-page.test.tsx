@@ -89,6 +89,28 @@ vi.mock('@/components/SpectrogramLarge', () => ({
  * el hook real, la cadena evento → revalidación → re-render se ejercita de
  * punta a punta, que es exactamente lo que hay que probar.
  */
+// El componente real pide el espectro por red; acá se prueba el CABLEADO de la
+// página (progresividad + ventana + filtro), no el componente — igual que con
+// el helicorder y el espectrograma de arriba.
+vi.mock('@/components/SpectrumView', () => ({
+  SpectrumView: ({
+    channel,
+    window: w,
+    filter,
+  }: {
+    channel: string;
+    window: { startMs: number; endMs: number };
+    filter: string;
+  }) => (
+    <div
+      data-testid="spectrum-view"
+      data-channel={channel}
+      data-filter={filter}
+      data-start={String(w.startMs)}
+    />
+  ),
+}));
+
 vi.mock('@/lib/areas', () => ({
   getActiveArea: () => Promise.resolve(activeAreaMock.current),
 }));
@@ -460,5 +482,53 @@ describe('StationPage - contexto de área activa (Task D3)', () => {
     expect(areaActiva(ANDES).area.bbox).toHaveProperty('minlat');
     expect(areaActiva(ANDES).area.bbox).not.toHaveProperty('min_lat');
     expect(areaActiva(ANDES)).toHaveProperty('is_default');
+  });
+});
+
+describe('StationPage - espectro 1D (Fase 3)', () => {
+  /** Abre una ventana con el clic del helicorder simulado y cae en la pestaña Onda. */
+  function abrirVentana() {
+    fireEvent.click(screen.getByTestId('helicorder-canvas'));
+  }
+
+  it('sin progreso suficiente el botón de espectro NO aparece', () => {
+    renderPage();
+    abrirVentana(); // 1 ventana < spectrumAfterWindows (3)
+
+    expect(screen.queryByText(es.station.spectrumShow)).toBeNull();
+    expect(screen.queryByTestId('spectrum-view')).toBeNull();
+  });
+
+  it('con "mostrar todas las herramientas" el botón aparece y abre el espectro de la ventana vigente', () => {
+    renderPage();
+    // El escape hatch de la progresividad revela el escalón sin ganárselo.
+    fireEvent.click(screen.getByLabelText(es.station.showAllTools));
+    abrirVentana();
+
+    const boton = screen.getByText(es.station.spectrumShow);
+    expect(screen.queryByTestId('spectrum-view')).toBeNull(); // opt-in: no monta solo
+
+    fireEvent.click(boton);
+    const vista = screen.getByTestId('spectrum-view');
+    expect(vista.getAttribute('data-channel')).toBe('IU.MAJO..BHZ');
+    expect(vista.getAttribute('data-filter')).toBe('none');
+    // La ventana del espectro es la del wave view (la que abrió el clic).
+    expect(vista.getAttribute('data-start')).toBe(String(Date.UTC(2026, 7, 24, 12, 0, 0)));
+  });
+
+  it('abrir el espectro registra la interacción en el progreso persistido', async () => {
+    const { loadProgress } = await import('@/lib/progressive-disclosure');
+    renderPage();
+    fireEvent.click(screen.getByLabelText(es.station.showAllTools));
+    abrirVentana();
+
+    expect(loadProgress().spectraViewed).toBe(0);
+    fireEvent.click(screen.getByText(es.station.spectrumShow));
+    expect(loadProgress().spectraViewed).toBe(1);
+
+    // Cerrar y reabrir cuenta de nuevo: "en cada uso", dice la tarea 3.12.
+    fireEvent.click(screen.getByText(es.station.spectrumShow));
+    fireEvent.click(screen.getByText(es.station.spectrumShow));
+    expect(loadProgress().spectraViewed).toBe(2);
   });
 });

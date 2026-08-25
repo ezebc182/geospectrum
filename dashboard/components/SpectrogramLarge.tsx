@@ -314,7 +314,7 @@ export function SpectrogramLarge({
     return (
       <div
         data-testid="spectrogram-large-error"
-        className="rounded border border-red-800 bg-red-950/40 p-4 text-sm text-red-300"
+        className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
       >
         {t('spectrogramError')}
       </div>

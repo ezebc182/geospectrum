@@ -52,6 +52,10 @@ Medida en la rama `feat/analiticas-senal-fase1`, antes de tocar código:
 | extra (tarea 2.6) | `dashboard/hooks/use-wave-window.ts` | Pila de zoom de `useState` → `useRef` (romper la invariante 2 del diseño) | `86:  const stackRef = useRef<TimeWindow[]>([]); // MUTACION: pila en ref` | **0 de 12. Ninguno.** Dos intentos de escribir un test que la detectara fallaron; una sonda que contaba renders mostró la causa: las tres operaciones públicas (`setWindow`, `goBack`, `reset`) llaman TODAS a `setWindowState` con un objeto nuevo, y ese cambio de estado dispara el render que hace visible el valor del ref. **Conclusión: con la API actual la invariante 2 no es observable desde afuera.** Se descartó agregar `clearHistory()` sólo para hacerla testeable (ampliar la API pública para que un test pueda fallar). La pila queda en `useState` por robustez —la primera operación que toque la pila sin mover la ventana rompería el ref en silencio— y la ausencia de test quedó documentada en el archivo de tests y en el hook, en vez de dejar un comentario que prometa una cobertura inexistente. | Sí — `rg` sin coincidencias y 12 passed |
 | extra (tarea 1.3) | `src/services/spectrogram_service.py` | Anular la rama de ventana absoluta: `if starttime is not None and endtime is not None:` → `if False:` | `532:        if False:  # MUTACION TEMPORAL` | **4 de 6**: `test_ventana_absoluta_se_pide_tal_cual`, `test_ventana_absoluta_ignora_duration_hours`, `test_ventana_absoluta_naive_se_interpreta_como_utc`, `test_ventana_absoluta_con_offset_equivale_a_su_utc`. Los 2 de modo relativo siguieron VERDES, que es lo correcto: la mutación no toca ese camino. Si se hubieran puesto rojos los 6, los tests estarían mal aislados. | Sí — `rg` sin coincidencias y 6 passed |
 
+| **#6** (tarea 3.6) | `src/services/swarm_spectra.py` | `KAISER_BETA 5 → 8` | `14:KAISER_BETA = 8` | **1 de 18**: `test_valor_en_db_contra_la_referencia_a_mano`, que recalcula la referencia con LITERALES (`np.kaiser(n, 5)`) — si el módulo 1D tuviera una copia escondida de la constante, habría quedado verde. El test del pico siguió VERDE y es correcto: beta cambia los valores, no dónde cae el pico de una sinusoide fuerte. | Sí — `rg` da `= 5` y 18 passed |
+| **#7** (tarea 3.6) | `src/services/swarm_spectra.py` | `DB_MULTIPLIER 20 → 10` | `17:DB_MULTIPLIER = 10  # ...` | **1 de 18**: el mismo test de valor en dB (literal `20 * np.log10`). Exactamente el escenario que el plan advierte: el multiplicador NO mueve el pico, así que sin un test de VALOR esta mutación pasaba desapercibida. | Sí — `rg` da `= 20` y 18 passed |
+| **#8** (tarea 3.6) | `src/services/swarm_spectra.py` | `MAX_FREQ_HZ 25.0 → 50.0` | `18:MAX_FREQ_HZ = 50.0  # ...` | **3 de 18**: `test_canal_rapido_manda_la_vista_swarm` (módulo, fs=100 ⇒ 50≠25), `test_dos_canales_dos_ejes_distintos` (endpoint) y el de valor en dB (la máscara se agranda y las longitudes divergen). El caso fs=40 siguió VERDE, correcto: Nyquist 20 < 50 y el techo no participa. | Sí — `rg` da `= 25.0` y 18 passed |
+
 <!--
 Mutaciones pendientes (tabla del design.md, sección Testing Strategy):
   #1  seismic-constants.json   pVelocityKmS 6.0 -> 7.0      (rojo en AMBAS suites)
@@ -59,9 +63,6 @@ Mutaciones pendientes (tabla del design.md, sección Testing Strategy):
   #3  seismic-constants.json   codaA 1.86 -> 2.00           (rojo en AMBAS; ojo: t=1s queda verde)
   #4  seismic-constants.json   codaB -0.85 -> -0.50         (rojo en AMBAS suites)
   #5  seismic-constants.json   borrar clave pVelocityKmS    (Python revienta al IMPORTAR)
-  #6  swarm_spectra.py         KAISER_BETA 5 -> 8           (test del espectro 1D)
-  #7  swarm_spectra.py         DB_MULTIPLIER 20 -> 10       (test del espectro 1D)
-  #8  swarm_spectra.py         MAX_FREQ_HZ 25 -> 50         (test de dos canales, dos ejes)
   #9  main.py                  sacar window_part de cache_key (test de colisión de ventanas)
   #10 waveform-scale.ts        MIN_WINDOW_MS 1000 -> 0      (test de ventana degenerada)
   #11 swarm_rsam.py            np.mean(np.abs(x)) -> np.mean(x) (test de rsam_series)

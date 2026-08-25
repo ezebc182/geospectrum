@@ -897,7 +897,15 @@
     "waveError": "No se pudo cargar la onda de esta ventana",
     "waveEmpty": "Hacé clic en el helicorder para abrir una ventana de onda",
     "showAllTools": "Mostrar todas las herramientas",
-    "showAllToolsHint": "Las herramientas de análisis aparecen a medida que usás la vista de onda. Activá esto para verlas todas ahora."
+    "showAllToolsHint": "Las herramientas de análisis aparecen a medida que usás la vista de onda. Activá esto para verlas todas ahora.",
+    "helicorderLoading": "Cargando 24 horas de señal… puede tardar un rato",
+    "helicorderNoData": "La fuente FDSN no tiene datos de este canal en las últimas 24 horas",
+    "helicorderError": "No se pudo cargar la señal de este canal — reintentá en unos minutos",
+    "spectrumShow": "Espectro de la ventana",
+    "spectrumHint": "Power vs Hz de la ventana seleccionada, calculado sobre la señal sin decimar",
+    "spectrumLoading": "Calculando el espectro de la ventana…",
+    "spectrumError": "No se pudo calcular el espectro de esta ventana",
+    "spectrumPeak": "Pico dominante: {hz} Hz"
   },
   "stations": {
     "title": "Estaciones",

@@ -9,7 +9,10 @@
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import es from '@/messages/es.json';
 import { HelicorderCanvas } from './HelicorderCanvas';
 
 function makeWaveform(pairs = 1000) {
@@ -30,13 +33,24 @@ function stubFetchOk(body: unknown) {
   );
 }
 
+// El componente traduce el loader y los errores: sin provider, useTranslations
+// revienta. Mensajes reales de es.json a propósito — si la clave desaparece
+// del JSON, el test falla igual que fallaría la pantalla (MISSING_MESSAGE).
+function renderHeli(ui: ReactElement) {
+  return render(
+    <NextIntlClientProvider locale="es-AR" messages={es} timeZone="UTC">
+      {ui}
+    </NextIntlClientProvider>,
+  );
+}
+
 beforeEach(() => {
   stubFetchOk(makeWaveform());
 });
 
 describe('HelicorderCanvas', () => {
   it('pide el waveform de 24h del canal y renderiza el canvas', async () => {
-    render(
+    renderHeli(
       <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
     );
 
@@ -48,18 +62,66 @@ describe('HelicorderCanvas', () => {
     expect(screen.getByTestId('helicorder-canvas')).toBeTruthy();
   });
 
-  it('muestra el estado de error si el fetch falla', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })));
-    render(
+  it('muestra un loader mientras el waveform está en vuelo', async () => {
+    // 24 h por FDSN pueden tardar >30 s: sin loader, el lienzo blanco no
+    // distingue "cargando" de "roto" (QA 2026-08-25).
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    renderHeli(
       <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
     );
+
+    expect(screen.getByTestId('helicorder-loading').textContent).toContain(
+      es.station.helicorderLoading,
+    );
+  });
+
+  it('el loader desaparece cuando llega el dato', async () => {
+    renderHeli(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
+    );
+
     await waitFor(() => {
-      expect(screen.getByTestId('helicorder-error')).toBeTruthy();
+      expect(screen.queryByTestId('helicorder-loading')).toBeNull();
+    });
+    expect(screen.getByTestId('helicorder-canvas')).toBeTruthy();
+  });
+
+  it('un 404 explica que la fuente no tiene datos del canal', async () => {
+    // Caso real de QA: AK.FIRE..BHZ tardó 30 s y terminó en 404 "Sin datos
+    // FDSN". El cartel mostraba sólo el nombre del canal, sin explicación.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })),
+    );
+    renderHeli(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('helicorder-error').textContent).toContain(
+        es.station.helicorderNoData,
+      );
+    });
+  });
+
+  it('cualquier otra falla muestra el error genérico, no el nombre del canal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })),
+    );
+    renderHeli(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('helicorder-error').textContent).toContain(
+        es.station.helicorderError,
+      );
     });
   });
 
   it('escapa el canal en la URL — un SCNL lleva puntos y puede llevar espacios', async () => {
-    render(
+    renderHeli(
       <HelicorderCanvas channel="C1.VA 01..BHZ" timeChunkMinutes={30} width={900} height={620} />,
     );
 
@@ -76,7 +138,7 @@ describe('HelicorderCanvas', () => {
     // blanco. El clamp no pierde resolución: 50.000/96 ≈ 520 pares por fila
     // contra ~848 px de ancho útil, así que sigue habiendo más de un par por
     // píxel.
-    render(
+    renderHeli(
       <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={15} width={900} height={620} />,
     );
 
@@ -89,7 +151,7 @@ describe('HelicorderCanvas', () => {
 
   it('con franjas grandes pide lo que necesita, sin clampear de más', async () => {
     // 24 filas × 800 = 19.200: por debajo del tope, tiene que viajar entero.
-    render(
+    renderHeli(
       <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={60} width={900} height={620} />,
     );
     await waitFor(() => expect(fetch).toHaveBeenCalled());
@@ -120,7 +182,7 @@ describe('HelicorderCanvas', () => {
       ctx as unknown as CanvasRenderingContext2D,
     );
 
-    render(
+    renderHeli(
       <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
     );
 
@@ -142,7 +204,7 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
   }
 
   it('no cablea el handler ni el cursor sin onSelectWindow', async () => {
-    render(
+    renderHeli(
       <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={60} width={1112} height={480} />,
     );
 
@@ -151,7 +213,7 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
   });
 
   it('con onSelectWindow muestra cursor de mano', async () => {
-    render(
+    renderHeli(
       <HelicorderCanvas
         channel="IU.MAJO..BHZ"
         timeChunkMinutes={60}
@@ -167,7 +229,7 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
 
   it('el clic entrega la ventana centrada en el instante señalado', async () => {
     const onSelectWindow = vi.fn();
-    render(
+    renderHeli(
       <HelicorderCanvas
         channel="IU.MAJO..BHZ"
         timeChunkMinutes={60}
@@ -193,7 +255,7 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
 
   it('el clic en el margen no dispara nada', async () => {
     const onSelectWindow = vi.fn();
-    render(
+    renderHeli(
       <HelicorderCanvas
         channel="IU.MAJO..BHZ"
         timeChunkMinutes={60}
@@ -212,7 +274,7 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
 
   it('respeta selectionWindowSeconds', async () => {
     const onSelectWindow = vi.fn();
-    render(
+    renderHeli(
       <HelicorderCanvas
         channel="IU.MAJO..BHZ"
         timeChunkMinutes={60}
@@ -235,7 +297,7 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
     // El canvas se dibuja a 1112x480 pero CSS lo muestra a la mitad. Sin la
     // conversión, un clic en el centro visual caería en el cuarto del dibujo.
     const onSelectWindow = vi.fn();
-    render(
+    renderHeli(
       <HelicorderCanvas
         channel="IU.MAJO..BHZ"
         timeChunkMinutes={60}
