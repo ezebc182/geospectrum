@@ -310,6 +310,136 @@ def test_sin_datos_fdsn_no_se_cachea_el_vacio(client):
     assert gs.return_value.get_waveform_data.await_count == 2
 
 
+# =============================================================================
+# Cache eterno en DB (ventanas absolutas históricas) — performance FDSN
+# =============================================================================
+
+
+class _FakeResultCache:
+    """Doble del FdsnResultCache: registra llamadas y devuelve un hit fijo."""
+
+    def __init__(self, hit=None):
+        self.hit = hit
+        self.get_calls = []
+        self.set_calls = []
+
+    async def get(self, key):
+        self.get_calls.append(key)
+        return self.hit
+
+    async def set(self, key, payload):
+        self.set_calls.append((key, payload))
+
+
+@pytest.fixture
+def db_cache():
+    """Cuelga el fake de app.state y lo limpia: app es un singleton
+    module-level y el estado se filtra entre tests (lección de walls/picks)."""
+    fake = _FakeResultCache()
+    app.state.fdsn_result_cache = fake
+    yield fake
+    del app.state._state["fdsn_result_cache"]
+
+
+def _stream_en(start_iso: str, seconds: float, fs: float = 20.0):
+    """Stream sintético ANCLADO a un instante: el `_stream()` de arriba nace
+    en 1970 y jamás cubriría una ventana de 2019."""
+    from obspy import UTCDateTime
+
+    t = np.arange(int(fs * seconds)) / fs
+    data = 100.0 * np.sin(2 * np.pi * 5.0 * t)
+    return Stream(
+        [
+            Trace(
+                data=data,
+                header={
+                    "network": "IU",
+                    "station": "MAJO",
+                    "channel": "BHZ",
+                    "sampling_rate": fs,
+                    "starttime": UTCDateTime(start_iso),
+                },
+            )
+        ]
+    )
+
+
+def test_ventana_absoluta_cubierta_se_persiste_en_db(client, db_cache):
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(
+            return_value=_stream_en("2019-04-18T20:00:00", seconds=600.0)
+        )
+        resp = client.get(f"/stations/IU.MAJO..BHZ/waveform?{VENTANA}&points=100")
+
+    assert resp.status_code == 200
+    assert len(db_cache.set_calls) == 1
+    key, payload = db_cache.set_calls[0]
+    assert "2019-04-18T20:00:00" in key
+    # Lo persistido ES la respuesta: si difirieran, el hit de DB devolvería
+    # otra cosa que el fetch original.
+    assert payload == resp.json()
+
+
+def test_ventana_parcial_no_se_persiste_en_db(client, db_cache):
+    """El trace cubre 300 de los 600 s pedidos: congelar eso para siempre
+    serviría media ventana aun cuando FDSN la complete después."""
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(
+            return_value=_stream_en("2019-04-18T20:00:00", seconds=300.0)
+        )
+        resp = client.get(f"/stations/IU.MAJO..BHZ/waveform?{VENTANA}&points=100")
+
+    assert resp.status_code == 200
+    assert db_cache.set_calls == []
+
+
+def test_hit_de_db_evita_el_fetch_a_fdsn(client, db_cache):
+    db_cache.hit = {"channel": "IU.MAJO..BHZ", "mins": [1.0], "maxs": [2.0]}
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(return_value=_stream())
+        resp = client.get(f"/stations/IU.MAJO..BHZ/waveform?{VENTANA}&points=100")
+
+    assert resp.status_code == 200
+    assert resp.json() == db_cache.hit
+    gs.return_value.get_waveform_data.assert_not_awaited()
+
+
+def test_hit_de_db_repuebla_la_memoria(client, db_cache):
+    """El segundo pedido idéntico se sirve del cache en memoria: la DB se
+    consulta UNA vez, no en cada render."""
+    db_cache.hit = {"channel": "IU.MAJO..BHZ", "mins": [1.0], "maxs": [2.0]}
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(return_value=_stream())
+        client.get(f"/stations/IU.MAJO..BHZ/waveform?{VENTANA}&points=100")
+        client.get(f"/stations/IU.MAJO..BHZ/waveform?{VENTANA}&points=100")
+
+    assert len(db_cache.get_calls) == 1
+
+
+def test_ventana_relativa_no_toca_la_db(client, db_cache):
+    """Una ventana relativa termina en "ahora": nunca es inmutable, no tiene
+    nada que hacer en el cache eterno."""
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(return_value=_stream())
+        resp = client.get("/stations/IU.MAJO..BHZ/waveform?minutes=60&points=100")
+
+    assert resp.status_code == 200
+    assert db_cache.get_calls == []
+    assert db_cache.set_calls == []
+
+
+def test_sin_servicio_de_db_todo_sigue_como_hoy(client):
+    """TestClient sin lifespan no tiene app.state.fdsn_result_cache: el
+    endpoint debe funcionar igual (local sin base, o base caída al arrancar)."""
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(
+            return_value=_stream_en("2019-04-18T20:00:00", seconds=600.0)
+        )
+        resp = client.get(f"/stations/IU.MAJO..BHZ/waveform?{VENTANA}&points=100")
+
+    assert resp.status_code == 200
+
+
 def test_retrocompatibilidad_sin_minutes_sigue_dando_24h(client):
     """El llamado REAL de `HelicorderCanvas.tsx:96-99` no manda `minutes`.
 

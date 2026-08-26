@@ -18,6 +18,24 @@ export function rowCount(totalMinutes: number, timeChunkMinutes: number): number
   return Math.ceil(totalMinutes / timeChunkMinutes);
 }
 
+/** Pares min/max por fila: ~2 por píxel en un canvas típico de ~400 px de plot. */
+export const PAIRS_PER_ROW = 800;
+
+/** Tope de `points` del endpoint (`le=50000` en /stations/{channel}/waveform). */
+export const MAX_POINTS = 50000;
+
+/**
+ * Los `points` que el helicorder pide para una ventana y franja dadas.
+ *
+ * Esta cifra entra en la cache key del backend (`waveform:...:{points}:...`):
+ * el warm-up precalienta exactamente las variantes que salen de acá, vía
+ * `helicorderPointsVariants` de seismic-constants.json. Cambiar esta fórmula
+ * sin actualizar el JSON deja variantes frías — el test de paridad lo detecta.
+ */
+export function waveformPoints(totalMinutes: number, timeChunkMinutes: number): number {
+  return Math.min(MAX_POINTS, rowCount(totalMinutes, timeChunkMinutes) * PAIRS_PER_ROW);
+}
+
 /**
  * Filas que corresponden a la ventana REALMENTE devuelta, no a las 24 h que se
  * pidieron.

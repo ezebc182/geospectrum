@@ -65,6 +65,24 @@ class Settings(BaseSettings):
     # (2026-08-20) cuando el muro creció a 30 ciudades.
     spectrogram_cache_ttl_seconds: int = 900
 
+    # Cache eterno de resultados FDSN de ventana absoluta (tabla
+    # fdsn_result_cache, migración 016). Tope por CANTIDAD y no por tiempo:
+    # las ventanas históricas no vencen, pero un espectro de 1 h ronda los
+    # 2 MB de JSON — 200 entradas acotan la tabla a unos cientos de MB.
+    fdsn_result_cache_max_entries: int = 200
+
+    # Warm-up del helicorder (FDSN_WARMUP_ENABLED=true SOLO en el servicio
+    # api de Railway): precalienta las 24 h de las ganadoras por ciudad.
+    # Apagado por default para que dev local y tests no generen tráfico
+    # saliente a EarthScope.
+    fdsn_warmup_enabled: bool = False
+    # 12 min de ciclo con TTL de 20: el SET de un barrido nunca expira antes
+    # de que el siguiente lo renueve (un barrido de ~27 canales a ~60 s con
+    # concurrencia 3 tarda ~9 min).
+    fdsn_warmup_interval_seconds: int = 720
+    fdsn_warmup_cache_ttl_seconds: int = 1200
+    fdsn_warmup_concurrency: int = 3
+
     # Rate limiting
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60

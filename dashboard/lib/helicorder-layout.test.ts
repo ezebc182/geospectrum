@@ -10,8 +10,11 @@ import {
   rowForOffset,
   rowsForWindow,
   splitClippedSegment,
+  waveformPoints,
   xFractionForOffset,
 } from './helicorder-layout';
+import { TIME_CHUNK_OPTIONS } from './helicorder-settings';
+import seismicConstants from './seismic-constants.json';
 
 describe('geometría de filas', () => {
   it('24h en franjas de 30min son 48 filas', () => {
@@ -242,5 +245,21 @@ describe('rowsForWindow', () => {
     expect(rowsForWindow(T0, h(24), 0)).toBe(0);
     expect(rowsForWindow(NaN, h(24), 15)).toBe(0); // starttime que no parsea
     expect(rowsForWindow(T0, NaN, 15)).toBe(0);
+  });
+});
+
+describe('waveformPoints — la fuente de la cache key compartida con el warm-up', () => {
+  it('respeta el tope del endpoint y la densidad por fila', () => {
+    // 96 filas de 15 min piden 76.800 pares, pero el endpoint acepta 50.000.
+    expect(waveformPoints(1440, 15)).toBe(50000);
+    expect(waveformPoints(1440, 30)).toBe(38400);
+    expect(waveformPoints(1440, 60)).toBe(19200);
+  });
+
+  it('las variantes que precalienta el backend cubren TODAS las franjas', () => {
+    // Si alguien agrega una franja u opción y no actualiza el JSON, el
+    // warm-up dejaría esa variante fría en silencio. Este test lo impide.
+    const variants = TIME_CHUNK_OPTIONS.map((chunk) => waveformPoints(1440, chunk));
+    expect(new Set(seismicConstants.helicorderPointsVariants)).toEqual(new Set(variants));
   });
 });

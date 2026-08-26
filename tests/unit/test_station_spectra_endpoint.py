@@ -164,3 +164,85 @@ def test_sin_datos_fdsn_no_se_cachea_el_vacio(client):
 
     assert primera.status_code == segunda.status_code == 404
     assert gs.return_value.get_waveform_data.await_count == 2
+
+
+# =============================================================================
+# Cache eterno en DB (ventanas absolutas históricas) — performance FDSN
+# =============================================================================
+
+
+class _FakeResultCache:
+    def __init__(self, hit=None):
+        self.hit = hit
+        self.get_calls = []
+        self.set_calls = []
+
+    async def get(self, key):
+        self.get_calls.append(key)
+        return self.hit
+
+    async def set(self, key, payload):
+        self.set_calls.append((key, payload))
+
+
+@pytest.fixture
+def db_cache():
+    fake = _FakeResultCache()
+    app.state.fdsn_result_cache = fake
+    yield fake
+    del app.state._state["fdsn_result_cache"]
+
+
+def _stream_anclado(seconds=600.0, fs=20.0):
+    from obspy import UTCDateTime
+
+    t = np.arange(int(fs * seconds)) / fs
+    data = 100.0 * np.sin(2 * np.pi * 5.0 * t)
+    return Stream(
+        [
+            Trace(
+                data=data,
+                header={
+                    "network": "IU",
+                    "station": "MAJO",
+                    "channel": "BHZ",
+                    "sampling_rate": fs,
+                    "starttime": UTCDateTime("2019-04-18T20:00:00"),
+                },
+            )
+        ]
+    )
+
+
+def test_ventana_cubierta_se_persiste_en_db(client, db_cache):
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(return_value=_stream_anclado())
+        resp = client.get(f"/stations/IU.MAJO..BHZ/spectra?{VENTANA}")
+
+    assert resp.status_code == 200
+    assert len(db_cache.set_calls) == 1
+    key, payload = db_cache.set_calls[0]
+    assert key.startswith("spectra:")
+    assert payload == resp.json()
+
+
+def test_ventana_parcial_no_se_persiste_en_db(client, db_cache):
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(
+            return_value=_stream_anclado(seconds=300.0)
+        )
+        resp = client.get(f"/stations/IU.MAJO..BHZ/spectra?{VENTANA}")
+
+    assert resp.status_code == 200
+    assert db_cache.set_calls == []
+
+
+def test_hit_de_db_evita_el_fetch_a_fdsn(client, db_cache):
+    db_cache.hit = {"channel": "IU.MAJO..BHZ", "freqs": [1.0], "power_db": [2.0]}
+    with patch("src.main.get_spectrogram_service") as gs:
+        gs.return_value.get_waveform_data = AsyncMock(return_value=_stream_anclado())
+        resp = client.get(f"/stations/IU.MAJO..BHZ/spectra?{VENTANA}")
+
+    assert resp.status_code == 200
+    assert resp.json() == db_cache.hit
+    gs.return_value.get_waveform_data.assert_not_awaited()

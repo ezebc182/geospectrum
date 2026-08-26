@@ -1,4 +1,5 @@
 {
+  "helicorderPointsVariants": [50000, 38400, 19200],
   "pVelocityKmS": 6.0,
   "vpVsRatio": 1.73,
   "codaA": 1.86,

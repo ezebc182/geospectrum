@@ -130,6 +130,7 @@ from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
 from src.services.wall_service import WallService
 from src.services import cache
+from src.services.fdsn_result_cache import FdsnResultCache, trace_covers_window
 
 # =============================================================================
 # Observability — must happen before any logger is used
@@ -380,6 +381,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Picks de señal (Fase 5 de analiticas-profesionales-senal). Mismo patrón.
     app.state.signal_pick_service = SignalPickService(db_pool)
 
+    # Cache eterno de resultados FDSN (performance FDSN). Mismo patrón de
+    # pool prestado; degrada solo (get→None, set→noop) si la base falla.
+    app.state.fdsn_result_cache = FdsnResultCache(
+        db_pool, max_entries=settings.fdsn_result_cache_max_entries
+    )
+
     # Invitaciones (email-invitations, Fase 3). Mismo patrón de pool
     # prestado que AreaService/AuthService: lo cierra este lifespan, no el
     # servicio. La vigencia de cada token sale de settings (Decision 9).
@@ -422,7 +429,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "password no afectado"
         )
 
+    # Warm-up del helicorder (performance FDSN). Vive en ESTE proceso porque
+    # el cache que puebla es memoria del proceso (uvicorn corre un worker).
+    # Apagado por default: solo el servicio api de Railway lo enciende.
+    warmup_task: Optional[asyncio.Task] = None
+    warmup_stop = asyncio.Event()
+    if settings.fdsn_warmup_enabled:
+        from src.services.fdsn_warmup import run_warmup_loop
+
+        warmup_task = asyncio.create_task(
+            run_warmup_loop(
+                get_spectrogram_service(),
+                _warmup_channels,
+                interval_seconds=settings.fdsn_warmup_interval_seconds,
+                ttl_seconds=settings.fdsn_warmup_cache_ttl_seconds,
+                stop_event=warmup_stop,
+                concurrency=settings.fdsn_warmup_concurrency,
+            )
+        )
+        logger.info(
+            "Warm-up FDSN activo: cada %d s, concurrencia %d",
+            settings.fdsn_warmup_interval_seconds,
+            settings.fdsn_warmup_concurrency,
+        )
+
     yield
+
+    if warmup_task is not None:
+        # El stop corta el sleep al instante; el cancel corta un barrido a
+        # medias — un fetch de 60 s no puede demorar el shutdown del deploy.
+        warmup_stop.set()
+        warmup_task.cancel()
+        try:
+            await warmup_task
+        except asyncio.CancelledError:
+            pass
 
     await event_bus.close()
     if getattr(app.state, "metrics_store", None) is not None:
@@ -2366,6 +2407,31 @@ async def get_recent_events(
     }
 
 
+async def _warmup_channels() -> list[str]:
+    """Los canales que el warm-up precalienta: la ganadora de cada ciudad.
+
+    Misma semántica de frescura que /live-channels: con base se calienta la
+    candidata viva de cada ciudad; sin base (o consulta fallida), las
+    primarias — mejor calentar de más que dejar todo frío.
+    """
+    active: Optional[set] = None
+    if column_writer is not None:
+        try:
+            active = set(await column_writer.fetch_active_channels(LIVE_FRESHNESS_MINUTES))
+        except Exception:
+            logger.warning(
+                "warmup: fallo consultando canales activos, se calientan las primarias",
+                exc_info=True,
+            )
+    # Set vacío ⇒ primarias, A DIFERENCIA de /live-channels: un vacío casi
+    # siempre es "ingestor caído", y FDSN es una fuente independiente — los
+    # usuarios siguen abriendo estaciones. La UI honesta muestra el vacío;
+    # el warm-up no es UI, es cache.
+    if not active:
+        active = None
+    return [entry["channel"] for entry in resolve_live_catalog(LIVE_CANDIDATES_BY_CITY, active)]
+
+
 @app.get("/spectrograms/live-channels", tags=["spectrograms"])
 async def get_live_channels() -> list[dict]:
     """
@@ -2670,6 +2736,20 @@ async def get_station_waveform(
         if cached is not None:
             return cached
 
+    # Ventana absoluta: probar el cache eterno en DB ANTES de pagarle ~60 s a
+    # FDSN. Una ventana histórica es inmutable; la relativa termina en "ahora"
+    # y nunca pasa por acá. Sin servicio (local sin base) se sigue como hoy.
+    absolute_window = start is not None and end is not None
+    db_cache = getattr(app.state, "fdsn_result_cache", None)
+    if absolute_window and db_cache is not None:
+        persisted = await db_cache.get(cache_key)
+        if persisted is not None:
+            # Repoblar la memoria: los renders siguientes no pagan ni el
+            # roundtrip a la base.
+            if ttl > 0:
+                cache.set(cache_key, persisted, ttl)
+            return persisted
+
     service = get_spectrogram_service()
     stream = await service.get_waveform_data(
         network=net,
@@ -2692,6 +2772,10 @@ async def get_station_waveform(
     result = build_waveform_response(trace, channel, points, apply_filter=(filter == "bp"))
     if ttl > 0:
         cache.set(cache_key, result, ttl)
+    # Persistir SOLO si el trace cubre la ventana pedida: un parcial congelado
+    # para siempre serviría datos incompletos aun cuando FDSN los complete.
+    if absolute_window and db_cache is not None and trace_covers_window(trace, start, end):
+        await db_cache.set(cache_key, result)
     return result
 
 
@@ -2750,6 +2834,15 @@ async def get_station_spectrum(
         if cached is not None:
             return cached
 
+    # Ventana absoluta (acá siempre lo es): cache eterno en DB antes de FDSN.
+    db_cache = getattr(app.state, "fdsn_result_cache", None)
+    if db_cache is not None:
+        persisted = await db_cache.get(cache_key)
+        if persisted is not None:
+            if ttl > 0:
+                cache.set(cache_key, persisted, ttl)
+            return persisted
+
     service = get_spectrogram_service()
     stream = await service.get_waveform_data(
         network=net,
@@ -2787,6 +2880,9 @@ async def get_station_spectrum(
     }
     if ttl > 0:
         cache.set(cache_key, result, ttl)
+    # Igual que waveform: solo se congela un trace que cubre la ventana.
+    if db_cache is not None and trace_covers_window(trace, start, end):
+        await db_cache.set(cache_key, result)
     return result
 
 
@@ -2842,6 +2938,15 @@ async def get_station_rsam(
         if cached is not None:
             return cached
 
+    # Ventana absoluta (obligatoria en RSAM): cache eterno en DB antes de FDSN.
+    db_cache = getattr(app.state, "fdsn_result_cache", None)
+    if db_cache is not None:
+        persisted = await db_cache.get(cache_key)
+        if persisted is not None:
+            if ttl > 0:
+                cache.set(cache_key, persisted, ttl)
+            return persisted
+
     service = get_spectrogram_service()
     stream = await service.get_waveform_data(
         network=net,
@@ -2880,6 +2985,9 @@ async def get_station_rsam(
     }
     if ttl > 0:
         cache.set(cache_key, result, ttl)
+    # Igual que waveform: solo se congela un trace que cubre la ventana.
+    if db_cache is not None and trace_covers_window(trace, start, end):
+        await db_cache.set(cache_key, result)
     return result
 
 

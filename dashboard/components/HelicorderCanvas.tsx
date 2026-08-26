@@ -22,6 +22,7 @@ import {
   rowBias,
   rowColor,
   rowCount,
+  waveformPoints,
   rowsForWindow,
   splitClippedSegment,
 } from '@/lib/helicorder-layout';
@@ -71,15 +72,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const MARGIN_LEFT = 56; // etiquetas de hora local
 const MARGIN_RIGHT = 56; // etiquetas UTC
 const TOTAL_MINUTES = 1440; // 24 h
-/** ~1 par por píxel útil de ancho de fila. */
-const PAIRS_PER_ROW = 800;
-/**
- * Tope de `points` del endpoint (`le=50000` en /stations/{channel}/waveform).
- * Con franjas de 15 min serían 96 × 800 = 76.800 y FastAPI rechaza con 422
- * antes de llegar al handler. Clampear no cuesta resolución: 50.000 repartidos
- * en 96 filas siguen siendo ~520 pares contra ~848 px de ancho útil.
- */
-const MAX_POINTS = 50000;
 
 export function HelicorderCanvas({
   channel,
@@ -109,10 +101,7 @@ export function HelicorderCanvas({
 
     const load = async () => {
       try {
-        const points = Math.min(
-          MAX_POINTS,
-          rowCount(TOTAL_MINUTES, timeChunkMinutes) * PAIRS_PER_ROW,
-        );
+        const points = waveformPoints(TOTAL_MINUTES, timeChunkMinutes);
         // El SCNL va escapado: lleva puntos y algunas estaciones, espacios.
         const res = await fetch(
           `${API_BASE}/stations/${encodeURIComponent(channel)}/waveform` +
