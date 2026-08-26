@@ -911,7 +911,24 @@
     "rsamEmpty": "The window is shorter than one RSAM period — widen it to see the series",
     "rsamAxis": "RSAM (counts)",
     "rsamInfo": "{points} points · {seconds} s per point",
-    "rsamLocked": "RSAM unlocks as you use the wave view — or turn on \"Show all tools\""
+    "rsamLocked": "RSAM unlocks as you use the wave view — or turn on \"Show all tools\"",
+    "pickingTitle": "Phase picking",
+    "pickPhase": {
+      "P": "Mark P",
+      "S": "Mark S",
+      "coda": "Mark coda"
+    },
+    "pickingArmedHint": "Click on the wave to mark the phase (Esc cancels)",
+    "pickingShortcutsHint": "Shortcuts: P, S, C to arm a phase",
+    "pickingNoteLabel": "Note",
+    "pickingNotePlaceholder": "Note for the next pick (optional)",
+    "pickingEmpty": "No picks in this window. Arm a phase and click on the wave.",
+    "pickingRemove": "Delete the {phase} pick",
+    "pickingInvalidOrder": "The S is marked before the P: check the phase order",
+    "pickingDistance": "S-P: {sp} s · estimated distance ≈ {km} km",
+    "pickingMagnitude": "Coda: {seconds} s · Mc {mc}",
+    "pickingExport": "Export CSV",
+    "pickingError": "The pick change could not be saved — try again"
   },
   "stations": {
     "title": "Stations",

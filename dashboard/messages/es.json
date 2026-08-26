@@ -911,7 +911,24 @@
     "rsamEmpty": "La ventana es más corta que un período de RSAM — ampliála para ver la serie",
     "rsamAxis": "RSAM (cuentas)",
     "rsamInfo": "{points} puntos · {seconds} s por punto",
-    "rsamLocked": "El RSAM se revela usando la vista de onda — o activá «Mostrar todas las herramientas»"
+    "rsamLocked": "El RSAM se revela usando la vista de onda — o activá «Mostrar todas las herramientas»",
+    "pickingTitle": "Picking de fases",
+    "pickPhase": {
+      "P": "Marcar P",
+      "S": "Marcar S",
+      "coda": "Marcar coda"
+    },
+    "pickingArmedHint": "Hacé clic sobre la onda para marcar la fase (Esc cancela)",
+    "pickingShortcutsHint": "Atajos: P, S, C para armar una fase",
+    "pickingNoteLabel": "Nota",
+    "pickingNotePlaceholder": "Nota para el próximo pick (opcional)",
+    "pickingEmpty": "Sin picks en esta ventana. Armá una fase y hacé clic sobre la onda.",
+    "pickingRemove": "Borrar el pick {phase}",
+    "pickingInvalidOrder": "La S está marcada antes que la P: revisá el orden de las fases",
+    "pickingDistance": "S-P: {sp} s · distancia estimada ≈ {km} km",
+    "pickingMagnitude": "Coda: {seconds} s · Mc {mc}",
+    "pickingExport": "Exportar CSV",
+    "pickingError": "No se pudo guardar el cambio de picks — probá de nuevo"
   },
   "stations": {
     "title": "Estaciones",

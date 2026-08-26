@@ -185,6 +185,98 @@ class SeismicAPI {
       `/stations/${encodeURIComponent(channel)}/spectra?start=${start}&end=${end}&filter=${filter}`,
     );
   }
+
+  /** Como fetchJSON pero con método y body: los picks son el primer CRUD del cliente. */
+  private async requestJSON<T>(endpoint: string, method: string, body?: unknown): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    }
+    // El DELETE responde 204 sin body: response.json() ahí revienta.
+    if (response.status === 204) return undefined as T;
+    return response.json();
+  }
+
+  private picksBase(channel: string): string {
+    return `/stations/${encodeURIComponent(channel)}/picks`;
+  }
+
+  private windowQuery(window?: { startMs: number; endMs: number }): string {
+    if (!window) return '';
+    const start = encodeURIComponent(new Date(window.startMs).toISOString());
+    const end = encodeURIComponent(new Date(window.endMs).toISOString());
+    return `?start=${start}&end=${end}`;
+  }
+
+  /** Picks del usuario en la ventana, con las mediciones derivadas del backend. */
+  async getStationPicks(
+    channel: string,
+    window?: { startMs: number; endMs: number },
+  ): Promise<PicksApiResponse> {
+    return this.fetchJSON<PicksApiResponse>(`${this.picksBase(channel)}${this.windowQuery(window)}`);
+  }
+
+  async createStationPick(
+    channel: string,
+    pick: { phase: 'P' | 'S' | 'coda'; pickTimeMs: number; note?: string | null },
+  ): Promise<PickApiRecord> {
+    return this.requestJSON<PickApiRecord>(this.picksBase(channel), 'POST', {
+      phase: pick.phase,
+      pick_time: new Date(pick.pickTimeMs).toISOString(),
+      note: pick.note ?? null,
+    });
+  }
+
+  async deleteStationPick(channel: string, pickId: string): Promise<void> {
+    await this.requestJSON<void>(`${this.picksBase(channel)}/${pickId}`, 'DELETE');
+  }
+
+  /**
+   * CSV de mediciones, ARMADO POR EL BACKEND (las derivadas salen de las
+   * fórmulas de Python: el artefacto tiene que coincidir con la pantalla).
+   * Devuelve el texto; el componente arma el blob y dispara la descarga.
+   */
+  async exportStationPicksCsv(
+    channel: string,
+    window?: { startMs: number; endMs: number },
+  ): Promise<string> {
+    const response = await fetch(
+      `${this.baseUrl}${this.picksBase(channel)}/export.csv${this.windowQuery(window)}`,
+      { cache: 'no-store', credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    }
+    return response.text();
+  }
+}
+
+/** Un pick tal como lo serializa el backend (snake_case, patrón del resto de la API). */
+export interface PickApiRecord {
+  id: string;
+  channel: string;
+  phase: 'P' | 'S' | 'coda';
+  pick_time: string;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Respuesta de GET /stations/{channel}/picks (Fase 5). */
+export interface PicksApiResponse {
+  picks: PickApiRecord[];
+  measurements: {
+    sp_seconds: number | null;
+    distance_km: number | null;
+    coda_seconds: number | null;
+    coda_magnitude: number | null;
+  };
 }
 
 /** Respuesta de GET /stations/{channel}/rsam (Fase 4). `t` es el CENTRO de cada ventana. */

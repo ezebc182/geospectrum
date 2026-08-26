@@ -122,8 +122,10 @@ from src.services.invitation_service import (
     insert_invitation_row,
 )
 from src.api.routers import areas as areas_router
+from src.api.routers import picks as picks_router
 from src.api.routers import stations as stations_router
 from src.api.routers import walls as walls_router
+from src.services.signal_picks import SignalPickService
 from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
 from src.services.wall_service import WallService
@@ -375,6 +377,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Muros SPECTRONET guardados (PR-W2). Mismo patrón de pool prestado.
     app.state.wall_service = WallService(db_pool)
 
+    # Picks de señal (Fase 5 de analiticas-profesionales-senal). Mismo patrón.
+    app.state.signal_pick_service = SignalPickService(db_pool)
+
     # Invitaciones (email-invitations, Fase 3). Mismo patrón de pool
     # prestado que AreaService/AuthService: lo cierra este lifespan, no el
     # servicio. La vigencia de cada token sale de settings (Decision 9).
@@ -485,6 +490,7 @@ app.add_middleware(
 # @app.get más abajo en este mismo archivo; migrarlos sería un refactor de toda
 # la superficie de la API y no es parte de AOI-1.
 app.include_router(areas_router.router)
+app.include_router(picks_router.router)
 app.include_router(walls_router.router)
 app.include_router(stations_router.router)
 

@@ -35,12 +35,25 @@ interface WaveViewProps {
   onFilterChange: (f: HelicorderFilter) => void;
   width?: number;
   height?: number;
+  /**
+   * Capa opcional dibujada SOBRE el canvas (picking, Fase 5). Se monta dentro
+   * del contenedor relativo para que comparta la geometría exacta del trazo;
+   * sin la prop, el componente se comporta exactamente como antes.
+   */
+  overlay?: React.ReactNode;
 }
 
-const MARGIN_LEFT = 56;
-const MARGIN_RIGHT = 16;
-const MARGIN_TOP = 8;
-const MARGIN_BOTTOM = 24;
+// Exportados para que una capa superpuesta (PickingOverlay) use la MISMA
+// geometría: dos mapeos instante↔píxel distintos darían un pick corrido.
+export const WAVE_MARGIN_LEFT = 56;
+export const WAVE_MARGIN_RIGHT = 16;
+export const WAVE_MARGIN_TOP = 8;
+export const WAVE_MARGIN_BOTTOM = 24;
+
+const MARGIN_LEFT = WAVE_MARGIN_LEFT;
+const MARGIN_RIGHT = WAVE_MARGIN_RIGHT;
+const MARGIN_TOP = WAVE_MARGIN_TOP;
+const MARGIN_BOTTOM = WAVE_MARGIN_BOTTOM;
 
 const TRACE_COLOR = '#1f4e79';
 const SELECTION_FILL = 'rgba(31, 78, 121, 0.18)';
@@ -63,6 +76,7 @@ export function WaveView({
   onFilterChange,
   width = 960,
   height = 280,
+  overlay,
 }: WaveViewProps) {
   const t = useTranslations('station');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -242,6 +256,7 @@ export function WaveView({
           // y el próximo movimiento pinta una selección fantasma.
           onMouseLeave={() => setDrag(null)}
         />
+        {overlay}
         {status === 'loading' && (
           <div
             data-testid="wave-loading"

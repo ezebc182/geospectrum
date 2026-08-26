@@ -494,7 +494,7 @@ S-P y coda, export CSV. Es la única fase con esquema.
 
 ### 5.A — La fuente única de constantes (VA PRIMERO, antes de cualquier fórmula)
 
-- [ ] 5.1 Crear `dashboard/lib/seismic-constants.json` con exactamente:
+- [x] 5.1 Crear `dashboard/lib/seismic-constants.json` con exactamente:
       ```json
       {
         "pVelocityKmS": 6.0,
@@ -508,17 +508,17 @@ S-P y coda, export CSV. Es la única fase con esquema.
       que TypeScript **no puede importar nada fuera de ese directorio**; Python sí
       puede leer hacia arriba. La restricción del lenguaje más rígido decide la
       ubicación.
-- [ ] 5.2 Verificar que `resolveJsonModule: true` sigue activo en
+- [x] 5.2 Verificar que `resolveJsonModule: true` sigue activo en
       `dashboard/tsconfig.json` (está en la línea 12) — sin eso el import de TS no
       compila.
-- [ ] 5.3 **Esta tarea es un candado, no una sugerencia**: NI Python NI TypeScript
+- [x] 5.3 **Esta tarea es un candado, no una sugerencia**: NI Python NI TypeScript
       declaran esas cuatro constantes en su propio código. Al terminar la fase,
       `rg -n "6\.0|1\.73|1\.86|0\.85" src/services/signal_picks.py dashboard/lib/signal-picks.ts`
       NO debe mostrar ninguna de las cuatro como literal declarado.
 
 ### 5.B — Fórmulas: Python
 
-- [ ] 5.4 Crear `src/services/signal_picks.py` con la carga del JSON **a nivel de
+- [x] 5.4 Crear `src/services/signal_picks.py` con la carga del JSON **a nivel de
       módulo, UNA sola vez**:
       `_CONSTANTS_PATH = Path(__file__).resolve().parents[2] / "dashboard" / "lib" / "seismic-constants.json"`
       (verificado que resuelve a la raíz del repo) y
@@ -527,17 +527,17 @@ S-P y coda, export CSV. Es la única fase con esquema.
       `CODA_A`, `CODA_B`. **Si el archivo falta o le falta una clave, revienta al
       IMPORTAR** — nunca cae a un default silencioso: un `KeyError` al arrancar es
       infinitamente mejor que una distancia equivocada en un CSV.
-- [ ] 5.5 Implementar `sp_distance_km(sp_seconds)` con
+- [x] 5.5 Implementar `sp_distance_km(sp_seconds)` con
       `d = sp * (vp*vs)/(vp-vs)` y guarda para `sp <= 0` o no finito ⇒ `None`
       (nunca `0`, `NaN` ni `Infinity` silenciosos; nunca una distancia negativa).
       Docstring en español que aclare que una sola estación da **distancia**, no
       ubicación: el epicentro está en algún punto del círculo de radio `d`.
-- [ ] 5.6 Implementar `coda_magnitude(coda_seconds)` con
+- [x] 5.6 Implementar `coda_magnitude(coda_seconds)` con
       `Mc = CODA_A * log10(t) + CODA_B` y guarda para `t <= 0` o no finito ⇒
       `None` (sin la guarda, `t=0` propaga `-Infinity` y `t<0` propaga `NaN` hasta
       la UI y el CSV). **No recortar a cero**: `Mc(1 s) = -0.85` es negativo y es
       correcto.
-- [ ] 5.7 Crear `tests/unit/test_signal_picks_formulas.py` con los valores
+- [x] 5.7 Crear `tests/unit/test_signal_picks_formulas.py` con los valores
       **calculados a mano** de la spec, ninguno "devuelve un número":
       S-P 10.0 s ⇒ `82.1918` km (±0.001); S-P 5.0 s ⇒ `41.0959`; S-P 1.0 s ⇒
       `8.2192`; S-P `0` ⇒ `None`; S-P `-3.0` ⇒ `None` (sin la guarda daría
@@ -550,13 +550,13 @@ S-P y coda, export CSV. Es la única fase con esquema.
 
 ### 5.C — Fórmulas: TypeScript (la copia deliberada)
 
-- [ ] 5.8 Crear `dashboard/lib/signal-picks.ts` que importa
+- [x] 5.8 Crear `dashboard/lib/signal-picks.ts` que importa
       `@/lib/seismic-constants.json` y exporta las mismas constantes con los
       mismos nombres y las mismas fórmulas + los tipos de pick. **No declara
       ninguno de los cuatro valores.** El cliente calcula para el FEEDBACK
       INMEDIATO (mostrar "82 km" mientras se marca); el backend calcula para el
       ARTEFACTO (el CSV).
-- [ ] 5.9 Crear `dashboard/lib/signal-picks.test.ts` con **exactamente los mismos
+- [x] 5.9 Crear `dashboard/lib/signal-picks.test.ts` con **exactamente los mismos
       valores esperados calculados a mano** que `test_signal_picks_formulas.py`.
       Si un día las dos implementaciones divergen, los dos tests no pueden estar
       verdes a la vez.
@@ -570,26 +570,26 @@ S-P y coda, export CSV. Es la única fase con esquema.
 > **Un solo rojo significa que hay una copia escondida de la constante en el otro
 > lado y la tarea NO está terminada.**
 
-- [ ] 5.10 **Mutación #1**: `pVelocityKmS 6.0 → 7.0`. Debe poner rojo el test de
+- [x] 5.10 **Mutación #1**: `pVelocityKmS 6.0 → 7.0`. Debe poner rojo el test de
       distancia S-P **en Python Y en TS**. Con vp mutado,
       `vs = 7.0/1.73 = 4.046242774566474`, factor `= 9.589041095890414`, y S-P de
       10 s daría `95.8904` km — que NO coincide con el esperado `82.1918`.
-- [ ] 5.11 **Mutación #2**: `vpVsRatio 1.73 → 1.60`. Rojo en distancia S-P **en
+- [x] 5.11 **Mutación #2**: `vpVsRatio 1.73 → 1.60`. Rojo en distancia S-P **en
       ambos lados**.
-- [ ] 5.12 **Mutación #3**: `codaA 1.86 → 2.00`. Rojo en magnitud de coda **en
+- [x] 5.12 **Mutación #3**: `codaA 1.86 → 2.00`. Rojo en magnitud de coda **en
       ambos lados**. **Ojo**: el caso `t = 1 s` queda VERDE porque `log10(1)=0`
       anula el coeficiente — por eso el caso de 60 s de la tarea 5.7 es
       obligatorio y este chequeo confirma que existe.
-- [ ] 5.13 **Mutación #4**: `codaB -0.85 → -0.50`. Rojo en magnitud de coda **en
+- [x] 5.13 **Mutación #4**: `codaB -0.85 → -0.50`. Rojo en magnitud de coda **en
       ambos lados**, y en TODOS los casos numéricos (el término independiente
       afecta a los cuatro).
-- [ ] 5.14 **Mutación #5**: borrar la clave `pVelocityKmS` del JSON. Python debe
+- [x] 5.14 **Mutación #5**: borrar la clave `pVelocityKmS` del JSON. Python debe
       **reventar al IMPORTAR** con `KeyError`, no caer a un default silencioso.
       Registrar la traza. Revertir.
 
 ### 5.E — Esquema y CRUD
 
-- [ ] 5.15 Crear `deploy/sql/migrations/015_signal_picks.sql` (siguiente número
+- [x] 5.15 Crear `deploy/sql/migrations/015_signal_picks.sql` (siguiente número
       libre; verificado que el último es `014_seismic_events.sql`) con la tabla
       completa del diseño: `id UUID PK DEFAULT gen_random_uuid()`,
       `user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE`, `channel TEXT`,
@@ -604,14 +604,14 @@ S-P y coda, export CSV. Es la única fase con esquema.
       `phase` es `TEXT + CHECK` y **no** un `ENUM` de Postgres (el repo no usa
       enums en ninguna migración existente y `ALTER TYPE ... ADD VALUE` no corre
       dentro de una transacción en versiones viejas).
-- [ ] 5.16 Crear `src/models/signal_pick.py` con `PickPhase(str, Enum)`,
+- [x] 5.16 Crear `src/models/signal_pick.py` con `PickPhase(str, Enum)`,
       `SignalPickCreate`, `SignalPickPublic` y `PickMeasurements` según el diseño.
       **`user_id` NUNCA va en el body** (patrón `wall.py`): sale de la sesión.
-- [ ] 5.17 Agregar `SignalPickService` (CRUD) a `src/services/signal_picks.py`:
+- [x] 5.17 Agregar `SignalPickService` (CRUD) a `src/services/signal_picks.py`:
       pool prestado, **ownership por `user_id` en el `WHERE`** (patrón
       `wall_service.py:193-211`), no por rol. Un pick ajeno devuelve 404,
       indistinguible de uno inexistente. `SignalPickNotFoundError` tipada.
-- [ ] 5.18 Crear `src/api/routers/picks.py` con
+- [x] 5.18 Crear `src/api/routers/picks.py` con
       `router = APIRouter(prefix="/stations/{channel}/picks", tags=["picks"])` y
       los 5 endpoints de la tabla del diseño (GET lista con mediciones, POST 201,
       PUT, DELETE 204, GET export.csv).
@@ -620,63 +620,63 @@ S-P y coda, export CSV. Es la única fase con esquema.
       `-> None` con 204 aborta el arranque de FastAPI (`walls.py:76-77`);
       (b) `export.csv` es un segmento estático que compite con `{pick_id}` y va
       declarado **ANTES**, igual que `/walls/global` antes de `/walls/{wall_id}`.
-- [ ] 5.19 En `src/main.py`: `app.include_router(picks_router.router)` y
+- [x] 5.19 En `src/main.py`: `app.include_router(picks_router.router)` y
       `app.state.signal_pick_service` en el lifespan.
-- [ ] 5.20 Implementar el armado del CSV **server-side** con las columnas
+- [x] 5.20 Implementar el armado del CSV **server-side** con las columnas
       `channel,phase,pick_time_utc,note,sp_seconds,distance_km,coda_seconds,coda_magnitude`
       y `Content-Disposition`. **Por qué server-side**: es el entregable que se va
       al flujo del sismólogo; si lo armara el cliente, `distance_km` y
       `coda_magnitude` saldrían de la copia TS y una deriva produciría un CSV con
       números que no coinciden con lo que la pantalla mostró.
-- [ ] 5.21 Tests de integración en `tests/integration/test_picks_api.py` (patrón
+- [x] 5.21 Tests de integración en `tests/integration/test_picks_api.py` (patrón
       `test_walls_api.py`, testcontainer `postgres:16-alpine`, **Docker arriba**):
       ownership (el pick de A no aparece para B, y B no puede borrarlo — el pick
       de A sigue existiendo); doble POST idéntico ⇒ **una sola fila** (el UNIQUE
       hace idempotente el doble clic); `ON DELETE CASCADE` (borrar el usuario
       borra sus picks); sin sesión ⇒ 401.
-- [ ] 5.22 **Test que sólo puede pasar con persistencia real** (no con
+- [x] 5.22 **Test que sólo puede pasar con persistencia real** (no con
       localStorage): el pick se lee desde una conexión/sesión NUEVA, no dentro de
       la misma. *Un test que sólo verifique "se lee después de escribirlo en la
       misma sesión" pasaría igual con `localStorage` y NO sirve.*
-- [ ] 5.23 Test del CSV: con P, S y coda, las columnas derivadas traen los valores
+- [x] 5.23 Test del CSV: con P, S y coda, las columnas derivadas traen los valores
       del service (no vacíos ni placeholders) y el archivo no tiene corrupción de
       separadores.
 
 ### 5.F — UI de picking
 
-- [ ] 5.24 Crear `dashboard/hooks/use-signal-picks.ts` con el contrato del diseño
+- [x] 5.24 Crear `dashboard/hooks/use-signal-picks.ts` con el contrato del diseño
       (`picks`, `measurements`, `addPick`, `removePick`, `status`). Mismas tres
       reglas de React de la tarea 2.4 (estado inicial `null` + efecto; nada de
       estado derivado de props asíncronas; abort controlado dentro de su efecto).
-- [ ] 5.25 Crear `dashboard/components/PickingOverlay.tsx`: capa sobre `WaveView`
+- [x] 5.25 Crear `dashboard/components/PickingOverlay.tsx`: capa sobre `WaveView`
       con líneas P/S/coda, atajos de teclado y panel de mediciones. **UI de UN
       SOLO NIVEL**: marcar P, marcar S, marcar coda. **NO replicar los menús
       anidados de tres niveles de SWARM** (fase → onset → polaridad → peso 0-4).
       No persiste (llama al hook) y no calcula las fórmulas (llama a la lib).
-- [ ] 5.26 El overlay usa **la misma `xToTime` de `waveform-scale.ts`** que el
+- [x] 5.26 El overlay usa **la misma `xToTime` de `waveform-scale.ts`** que el
       zoom: dos mapeos distintos darían un pick corrido. El pick guarda un
       **instante UTC**, nunca un `x` ni un offset — por eso se puede redibujar al
       volver con otro zoom.
-- [ ] 5.27 Cablear el picking y el export detrás de `visibleTools(progress).picking`
+- [x] 5.27 Cablear el picking y el export detrás de `visibleTools(progress).picking`
       y `.export`.
-- [ ] 5.28 Tests de `PickingOverlay`: marcar P es una sola acción sin submenú y se
+- [x] 5.28 Tests de `PickingOverlay`: marcar P es una sola acción sin submenú y se
       dibuja en el instante marcado; con P y S se muestra la distancia calculada
       (no un placeholder); **con S ANTES que P no se muestra distancia, se indica
       orden inválido y NO aparece `NaN` ni un número negativo**; con coda de 100 s
       se muestra `2.87`; borrar el pick S hace desaparecer la distancia y **deja
       la magnitud de coda visible**.
-- [ ] 5.29 Cadenas nuevas de la Fase 5 en `es.json` **Y** `en.json` (incluidos los
+- [x] 5.29 Cadenas nuevas de la Fase 5 en `es.json` **Y** `en.json` (incluidos los
       mensajes de orden de fases inválido y las etiquetas del export), test de
       paridad verde.
 
 ### 5.G — Cierre de fase
 
-- [ ] 5.30 Aplicar `015_signal_picks.sql` en local y verificar la tabla y los dos
+- [x] 5.30 Aplicar `015_signal_picks.sql` en local y verificar la tabla y los dos
       índices. **Orden de despliegue: migración primero, código después** (la tabla
       vacía no molesta a nadie; el código sin tabla da 500).
-- [ ] 5.31 Suite completa verde en ambos lados (integración con Docker arriba) +
+- [x] 5.31 Suite completa verde en ambos lados (integración con Docker arriba) +
       `tsc --noEmit` en 0 + conteo frontend `>=` baseline.
-- [ ] 5.32 Cerrar `mutation-log.md`: las **12 mutaciones** de la tabla del diseño
+- [x] 5.32 Cerrar `mutation-log.md`: las **12 mutaciones** de la tabla del diseño
       deben tener su fila con la salida del `rg`, el test que se puso rojo y la
       confirmación de reversión. **Una mutación sin salida de `rg` registrada no
       cuenta como verificada.**

@@ -16,12 +16,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
+import { PickingOverlay, PickingPanel } from '@/components/PickingOverlay';
 import { RsamChart } from '@/components/RsamChart';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
 import { SpectrumView } from '@/components/SpectrumView';
 import { WaveView } from '@/components/WaveView';
+import { useSignalPicks } from '@/hooks/use-signal-picks';
 import { useWaveWindow } from '@/hooks/use-wave-window';
 import { seismicAPI } from '@/lib/api';
+import type { PickPhase } from '@/lib/signal-picks';
 import {
   PROGRESS_DEFAULTS,
   loadProgress,
@@ -140,6 +143,55 @@ export default function StationPage() {
   const handleZoomWindow = (w: TimeWindow) => {
     wave.setWindow(w);
     bumpProgress('window');
+  };
+
+  /**
+   * Picking (Fase 5). El hook sólo pide picks cuando la herramienta está
+   * desbloqueada: antes del umbral no hay UI que los muestre y el fetch sería
+   * tráfico muerto.
+   */
+  const picking = useSignalPicks(channel, tools.picking ? wave.window : null);
+  const [armedPhase, setArmedPhase] = useState<PickPhase | null>(null);
+  const [pickNote, setPickNote] = useState('');
+  const [pickMutationFailed, setPickMutationFailed] = useState(false);
+
+  const handlePickAt = async (pickTimeMs: number) => {
+    if (!armedPhase) return;
+    const phase = armedPhase;
+    // Se desarma ANTES del await: un clic marca UNA fase, no una ráfaga.
+    setArmedPhase(null);
+    try {
+      await picking.addPick(phase, pickTimeMs, pickNote.trim() || null);
+      setPickMutationFailed(false);
+      setPickNote('');
+    } catch {
+      setPickMutationFailed(true);
+    }
+  };
+
+  const handleRemovePick = async (pickId: string) => {
+    try {
+      await picking.removePick(pickId);
+      setPickMutationFailed(false);
+    } catch {
+      setPickMutationFailed(true);
+    }
+  };
+
+  const handleExportPicks = async () => {
+    if (!wave.window) return;
+    try {
+      const csv = await seismicAPI.exportStationPicksCsv(channel, wave.window);
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `picks-${channel}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setPickMutationFailed(false);
+    } catch {
+      setPickMutationFailed(true);
+    }
   };
 
   // El selector de área vive en el layout, así que ya se ve en esta pantalla.
@@ -394,7 +446,34 @@ export default function StationPage() {
               onReset={wave.reset}
               filter={filter}
               onFilterChange={(f) => persist({ filter: f })}
+              overlay={
+                tools.picking ? (
+                  <PickingOverlay
+                    window={wave.window}
+                    picks={picking.picks}
+                    armedPhase={armedPhase}
+                    onPickAt={handlePickAt}
+                    width={960}
+                    height={280}
+                  />
+                ) : undefined
+              }
             />
+
+            {tools.picking && (
+              <PickingPanel
+                picks={picking.picks}
+                measurements={picking.measurements}
+                status={pickMutationFailed ? 'error' : picking.status}
+                armedPhase={armedPhase}
+                onArmPhase={setArmedPhase}
+                onRemovePick={handleRemovePick}
+                note={pickNote}
+                onNoteChange={setPickNote}
+                exportVisible={tools.export}
+                onExport={handleExportPicks}
+              />
+            )}
 
             {tools.spectrum && (
               <div className="mt-4">

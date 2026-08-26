@@ -58,18 +58,13 @@ Medida en la rama `feat/analiticas-senal-fase1`, antes de tocar código:
 
 | **#11** (tarea 4.3) | `src/services/swarm_rsam.py` | `rsam_sample`: dos variantes — (a) quitar el `abs`: `np.mean(centered)`; (b) quitar el demean: `np.mean(np.abs(data))` | (a) `33: return float(np.mean(centered))` (b) `33: return float(np.mean(np.abs(data.astype(np.float64))))` | **(a) 2 de 15**: el de la onda alternante (±100 ⇒ 0 en vez de 100) y el unitario de `rsam_sample`. El de señal constante quedó VERDE **y es correcto**: sin `abs` pero con demean, la constante sigue dando 0 — la predicción del plan ("devolvería 1000") corresponde a la variante (b). **(b) 2 de 15**: el de señal constante (1000 en vez de 0, la predicción exacta del plan) y el unitario. Entre ambas variantes, las dos mitades de la fórmula quedan vigiladas por tests DISTINTOS. | Sí — (a) se revirtió con `git checkout` y se llevó `rsam_series` sin commitear (la trampa ya documentada: repuesto y verificado); (b) se revirtió con `sd` inverso, `rg` da 1 y 15 passed |
 
+| **#1** (tarea 5.10) | `dashboard/lib/seismic-constants.json` | `pVelocityKmS 6.0 → 7.0` | `2:  "pVelocityKmS": 7.0,` | **Python 4 de 17 Y TS 4 de 17** — los mismos cuatro de cada lado: el de constantes y los tres de distancia S-P (10 s ⇒ 95.89 en vez de 82.1918, la predicción exacta del plan). Los de coda quedaron verdes, correcto: vp no participa en Mc. Rojo en AMBAS suites ⇒ ninguna copia escondida. | Sí — `rg` da `6.0` y 17+17 passed |
+| **#2** (tarea 5.11) | `dashboard/lib/seismic-constants.json` | `vpVsRatio 1.73 → 1.60` | `3:  "vpVsRatio": 1.60,` | **Python 4 de 17 Y TS 4 de 17**: constantes + los tres de distancia S-P, en ambos lados. Coda verde, correcto. | Sí — `rg` da `1.73` y 17+17 passed |
+| **#3** (tarea 5.12) | `dashboard/lib/seismic-constants.json` | `codaA 1.86 → 2.00` | `4:  "codaA": 2.00,` | **Python 4 de 17 Y TS 4 de 17**: constantes + coda de 100, 10 y 60 s. **El caso `t=1 s` quedó VERDE en los dos lados, tal como el plan predijo** (`log10(1)=0` anula el coeficiente) — y el caso de 60 s, que existe exactamente para esto, se puso rojo. Distancia S-P verde, correcto. | Sí — `rg` da `1.86` y 17+17 passed |
+| **#4** (tarea 5.13) | `dashboard/lib/seismic-constants.json` | `codaB -0.85 → -0.50` | `5:  "codaB": -0.50` | **Python 5 de 17 Y TS 5 de 17**: constantes + los CUATRO casos numéricos de coda (100, 10, 1 y 60 s) — el término independiente afecta a todos, incluida la coda de 1 s que en la #3 quedaba verde. | Sí — `rg` da `-0.85` y 17+17 passed |
+| **#5** (tarea 5.14) | `dashboard/lib/seismic-constants.json` | Borrar la clave `pVelocityKmS` | `rg -n "pVelocityKmS"` sin coincidencias (clave ausente) | **Python REVENTÓ AL IMPORTAR** con `KeyError: 'pVelocityKmS'` en la línea `P_VELOCITY_KM_S: float = _C["pVelocityKmS"]` — sin caer a ningún default silencioso, que es el comportamiento exigido. **Nota de protocolo**: el primer intento con `sd` multilínea NO mutó (el `rg -c` siguió dando 1) y se descartó ese verde; se reaplicó con edición determinística vía `json` de Python. La trampa del `sd` que falla en silencio, por segunda vez en este change. | Sí — `rg` da `"pVelocityKmS": 6.0` y 17 passed |
+
 <!--
 Mutaciones pendientes (tabla del design.md, sección Testing Strategy):
-  #1  seismic-constants.json   pVelocityKmS 6.0 -> 7.0      (rojo en AMBAS suites)
-  #2  seismic-constants.json   vpVsRatio 1.73 -> 1.60       (rojo en AMBAS suites)
-  #3  seismic-constants.json   codaA 1.86 -> 2.00           (rojo en AMBAS; ojo: t=1s queda verde)
-  #4  seismic-constants.json   codaB -0.85 -> -0.50         (rojo en AMBAS suites)
-  #5  seismic-constants.json   borrar clave pVelocityKmS    (Python revienta al IMPORTAR)
-  #9  main.py                  sacar window_part de cache_key (test de colisión de ventanas)
-  #10 waveform-scale.ts        MIN_WINDOW_MS 1000 -> 0      (test de ventana degenerada)
-  #11 swarm_rsam.py            np.mean(np.abs(x)) -> np.mean(x) (test de rsam_series)
-  #12 progressive-disclosure.ts spectrumAfterWindows 3 -> 0  (test del umbral "justo debajo")
-
-Recordatorio sobre #1-#5: un solo rojo significa que hay una copia escondida de
-la constante en el otro lado. Deben ponerse rojos tests de Python Y de TS.
+  (ninguna) — las 12 de la tabla del diseño están registradas arriba.
 -->
