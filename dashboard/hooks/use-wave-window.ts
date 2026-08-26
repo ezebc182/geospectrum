@@ -153,37 +153,45 @@ export function useWaveWindow(
 
     const load = async () => {
       setStatus('loading');
-      try {
-        const { start, end } = windowToQuery(requested);
-        const res = await fetch(
-          `${API_BASE}/stations/${encodeURIComponent(channel)}/waveform` +
-            `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
-            `&points=${POINTS}&filter=${filter}`,
-          { signal: controller.signal },
-        );
-        if (!res.ok) throw new Error(String(res.status));
-        const wf: WaveformResponse = await res.json();
+      // Dos intentos: EarthScope es intermitente desde el server (verificado
+      // en prod el 2026-08-26 — el mismo request que dio error devolvió 200
+      // al segundo intento). Un solo hipo del upstream no debe llegar al
+      // usuario como "no se pudo cargar la ventana".
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const { start, end } = windowToQuery(requested);
+          const res = await fetch(
+            `${API_BASE}/stations/${encodeURIComponent(channel)}/waveform` +
+              `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
+              `&points=${POINTS}&filter=${filter}`,
+            { signal: controller.signal },
+          );
+          if (!res.ok) throw new Error(String(res.status));
+          const wf: WaveformResponse = await res.json();
 
-        // ④ La respuesta llegó, pero el request ya fue abortado: se descarta.
-        //    `fetch` no siempre rechaza a tiempo, así que el chequeo es explícito.
-        if (cancelled || controller.signal.aborted) return;
+          // ④ La respuesta llegó, pero el request ya fue abortado: se descarta.
+          //    `fetch` no siempre rechaza a tiempo, así que el chequeo es explícito.
+          if (cancelled || controller.signal.aborted) return;
 
-        // ⑤ Guarda de ventana tardía: si la ventana cambió mientras esta
-        //    respuesta viajaba, aplicarla pintaría un tramo que el usuario ya
-        //    no está mirando. Se compara contra lo PEDIDO, no contra el ref.
-        setWindowState((current) => {
-          if (sameWindow(current, requested)) {
-            setData(wf);
-            setStatus('ready');
-          }
-          return current;
-        });
-      } catch (err) {
-        // Un abort no es un error del usuario: es el flujo normal de un zoom
-        // rápido. Pintar "error" ahí sería un falso rojo en pantalla.
-        if (cancelled || controller.signal.aborted) return;
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setStatus('error');
+          // ⑤ Guarda de ventana tardía: si la ventana cambió mientras esta
+          //    respuesta viajaba, aplicarla pintaría un tramo que el usuario ya
+          //    no está mirando. Se compara contra lo PEDIDO, no contra el ref.
+          setWindowState((current) => {
+            if (sameWindow(current, requested)) {
+              setData(wf);
+              setStatus('ready');
+            }
+            return current;
+          });
+          return;
+        } catch (err) {
+          // Un abort no es un error del usuario: es el flujo normal de un zoom
+          // rápido. Pintar "error" ahí sería un falso rojo en pantalla.
+          if (cancelled || controller.signal.aborted) return;
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          if (attempt === 0) continue; // reintento inmediato, una sola vez
+          setStatus('error');
+        }
       }
     };
 

@@ -41,6 +41,28 @@ describe('useWaveWindow', () => {
     vi.restoreAllMocks();
   });
 
+  describe('reintento ante fallo transitorio', () => {
+    it('un hipo del upstream se reintenta y termina en ready, no en error', async () => {
+      // EarthScope es intermitente desde el server (verificado en prod
+      // 2026-08-26): el mismo request que falló devolvió 200 al reintento.
+      fetchMock.mockRejectedValueOnce(new Error('network'));
+      const { result } = renderHook(() => useWaveWindow('AK.FIRE..BHZ', W0));
+
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('dos fallos seguidos SÍ terminan en error — no se reintenta para siempre', async () => {
+      fetchMock
+        .mockRejectedValueOnce(new Error('network'))
+        .mockRejectedValueOnce(new Error('network'));
+      const { result } = renderHook(() => useWaveWindow('AK.FIRE..BHZ', W0));
+
+      await waitFor(() => expect(result.current.status).toBe('error'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('siembra por efecto (invariante 1)', () => {
     it('sin ventana inicial arranca en null y no pide nada', () => {
       const { result } = renderHook(() => useWaveWindow('AK.FIRE..BHZ'));

@@ -120,6 +120,30 @@ describe('WaveView', () => {
     expect(selected.endMs).toBeGreaterThan(selected.startMs);
   });
 
+  it('el arrastre mapea sobre la ventana del DATO mostrado, no sobre la pedida', () => {
+    // El caso real de prod: el fetch de la ventana nueva falló y el canvas
+    // conserva la onda anterior. La geometría tiene que corresponder a lo que
+    // el usuario VE: mapear con la ventana pedida (que falló) daría un zoom
+    // corrido sobre una onda que no es.
+    const staleData = {
+      ...waveform(),
+      // El dato en pantalla cubre 100 s; la ventana pedida (prop) cubre 600 s.
+      endtime: new Date(T0 + 100_000).toISOString(),
+    };
+    const { onSelectWindow } = renderWave({ data: staleData, status: 'error' });
+    const canvas = screen.getByTestId('wave-canvas');
+    stubRect(canvas);
+
+    drag(canvas, MARGIN_LEFT + 0, MARGIN_LEFT + 444);
+
+    expect(onSelectWindow).toHaveBeenCalledTimes(1);
+    const selected: TimeWindow = onSelectWindow.mock.calls[0][0];
+    // Media pantalla sobre los 100 s del DATO ⇒ 50 s, no 300 s de la pedida.
+    // Un mapeo con la ventana pedida daría T0+300_000 y este aserto lo caza.
+    expect(selected.startMs).toBeCloseTo(T0, 0);
+    expect(selected.endMs).toBeCloseTo(T0 + 50_000, 0);
+  });
+
   it('el arrastre invertido selecciona el mismo tramo', () => {
     const { onSelectWindow } = renderWave();
     const canvas = screen.getByTestId('wave-canvas');

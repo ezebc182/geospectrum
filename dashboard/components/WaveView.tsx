@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { type TimeWindow, dragSelection } from '@/lib/waveform-scale';
 import type { WaveformResponse, WaveStatus } from '@/hooks/use-wave-window';
@@ -90,6 +90,23 @@ export function WaveView({
   const plotWidth = width - MARGIN_LEFT - MARGIN_RIGHT;
   const plotHeight = height - MARGIN_TOP - MARGIN_BOTTOM;
 
+  /**
+   * La ventana MOSTRADA sale del DATO recibido, no de la pedida. Si el fetch
+   * de una ventana nueva falla, el canvas conserva la onda anterior — y
+   * rotularla con la ventana que falló sería mentir (visto en prod: onda
+   * vieja con etiquetas de la ventana nueva). Mismo principio del helicorder:
+   * el eje sale de lo RECIBIDO. El arrastre también mapea sobre esto, para
+   * que el zoom seleccione lo que el usuario VE, no lo que se pidió.
+   */
+  const displayedWindow = useMemo<TimeWindow | null>(() => {
+    const startMs = data ? Date.parse(data.starttime) : Number.NaN;
+    const endMs = data ? Date.parse(data.endtime) : Number.NaN;
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      return { startMs, endMs };
+    }
+    return waveWindow;
+  }, [data, waveWindow]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -138,10 +155,11 @@ export function WaveView({
     ctx.font = '10px monospace';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText(axisLabel(waveWindow.startMs), MARGIN_LEFT, height - MARGIN_BOTTOM + 6);
+    const labelWindow = displayedWindow ?? waveWindow;
+    ctx.fillText(axisLabel(labelWindow.startMs), MARGIN_LEFT, height - MARGIN_BOTTOM + 6);
     ctx.textAlign = 'right';
     ctx.fillText(
-      axisLabel(waveWindow.endMs),
+      axisLabel(labelWindow.endMs),
       MARGIN_LEFT + plotWidth,
       height - MARGIN_BOTTOM + 6,
     );
@@ -156,7 +174,7 @@ export function WaveView({
       ctx.strokeStyle = SELECTION_STROKE;
       ctx.strokeRect(lo, MARGIN_TOP, hi - lo, plotHeight);
     }
-  }, [data, waveWindow, drag, width, height, plotWidth, plotHeight]);
+  }, [data, waveWindow, displayedWindow, drag, width, height, plotWidth, plotHeight]);
 
   /** Coordenada del evento en el sistema del canvas (puede estar escalado por CSS). */
   const canvasX = (event: React.MouseEvent<HTMLCanvasElement>): number | null => {
@@ -190,11 +208,13 @@ export function WaveView({
 
     // La traducción a ventana es de la lib pura: normaliza el arrastre
     // invertido y devuelve `null` si fue un clic. Acá no se decide nada.
+    // Mapea sobre la ventana MOSTRADA: seleccionar sobre una onda vieja con
+    // la geometría de la ventana que falló daría un zoom corrido.
     const selected = dragSelection(
       drag.x1 - MARGIN_LEFT,
       x - MARGIN_LEFT,
       plotWidth,
-      waveWindow,
+      displayedWindow ?? waveWindow,
     );
     if (selected) onSelectWindow(selected);
   };
