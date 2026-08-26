@@ -158,6 +158,22 @@ class SeismicAPI {
    * `start`/`end` son obligatorios en el backend: un espectro "de las últimas
    * 24 h" no tiene sentido físico.
    */
+  /**
+   * Serie RSAM on-demand de una ventana absoluta. Sin `filter`: RSAM se
+   * define sobre la señal cruda y el backend hace su demean por ventana.
+   */
+  async getStationRsam(
+    channel: string,
+    window: { startMs: number; endMs: number },
+    periodSeconds: number,
+  ): Promise<RsamResponse> {
+    const start = encodeURIComponent(new Date(window.startMs).toISOString());
+    const end = encodeURIComponent(new Date(window.endMs).toISOString());
+    return this.fetchJSON<RsamResponse>(
+      `/stations/${encodeURIComponent(channel)}/rsam?start=${start}&end=${end}&period_seconds=${periodSeconds}`,
+    );
+  }
+
   async getStationSpectrum(
     channel: string,
     window: { startMs: number; endMs: number },
@@ -169,6 +185,16 @@ class SeismicAPI {
       `/stations/${encodeURIComponent(channel)}/spectra?start=${start}&end=${end}&filter=${filter}`,
     );
   }
+}
+
+/** Respuesta de GET /stations/{channel}/rsam (Fase 4). `t` es el CENTRO de cada ventana. */
+export interface RsamResponse {
+  channel: string;
+  sampling_rate: number;
+  period_seconds: number;
+  starttime: string;
+  endtime: string;
+  samples: { t: string; value: number }[];
 }
 
 /** Respuesta de GET /stations/{channel}/spectra (Fase 3). */

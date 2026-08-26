@@ -905,7 +905,13 @@
     "spectrumHint": "Power vs Hz de la ventana seleccionada, calculado sobre la señal sin decimar",
     "spectrumLoading": "Calculando el espectro de la ventana…",
     "spectrumError": "No se pudo calcular el espectro de esta ventana",
-    "spectrumPeak": "Pico dominante: {hz} Hz"
+    "spectrumPeak": "Pico dominante: {hz} Hz",
+    "rsamLoading": "Calculando la serie RSAM de la ventana…",
+    "rsamError": "No se pudo calcular el RSAM de esta ventana",
+    "rsamEmpty": "La ventana es más corta que un período de RSAM — ampliála para ver la serie",
+    "rsamAxis": "RSAM (cuentas)",
+    "rsamInfo": "{points} puntos · {seconds} s por punto",
+    "rsamLocked": "El RSAM se revela usando la vista de onda — o activá «Mostrar todas las herramientas»"
   },
   "stations": {
     "title": "Estaciones",

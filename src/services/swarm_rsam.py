@@ -73,3 +73,22 @@ class RsamAccumulator:
                 events += 1
             in_event = hit
         return events
+
+
+def rsam_series(
+    data: np.ndarray, fs: float, period_s: int = RSAM_PERIOD_SECONDS
+) -> list[float]:
+    """Una muestra RSAM por ventana contigua de `period_s`.
+
+    Reusa rsam_sample(): el número del muro y el punto del gráfico salen de la
+    MISMA fórmula. Si divergieran, comparar las dos pantallas sería mentira.
+
+    Las ventanas son contiguas y NO solapadas (a diferencia del espectrograma):
+    RSAM es una media móvil por período, no una STFT.
+    """
+    per_window = int(period_s * fs)
+    if per_window <= 0 or data.size < per_window:
+        return []
+    n_windows = data.size // per_window  # la cola parcial se descarta a propósito
+    blocks = np.asarray(data[: n_windows * per_window], dtype=np.float64)
+    return [rsam_sample(block) for block in blocks.reshape(n_windows, per_window)]

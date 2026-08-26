@@ -96,3 +96,51 @@ def test_las_muestras_fuera_de_la_hora_expiran():
     acc.add(10.0, now)
     assert acc.rsam(now, period_s=600) == 10.0
     assert acc.events_last_hour(now) == 0
+
+
+# =============================================================================
+# rsam_series — Fase 4 de analiticas-profesionales-senal (tarea 4.2)
+# =============================================================================
+
+
+def test_series_de_senal_constante_da_todas_cero():
+    # La media de |x - mean(x)| de una constante es 0. La mutación #11 (omitir
+    # el demean/abs) devolvería 1000.0 acá: este test es su detector.
+    from src.services.swarm_rsam import rsam_series
+
+    data = np.full(30, 1000.0)
+    assert rsam_series(data, fs=1.0, period_s=10) == [0.0, 0.0, 0.0]
+
+
+def test_series_de_onda_alternante_da_exactamente_su_amplitud():
+    # +100/-100 en partes iguales: media 0, |x| = 100 en toda la ventana.
+    from src.services.swarm_rsam import rsam_series
+
+    data = np.tile([100.0, -100.0], 10)  # 20 muestras = 2 ventanas de 10
+    assert rsam_series(data, fs=1.0, period_s=10) == [100.0, 100.0]
+
+
+def test_series_descarta_la_cola_parcial():
+    # 1,5 períodos ⇒ 1 muestra, no 2: una ventana de 90 s promediada como si
+    # fuera de 600 s no es comparable con las demás.
+    from src.services.swarm_rsam import rsam_series
+
+    data = np.tile([50.0, -50.0], 15)  # 30 muestras = 1.5 ventanas de 20
+    assert len(rsam_series(data, fs=1.0, period_s=20)) == 1
+
+
+def test_series_mas_corta_que_un_periodo_es_vacia():
+    from src.services.swarm_rsam import rsam_series
+
+    assert rsam_series(np.array([1.0, 2.0]), fs=1.0, period_s=10) == []
+
+
+def test_series_usa_la_misma_formula_que_el_muro():
+    # rsam_series REUSA rsam_sample: el número del muro y el punto del gráfico
+    # tienen que salir de la MISMA fórmula, ventana por ventana.
+    from src.services.swarm_rsam import rsam_series
+
+    rng = np.random.default_rng(42)
+    data = rng.normal(0, 50, 40)
+    esperado = [rsam_sample(data[:20]), rsam_sample(data[20:])]
+    assert rsam_series(data, fs=1.0, period_s=20) == esperado

@@ -2784,6 +2784,99 @@ async def get_station_spectrum(
     return result
 
 
+@app.get("/stations/{channel}/rsam", tags=["stations"])
+async def get_station_rsam(
+    channel: str,
+    start: datetime = Query(..., description="Inicio ISO-8601 UTC"),
+    end: datetime = Query(..., description="Fin ISO-8601 UTC"),
+    period_seconds: int = Query(
+        600,
+        ge=1,
+        le=3600,
+        description="Segundos por muestra RSAM (default: el de SWARM, 600)",
+    ),
+) -> dict:
+    """Serie RSAM de una ventana absoluta — paridad SWARM, ON-DEMAND.
+
+    No persiste nada ni toca el ingestor: la serie se calcula al pedirla, con
+    la MISMA fórmula (`rsam_sample`) que alimenta el número instantáneo del
+    muro. Sin parámetro `filter`: RSAM se define sobre la señal cruda y
+    `rsam_sample` hace su propio demean por ventana.
+    """
+    import numpy as np
+
+    from src.services.swarm_rsam import rsam_series
+
+    parts = channel.split(".")
+    if len(parts) != 4:
+        raise HTTPException(status_code=422, detail="channel debe ser NET.STA.LOC.CHA")
+    net, sta, loc, cha = parts
+
+    # Misma normalización de borde que waveform/spectra: naive ⇒ UTC.
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    start = start.astimezone(timezone.utc)
+    end = end.astimezone(timezone.utc)
+
+    if end <= start:
+        raise HTTPException(status_code=422, detail="end debe ser posterior a start")
+    if (end - start) > timedelta(hours=MAX_WAVEFORM_WINDOW_HOURS):
+        raise HTTPException(
+            status_code=422, detail="la ventana no puede superar 24 horas"
+        )
+
+    cache_key = (
+        f"rsam:{channel}:{start.isoformat()}~{end.isoformat()}:{period_seconds}"
+    )
+    ttl = settings.spectrogram_cache_ttl_seconds
+    if ttl > 0:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    service = get_spectrogram_service()
+    stream = await service.get_waveform_data(
+        network=net,
+        station=sta,
+        location=loc or "*",
+        channel=cha,
+        duration_hours=max(1, math.ceil((end - start).total_seconds() / 3600)),
+        starttime=start,
+        endtime=end,
+    )
+    if stream is None or len(stream) == 0:
+        raise HTTPException(status_code=404, detail=f"Sin datos FDSN para {channel}")
+
+    trace = max(stream, key=lambda tr: tr.stats.npts)
+    fs = float(trace.stats.sampling_rate)
+    signal = np.asarray(trace.data, dtype=np.float64)
+    values = rsam_series(signal, fs, period_seconds)
+
+    # `t` es el CENTRO de cada ventana, coherente con computeTime() de SWARM
+    # (swarm_spectra.py): el borde izquierdo desalinearía el gráfico RSAM del
+    # espectrograma por medio período.
+    samples = [
+        {
+            "t": str(trace.stats.starttime + (i + 0.5) * period_seconds),
+            "value": round(v, 2),
+        }
+        for i, v in enumerate(values)
+    ]
+    result = {
+        "channel": channel,
+        "sampling_rate": fs,
+        "period_seconds": period_seconds,
+        "starttime": str(trace.stats.starttime),
+        "endtime": str(trace.stats.endtime),
+        "samples": samples,
+    }
+    if ttl > 0:
+        cache.set(cache_key, result, ttl)
+    return result
+
+
 # =============================================================================
 # Spectrograms
 # =============================================================================

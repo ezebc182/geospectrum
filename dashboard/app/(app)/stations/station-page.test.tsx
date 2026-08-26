@@ -111,6 +111,19 @@ vi.mock('@/components/SpectrumView', () => ({
   ),
 }));
 
+// Mismo criterio que SpectrumView: la página prueba el cableado, no la serie.
+vi.mock('@/components/RsamChart', () => ({
+  RsamChart: ({
+    channel,
+    window: w,
+  }: {
+    channel: string;
+    window: { startMs: number; endMs: number };
+  }) => (
+    <div data-testid="rsam-chart" data-channel={channel} data-start={String(w.startMs)} />
+  ),
+}));
+
 vi.mock('@/lib/areas', () => ({
   getActiveArea: () => Promise.resolve(activeAreaMock.current),
 }));
@@ -241,13 +254,13 @@ describe('StationPage', () => {
     expect(screen.getByTestId('helicorder-canvas')).toBeTruthy();
   });
 
-  it('sólo RSAM sigue deshabilitada; onda se habilitó en la Fase 2', () => {
+  it('las cuatro pestañas están habilitadas desde la Fase 4', () => {
     renderPage();
-    // La Fase 2 habilitó `wave` porque ya tiene vista. La regla del plan es que
-    // una pestaña NO queda habilitada apuntando a una pantalla vacía: mientras
-    // no haya ventana elegida, la vista explica cómo abrir una.
+    // La regla del plan sigue vigente: ninguna pestaña habilitada apunta a una
+    // pantalla vacía — rsam sin ventana explica cómo abrir una, y sin progreso
+    // muestra el candado de progresividad.
     expect(screen.getByRole('tab', { name: /onda/i })).toHaveProperty('disabled', false);
-    expect(screen.getByRole('tab', { name: /rsam/i })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('tab', { name: /rsam/i })).toHaveProperty('disabled', false);
     expect(screen.getByRole('tab', { name: /helicorder/i })).toHaveProperty('disabled', false);
     expect(screen.getByRole('tab', { name: /espectrograma/i })).toHaveProperty('disabled', false);
   });
@@ -386,7 +399,7 @@ describe('StationPage', () => {
     // si aparece "station." en la pantalla, en.json quedó incompleto.
     const { container } = renderPage('en-US');
     expect(container.textContent).not.toMatch(/station\./);
-    expect(screen.getByRole('tab', { name: /rsam/i })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('tab', { name: /rsam/i })).toHaveProperty('disabled', false);
     expect(screen.getByRole('tab', { name: /spectrogram/i })).toHaveProperty('disabled', false);
   });
 });
@@ -530,5 +543,62 @@ describe('StationPage - espectro 1D (Fase 3)', () => {
     fireEvent.click(screen.getByText(es.station.spectrumShow));
     fireEvent.click(screen.getByText(es.station.spectrumShow));
     expect(loadProgress().spectraViewed).toBe(2);
+  });
+});
+
+describe('StationPage - RSAM (Fase 4)', () => {
+  function abrirVentana() {
+    fireEvent.click(screen.getByTestId('helicorder-canvas'));
+  }
+
+  function irARsam() {
+    fireEvent.click(screen.getByRole('tab', { name: /rsam/i }));
+  }
+
+  it('sin progreso suficiente la pestaña muestra el candado, no la serie', () => {
+    renderPage();
+    irARsam();
+
+    expect(screen.getByTestId('rsam-locked').textContent).toContain(
+      es.station.rsamLocked,
+    );
+    expect(screen.queryByTestId('rsam-chart')).toBeNull();
+  });
+
+  it('con la herramienta revelada pero sin ventana explica cómo abrir una', () => {
+    renderPage();
+    fireEvent.click(screen.getByLabelText(es.station.showAllTools));
+    irARsam();
+
+    expect(screen.getByTestId('rsam-no-window').textContent).toContain(
+      es.station.waveEmpty,
+    );
+    expect(screen.queryByTestId('rsam-chart')).toBeNull();
+  });
+
+  it('con herramienta y ventana monta la serie de la ventana vigente', () => {
+    renderPage();
+    fireEvent.click(screen.getByLabelText(es.station.showAllTools));
+    abrirVentana(); // cae en la pestaña Onda con la ventana del clic
+    irARsam();
+
+    const chart = screen.getByTestId('rsam-chart');
+    expect(chart.getAttribute('data-channel')).toBe('IU.MAJO..BHZ');
+    expect(chart.getAttribute('data-start')).toBe(String(Date.UTC(2026, 7, 24, 12, 0, 0)));
+  });
+
+  it('abrir la serie registra la interacción; mirar el candado no', async () => {
+    const { loadProgress } = await import('@/lib/progressive-disclosure');
+    renderPage();
+    irARsam(); // candado: no cuenta
+    expect(loadProgress().rsamViewed ?? 0).toBe(0);
+
+    fireEvent.click(screen.getByLabelText(es.station.showAllTools));
+    // Las pestañas son vistas excluyentes: para clicar el helicorder hay que
+    // volver a su pestaña (el canvas no existe mientras rsam está activa).
+    fireEvent.click(screen.getByRole('tab', { name: /helicorder/i }));
+    abrirVentana();
+    irARsam(); // serie visible: cuenta
+    expect(loadProgress().rsamViewed ?? 0).toBe(1);
   });
 });

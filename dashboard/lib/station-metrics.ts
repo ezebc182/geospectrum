@@ -10,6 +10,13 @@
 export interface StationMetrics {
   channel: string;
   endtime: string;
+  /**
+   * RSAM instantáneo del muro (campo `il` del ingestor). Desde la Fase 4 el
+   * RSAM también existe como SERIE (`seismicAPI.getStationRsam`, endpoint
+   * `/stations/{channel}/rsam`): ambos salen de la MISMA fórmula del backend
+   * (`rsam_sample`), así que comparar el número del muro con el gráfico de la
+   * estación es legítimo.
+   */
   rsam: number | null;
   freq_hz: number | null;
   fi: number | null;

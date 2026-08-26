@@ -425,7 +425,7 @@ detrás de su umbral de progresividad. Las Fases 4 y 5 siguen sin existir.
 ventana absoluta. **Decisión cerrada del usuario**: NO se persisten muestras, NO
 se toca `src/services/seedlink_ingestor.py`, NO hay migración en esta fase.
 
-- [ ] 4.1 Agregar `rsam_series(data, fs, period_s=RSAM_PERIOD_SECONDS)` en
+- [x] 4.1 Agregar `rsam_series(data, fs, period_s=RSAM_PERIOD_SECONDS)` en
       `src/services/swarm_rsam.py`. **Reusa `rsam_sample()`**: el número del muro
       y el punto del gráfico salen de la MISMA fórmula; si divergieran, comparar
       las dos pantallas sería una mentira. Ventanas **contiguas y NO solapadas**
@@ -433,50 +433,50 @@ se toca `src/services/seedlink_ingestor.py`, NO hay migración en esta fase.
       **descarta a propósito**: una ventana de 90 s promediada como si fuera de
       600 s da un valor no comparable con los demás.
       **`RsamAccumulator` (líneas 36-75) NO se toca.**
-- [ ] 4.2 Tests en `tests/unit/test_swarm_rsam.py`: señal constante 1000 ⇒ todas
+- [x] 4.2 Tests en `tests/unit/test_swarm_rsam.py`: señal constante 1000 ⇒ todas
       las muestras valen exactamente `0.0` (la media de `|x - mean(x)|` de una
       constante es 0); onda que alterna exactamente entre `+100` y `-100` con la
       misma cantidad de cada signo ⇒ muestra exactamente `100.0`; cola parcial
       descartada (una señal de 1,5 períodos da 1 muestra, no 2).
-- [ ] 4.3 **Mutación #11**: cambiar `np.mean(np.abs(...))` por `np.mean(...)` en
+- [x] 4.3 **Mutación #11**: cambiar `np.mean(np.abs(...))` por `np.mean(...)` en
       `rsam_sample` (o sea, omitir el demean/valor absoluto). Aplicar → confirmar
       con `rg -n "np.mean" src/services/swarm_rsam.py` → correr los tests →
       registrar que el test de señal constante quedó rojo (devolvería `1000.0` en
       vez de `0.0`) → revertir.
-- [ ] 4.4 Agregar `GET /stations/{channel}/rsam` en `src/main.py` con la firma del
+- [x] 4.4 Agregar `GET /stations/{channel}/rsam` en `src/main.py` con la firma del
       diseño (`start`, `end` obligatorios; `period_seconds` con default
       `RSAM_PERIOD_SECONDS = 600`, `ge=1, le=3600`). Reusar el helper de
       validación de ventana de la Fase 1 y el mismo camino FDSN.
       *Nota de orden de rutas*: `rsam` es un segmento fijo DESPUÉS del parámetro,
       así que no compite con `/stations/search`; la regla se anota igual para quien
       agregue una ruta estática nueva bajo `/stations/`.
-- [ ] 4.5 Cada muestra lleva su timestamp UTC y **`t` es el CENTRO de la ventana**,
+- [x] 4.5 Cada muestra lleva su timestamp UTC y **`t` es el CENTRO de la ventana**,
       coherente con `computeTime()` de SWARM que ya usa `swarm_spectra.py:84`.
       Poner el borde izquierdo desalinearía el gráfico RSAM del espectrograma por
       medio período. Sin parámetro `filter`: RSAM se define sobre la señal cruda
       demeaned y `rsam_sample` ya hace su propio demean por ventana.
-- [ ] 4.6 `cache_key = f"rsam:{channel}:{start_utc.isoformat()}~{end_utc.isoformat()}:{period_seconds}"`
+- [x] 4.6 `cache_key = f"rsam:{channel}:{start_utc.isoformat()}~{end_utc.isoformat()}:{period_seconds}"`
       con test de no colisión.
-- [ ] 4.7 Tests del endpoint: la serie cubre la ventana con timestamps
+- [x] 4.7 Tests del endpoint: la serie cubre la ventana con timestamps
       **estrictamente crecientes**, el primero `>= start` y el último `<= end`;
       ventana > 24 h ⇒ 422 con `{"detail": ...}`.
-- [ ] 4.8 **Test de no-regresión del ingestor** (escenario de la spec): verificar
+- [x] 4.8 **Test de no-regresión del ingestor** (escenario de la spec): verificar
       en el diff de la fase que `src/services/seedlink_ingestor.py` no tiene
       cambios y que no se agregó ninguna migración —
       `git diff --name-only main -- src/services/seedlink_ingestor.py deploy/sql/migrations/`
       debe salir vacío. Verificar además que el `deque` en memoria sigue
       alimentando el campo `il` del muro sin cambio de comportamiento.
-- [ ] 4.9 Crear `dashboard/components/RsamChart.tsx`: dibuja la serie de
+- [x] 4.9 Crear `dashboard/components/RsamChart.tsx`: dibuja la serie de
       `samples[]`. **No calcula RSAM.**
-- [ ] 4.10 En `dashboard/app/(app)/stations/[channel]/page.tsx:38`, pasar la
+- [x] 4.10 En `dashboard/app/(app)/stations/[channel]/page.tsx:38`, pasar la
       pestaña `rsam` a `enabled: true` y renderizarla detrás de
       `visibleTools(progress).rsam`; registrar `recordInteraction(p, 'rsam')`.
-- [ ] 4.11 Actualizar `dashboard/lib/station-metrics.ts`: RSAM deja de ser sólo el
+- [x] 4.11 Actualizar `dashboard/lib/station-metrics.ts`: RSAM deja de ser sólo el
       campo `il`. **Sin romper el consumo actual del muro** (test de regresión del
       valor instantáneo).
-- [ ] 4.12 Método de `/rsam` en `dashboard/lib/api.ts` + cadenas nuevas en
+- [x] 4.12 Método de `/rsam` en `dashboard/lib/api.ts` + cadenas nuevas en
       `es.json` **Y** `en.json`, test de paridad verde.
-- [ ] 4.13 Suite completa verde + `tsc --noEmit` en 0 + curl real contra
+- [x] 4.13 Suite completa verde + `tsc --noEmit` en 0 + curl real contra
       `/stations/{channel}/rsam`.
 - [ ] 4.14 **QA visual del usuario — Fase 4.** Entregarle: URL
       `http://localhost:3000/es/stations/AK.FIRE..BHZ`, pestaña `rsam`; qué mirar:

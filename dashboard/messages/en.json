@@ -905,7 +905,13 @@
     "spectrumHint": "Power vs Hz of the selected window, computed on the undecimated signal",
     "spectrumLoading": "Computing the window spectrum…",
     "spectrumError": "Could not compute the spectrum for this window",
-    "spectrumPeak": "Dominant peak: {hz} Hz"
+    "spectrumPeak": "Dominant peak: {hz} Hz",
+    "rsamLoading": "Computing the window's RSAM series…",
+    "rsamError": "Could not compute RSAM for this window",
+    "rsamEmpty": "The window is shorter than one RSAM period — widen it to see the series",
+    "rsamAxis": "RSAM (counts)",
+    "rsamInfo": "{points} points · {seconds} s per point",
+    "rsamLocked": "RSAM unlocks as you use the wave view — or turn on \"Show all tools\""
   },
   "stations": {
     "title": "Stations",

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
+import { RsamChart } from '@/components/RsamChart';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
 import { SpectrumView } from '@/components/SpectrumView';
 import { WaveView } from '@/components/WaveView';
@@ -50,7 +51,7 @@ const TABS = [
   // `wave` se habilita en la Fase 2 porque ya tiene vista: una pestaña
   // habilitada apuntando a una pantalla vacía es peor que decir "próximamente".
   { id: 'wave', enabled: true },
-  { id: 'rsam', enabled: false },
+  { id: 'rsam', enabled: true },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -217,7 +218,13 @@ export default function StationPage() {
             // lector de pantalla.
             aria-selected={tab.id === activeTab}
             disabled={!tab.enabled}
-            onClick={() => tab.enabled && setActiveTab(tab.id)}
+            onClick={() => {
+              if (!tab.enabled) return;
+              setActiveTab(tab.id);
+              // Cada apertura del RSAM con la serie visible cuenta como uso
+              // (tarea 4.10); mirar el candado o el aviso de "sin ventana" no.
+              if (tab.id === 'rsam' && tools.rsam && wave.window) bumpProgress('rsam');
+            }}
             className={`rounded px-3 py-1 text-sm ${
               !tab.enabled
                 ? 'bg-muted text-muted-foreground opacity-60'
@@ -352,6 +359,27 @@ export default function StationPage() {
           />
         </>
       )}
+
+      {activeTab === 'rsam' &&
+        (!tools.rsam ? (
+          <div
+            data-testid="rsam-locked"
+            className="rounded border border-border p-4 text-sm text-muted-foreground"
+          >
+            {t('rsamLocked')}
+          </div>
+        ) : wave.window ? (
+          <RsamChart channel={channel} window={wave.window} />
+        ) : (
+          // Sin ventana no hay serie que pedir: mismo criterio que la pestaña
+          // de onda, se explica cómo abrir una.
+          <div
+            data-testid="rsam-no-window"
+            className="rounded border border-border p-4 text-sm text-muted-foreground"
+          >
+            {t('waveEmpty')}
+          </div>
+        ))}
 
       {activeTab === 'wave' &&
         (wave.window ? (
