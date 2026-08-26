@@ -584,7 +584,11 @@ class SpectrogramService:
         location: str = "*",
         channel: str = "BHZ",
         duration_hours: int = 24,
-        timeout: int = 30,  # Incrementado para múltiples servidores
+        # 90 y no 30: medido en Railway el 2026-08-26, EarthScope entrega las
+        # 24 h de un canal BHZ en ~60 s ("Retrieved 2 trace(s)" en el log 30 s
+        # DESPUÉS del timeout). Con 30 el resultado completo se tiraba a la
+        # basura y cada reintento volvía a morir — círculo vicioso.
+        timeout: int = 90,
         source_server: Optional[str] = None,
         starttime: Optional[datetime] = None,
         endtime: Optional[datetime] = None,
