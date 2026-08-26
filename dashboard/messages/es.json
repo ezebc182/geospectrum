@@ -660,7 +660,7 @@
     }
   },
   "notifications": {
-    "bellAria": "Alertas activas: {count}",
+    "bellAria": "Alertas sin leer: {count}",
     "activeAlerts": "Alertas activas",
     "types": {
       "evento_significativo": "Evento significativo",
@@ -670,7 +670,9 @@
     "empty": "No hay alertas activas",
     "noneMatchFilter": "Ninguna alerta coincide con el filtro",
     "relatedEvents": "{count, plural, one {# evento relacionado} other {# eventos relacionados}}",
-    "allNormal": "Todos los parámetros dentro de rangos normales"
+    "allNormal": "Todos los parámetros dentro de rangos normales",
+    "markRead": "Marcar como leída",
+    "markAllRead": "Marcar todas"
   },
   "share": {
     "title": "Monitor sísmico",

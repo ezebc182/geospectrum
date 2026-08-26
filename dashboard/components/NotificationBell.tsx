@@ -1,10 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
-import { Bell, AlertTriangle, Users, Activity } from 'lucide-react';
+import { Bell, AlertTriangle, Check, CheckCheck, Users, Activity } from 'lucide-react';
 
+import {
+  alertFingerprint,
+  loadReadFingerprints,
+  saveReadFingerprints,
+} from '@/lib/alert-read-state';
 import { reportFetcher } from '@/lib/api';
 import { getAlertIcon, getAlertSeverity, cn } from '@/lib/utils';
 import type { Alert, AlertType } from '@/lib/types';
@@ -49,6 +54,37 @@ export function NotificationBell() {
   const alertas = data?.alertas ?? [];
   const hasAlerts = alertas.length > 0;
 
+  /**
+   * Huellas de alertas leídas. Se cargan por EFECTO, nunca en
+   * `useState(loadReadFingerprints())`: leer localStorage durante el render
+   * da HTML distinto en servidor y cliente (hydration mismatch) — misma
+   * regla que los settings del helicorder y la progresividad.
+   */
+  const [readFingerprints, setReadFingerprints] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setReadFingerprints(loadReadFingerprints());
+  }, []);
+
+  const isRead = (alerta: Alert) => readFingerprints.has(alertFingerprint(alerta));
+  const unreadCount = alertas.filter((a) => !isRead(a)).length;
+
+  const markRead = (alerta: Alert) => {
+    setReadFingerprints((prev) => {
+      const next = new Set(prev).add(alertFingerprint(alerta));
+      saveReadFingerprints(next);
+      return next;
+    });
+  };
+
+  const markAllRead = () => {
+    setReadFingerprints((prev) => {
+      const next = new Set(prev);
+      for (const alerta of alertas) next.add(alertFingerprint(alerta));
+      saveReadFingerprints(next);
+      return next;
+    });
+  };
+
   // Vacío = sin filtro, se muestran todas. Igual criterio que el toggle de
   // categorías de la leyenda del mapa: activo por selección explícita, no al
   // revés (evita que abrir el dropdown con 0 tipos elegidos muestre "nada").
@@ -69,16 +105,18 @@ export function NotificationBell() {
       <DropdownMenuTrigger
         // Ancla del tour de onboarding (Decision 7 de email-invitations).
         data-tour-id="alerts-bell"
-        aria-label={t('bellAria', { count: alertas.length })}
+        aria-label={t('bellAria', { count: unreadCount })}
         className="relative flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
-        {hasAlerts && (
+        {/* El badge cuenta lo NO LEÍDO: marcar todas limpia la campanita
+            aunque las alertas sigan activas en la lista. */}
+        {unreadCount > 0 && (
           <Badge
             variant="destructive"
             className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-data text-[10px] leading-none"
           >
-            {alertas.length}
+            {unreadCount}
           </Badge>
         )}
       </DropdownMenuTrigger>
@@ -92,11 +130,23 @@ export function NotificationBell() {
       >
         <DropdownMenuLabel className="flex items-center justify-between text-xs uppercase tracking-wider text-muted-foreground">
           <span>{t('activeAlerts')}</span>
-          {hasAlerts && (
-            <Badge variant="destructive" className="font-data">
-              {alertas.length}
-            </Badge>
-          )}
+          <span className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={markAllRead}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] normal-case tracking-normal text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                {t('markAllRead')}
+              </button>
+            )}
+            {hasAlerts && (
+              <Badge variant="destructive" className="font-data">
+                {unreadCount}
+              </Badge>
+            )}
+          </span>
         </DropdownMenuLabel>
 
         {hasAlerts && (
@@ -138,8 +188,15 @@ export function NotificationBell() {
           // leer, no comandos a ejecutar — mismo criterio que el buscador
           // sin-Item de AreaSelector.
           <div className="space-y-2 p-2">
-            {alertasFiltradas.map((alerta, idx) => (
-              <AlertRow key={idx} alerta={alerta} />
+            {alertasFiltradas.map((alerta) => (
+              // La huella como key (no el índice): filtrar por tipo reordena
+              // la lista y con índices React re-asociaría estados de fila.
+              <AlertRow
+                key={alertFingerprint(alerta)}
+                alerta={alerta}
+                read={isRead(alerta)}
+                onMarkRead={() => markRead(alerta)}
+              />
             ))}
           </div>
         )}
@@ -167,12 +224,25 @@ function getAlertIconComponent(tipo: string) {
   }
 }
 
-function AlertRow({ alerta }: { alerta: Alert }) {
+function AlertRow({
+  alerta,
+  read,
+  onMarkRead,
+}: {
+  alerta: Alert;
+  read: boolean;
+  onMarkRead: () => void;
+}) {
   const t = useTranslations('notifications');
   const severity = getAlertSeverity(alerta.tipo);
 
   return (
-    <div className={cn('rounded-lg border-l-4 p-3', severityStyles[severity])}>
+    <div
+      data-read={read || undefined}
+      // La leída se ATENÚA, no se oculta: la alerta sigue ACTIVA (el backend
+      // la recalcula mientras la condición dure) y esconderla mentiría.
+      className={cn('rounded-lg border-l-4 p-3', severityStyles[severity], read && 'opacity-50')}
+    >
       <div className="flex items-start gap-2">
         <div className="mt-0.5">{getAlertIconComponent(alerta.tipo)}</div>
         <div className="min-w-0 flex-1">
@@ -189,6 +259,17 @@ function AlertRow({ alerta }: { alerta: Alert }) {
             {t('relatedEvents', { count: alerta.eventos_relacionados.length })}
           </p>
         </div>
+        {!read && (
+          <button
+            type="button"
+            onClick={onMarkRead}
+            aria-label={t('markRead')}
+            title={t('markRead')}
+            className="mt-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        )}
       </div>
     </div>
   );

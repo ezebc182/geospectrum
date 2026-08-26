@@ -660,7 +660,7 @@
     }
   },
   "notifications": {
-    "bellAria": "Active alerts: {count}",
+    "bellAria": "Unread alerts: {count}",
     "activeAlerts": "Active alerts",
     "types": {
       "evento_significativo": "Significant event",
@@ -670,7 +670,9 @@
     "empty": "No active alerts",
     "noneMatchFilter": "No alert matches the filter",
     "relatedEvents": "{count, plural, one {# related event} other {# related events}}",
-    "allNormal": "All parameters within normal ranges"
+    "allNormal": "All parameters within normal ranges",
+    "markRead": "Mark as read",
+    "markAllRead": "Mark all read"
   },
   "share": {
     "title": "Seismic monitor",
