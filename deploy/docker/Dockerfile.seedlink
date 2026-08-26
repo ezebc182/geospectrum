@@ -57,6 +57,11 @@ COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/
 COPY --from=dependencies /usr/local/bin /usr/local/bin
 
 COPY --chown=appuser:appuser src /app/src
+# Fuente única de constantes sismológicas compartida con el frontend: la carga
+# src/services/signal_picks.py AL IMPORTAR y revienta sin ella (a propósito —
+# mejor no arrancar que calcular una distancia con defaults). Verificado el
+# 2026-08-26: sin este COPY el api de Railway murió con FileNotFoundError.
+COPY --chown=appuser:appuser dashboard/lib/seismic-constants.json /app/dashboard/lib/seismic-constants.json
 COPY --chown=appuser:appuser .env.example /app/.env.example
 
 USER appuser
