@@ -950,6 +950,15 @@
     "catalogError": "Could not load the station catalog",
     "searchError": "FDSN search failed; the local catalog is still available",
     "loading": "Loading catalog…",
-    "retry": "Retry"
+    "retry": "Retry",
+    "quick": {
+      "trigger": "Station",
+      "triggerAria": "Search a station to navigate",
+      "placeholder": "City, network or code (e.g. tokyo, USC)",
+      "inputAria": "Filter catalog stations",
+      "noResults": "No matches in the catalog",
+      "live": "Recent data",
+      "fullSearch": "Full station search…"
+    }
   }
 }

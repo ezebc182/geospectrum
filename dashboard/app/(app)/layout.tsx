@@ -1,5 +1,6 @@
 import { AppSidebar } from '@/components/AppSidebar';
 import { AreaHeader } from '@/components/AreaHeader';
+import { StationQuickSearch } from '@/components/StationQuickSearch';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { LocaleSync } from '@/components/LocaleSync';
 import { NotificationBell } from '@/components/NotificationBell';
@@ -31,6 +32,10 @@ export default function AppShellLayout({
             <SidebarTrigger />
             <Separator orientation="vertical" className="h-5" />
             <AreaHeader />
+            {/* Salto rápido entre estaciones, a mano como el área: pedido
+                del 2026-08-26. Filtra el catálogo local; la búsqueda FDSN
+                completa sigue en /stations. */}
+            <StationQuickSearch />
           </div>
           <div className="flex items-center gap-2">
             {/* Acceso rápido al idioma, visible en toda la app autenticada

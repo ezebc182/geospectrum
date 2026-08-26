@@ -950,6 +950,15 @@
     "catalogError": "No se pudo cargar el catálogo de estaciones",
     "searchError": "Falló la búsqueda en FDSN; el catálogo local sigue disponible",
     "loading": "Cargando catálogo…",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "quick": {
+      "trigger": "Estación",
+      "triggerAria": "Buscar estación para navegar",
+      "placeholder": "Ciudad, red o código (ej. tokyo, USC)",
+      "inputAria": "Filtrar estaciones del catálogo",
+      "noResults": "Sin coincidencias en el catálogo",
+      "live": "Con datos recientes",
+      "fullSearch": "Búsqueda completa de estaciones…"
+    }
   }
 }
