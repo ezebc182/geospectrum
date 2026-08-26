@@ -45,7 +45,8 @@ import {
   loadHelicorderSettings,
   saveHelicorderSettings,
 } from '@/lib/helicorder-settings';
-import { getCityById } from '@/lib/seismic-cities';
+import { resolveStationLocation } from '@/lib/station-location';
+import { StationMiniMap } from '@/components/StationMiniMap';
 import { useActiveArea } from '@/lib/use-active-area';
 
 const TABS = [
@@ -198,21 +199,19 @@ export default function StationPage() {
   // Lo que faltaba era consumirlo: cambiar de área era un no-op visual.
   const { area: activeArea } = useActiveArea();
 
-  // Las coordenadas NO están en esta página ni en el catálogo de estaciones
-  // (verificado: station_catalog devuelve channel/city_id/network/station/
-  // is_live/is_primary, sin lat/lon). Se resuelven por ciudad:
-  //   channel → station-catalog → city_id → seismic-cities → {lat, lon}
-  // La precisión es a nivel ciudad, que alcanza para un indicador de contexto.
+  // La resolución channel → ciudad → {nombre, país, lat, lon} vive en
+  // lib/station-location (precisión a nivel CIUDAD: orienta, no geolocaliza).
+  // Sirve para dos cosas: el chequeo "dentro del área" y la orientación del
+  // header (nombre + miniatura). Fuera del catálogo devuelve null y no se
+  // muestra nada.
   const { data: catalog } = useSWR('/spectrograms/station-catalog', () =>
     seismicAPI.getStationCatalog(),
   );
 
-  const stationMeta = useMemo(() => {
-    const entry = catalog?.find((c) => c.channel === channel);
-    if (!entry) return null;
-    const city = getCityById(entry.city_id);
-    return city ? { latitude: city.lat, longitude: city.lon } : null;
-  }, [catalog, channel]);
+  const stationMeta = useMemo(
+    () => resolveStationLocation(catalog, channel),
+    [catalog, channel],
+  );
 
   // El área por defecto es el mundo entero: decir "dentro del área" ahí no
   // aporta nada, sólo ruido.
@@ -252,11 +251,28 @@ export default function StationPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center gap-3">
-        {/* Tokens del tema y no grises fijos: con `text-white`/`text-gray-*`
-            esta pantalla era ilegible en tema claro (blanco sobre blanco). */}
-        <h1 className="text-xl font-bold text-foreground">{t('title')}</h1>
-        <span className="font-mono text-sm text-muted-foreground">{channel}</span>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            {/* Tokens del tema y no grises fijos: con `text-white`/`text-gray-*`
+                esta pantalla era ilegible en tema claro (blanco sobre blanco). */}
+            <h1 className="text-xl font-bold text-foreground">{t('title')}</h1>
+            <span className="font-mono text-sm text-muted-foreground">{channel}</span>
+          </div>
+          {/* Orientación geográfica (hallazgo de QA: un SCNL pelado no dice
+              si esto es Los Ángeles o Estambul). Nombres propios sin i18n. */}
+          {stationMeta && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {stationMeta.name} · {stationMeta.country}
+            </p>
+          )}
+        </div>
+        {stationMeta && (
+          <StationMiniMap
+            latitude={stationMeta.latitude}
+            longitude={stationMeta.longitude}
+          />
+        )}
       </div>
 
       <div role="tablist" className="mb-4 flex gap-2">
