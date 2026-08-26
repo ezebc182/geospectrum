@@ -78,10 +78,13 @@ export function WallBuilder({ layout, onChange, catalog }: WallBuilderProps) {
           onChange={(e) => setSearch(e.target.value)}
         />
         <ul className="max-h-80 space-y-1 overflow-y-auto" data-testid="wall-catalog">
-          {filtered.map((ch) => {
+          {filtered.map((ch, i) => {
             const present = hasChannel(layout, ch.channel);
             return (
-              <li key={ch.channel} className="flex items-center justify-between gap-2 text-sm">
+              // El canal solo NO es único en el catálogo crudo (estaciones
+              // compartidas entre ciudades): el índice blinda la key aunque
+              // aguas arriba se cuele otro duplicado.
+              <li key={`${ch.channel}:${i}`} className="flex items-center justify-between gap-2 text-sm">
                 <span className="truncate" title={ch.channel}>
                   <span
                     aria-hidden

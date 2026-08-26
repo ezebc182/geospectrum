@@ -204,6 +204,43 @@ describe('WallManager', () => {
     expect(catalogRowsWith(/MT14/)).toHaveLength(1);
   });
 
+  /** El duplicado REAL del catálogo de producción: NZ.KHZ.10.HHZ está en dos
+   * ciudades A PROPÓSITO (respaldo de Wellington, primaria de Christchurch) y
+   * el backend NO debe dedupearlo — romperia el failover. El que dedupea es
+   * este componente, quedándose con la entrada primaria. Los fixtures
+   * inventados sin duplicados eran estructuralmente ciegos a este dato. */
+  const KAIKOURA_DUP_CATALOG = [
+    {
+      channel: 'NZ.KHZ.10.HHZ',
+      city_id: 'wellington',
+      network: 'NZ',
+      station: 'KHZ',
+      is_live: false,
+      is_primary: false,
+    },
+    {
+      channel: 'NZ.KHZ.10.HHZ',
+      city_id: 'christchurch',
+      network: 'NZ',
+      station: 'KHZ',
+      is_live: false,
+      is_primary: true,
+    },
+  ];
+
+  it('un canal compartido entre dos ciudades aparece UNA vez, con su entrada primaria', async () => {
+    arrange([], KAIKOURA_DUP_CATALOG);
+    renderManager();
+    await waitFor(() => expect(apiMock.getStationCatalog).toHaveBeenCalled());
+
+    // Una sola fila: dos filas del mismo canal daban el warning de React de
+    // key duplicada y una fila muerta (agregar una deshabilitaba la otra).
+    await waitFor(() => expect(catalogRowsWith(/KHZ/)).toHaveLength(1));
+    // Y la que sobrevive es la PRIMARIA (Christchurch), no la primera en llegar.
+    expect(catalogRowsWith(/christchurch/i)).toHaveLength(1);
+    expect(catalogRowsWith(/wellington/i)).toHaveLength(0);
+  });
+
   it('el buscador filtra por código de estación, no solo por ciudad', async () => {
     arrange([], SANTIAGO_CATALOG);
     renderManager();

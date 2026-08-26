@@ -75,8 +75,22 @@ export function WallManager() {
         isPrimary: entry.is_primary,
       };
     });
-    const featured = entries.filter((e) => e.isPrimary && e.isLive);
-    const rest = entries.filter((e) => !(e.isPrimary && e.isLive));
+    // La clave única del CATÁLOGO es (ciudad, canal) — NZ.KHZ.10.HHZ existe
+    // dos veces a propósito (respaldo de Wellington, primaria de
+    // Christchurch) y el backend NO debe dedupearlo: romperia el failover.
+    // Acá se elige UNA cara por canal (gana la primaria) porque el armador
+    // ofrece canales, no coberturas de ciudad: dos filas del mismo canal
+    // daban key duplicada de React y una fila muerta.
+    const byChannel = new Map<string, (typeof entries)[number]>();
+    for (const entry of entries) {
+      const existing = byChannel.get(entry.channel);
+      if (!existing || (entry.isPrimary && !existing.isPrimary)) {
+        byChannel.set(entry.channel, entry);
+      }
+    }
+    const unique = entries.filter((e) => byChannel.get(e.channel) === e);
+    const featured = unique.filter((e) => e.isPrimary && e.isLive);
+    const rest = unique.filter((e) => !(e.isPrimary && e.isLive));
     return [...featured, ...rest];
   }, [stationCatalog]);
 
