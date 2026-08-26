@@ -29,8 +29,8 @@ import {
   PROGRESS_DEFAULTS,
   loadProgress,
   recordInteraction,
-  revealAllTools,
   saveProgress,
+  setRevealAll,
   visibleTools,
   type UserProgress,
 } from '@/lib/progressive-disclosure';
@@ -110,9 +110,9 @@ export default function StationPage() {
     });
   };
 
-  const handleRevealAll = () => {
+  const handleToggleRevealAll = () => {
     setUserProgress((current) => {
-      const next = revealAllTools(current);
+      const next = setRevealAll(current, !current.revealAll);
       saveProgress(next);
       return next;
     });
@@ -513,17 +513,23 @@ export default function StationPage() {
         ))}
 
       {/* Escape hatch de la progresividad: quien ya sabe no tiene que ganarse
-          las herramientas de nuevo. Persiste entre visitas, y desaparece una
-          vez activado porque ya no queda nada que revelar. */}
-      {!userProgress.revealAll && !tools.picking && (
+          las herramientas de nuevo. Es un TOGGLE honesto: muestra su estado,
+          no desaparece al activarse (la versión que se esfumaba "no hacía
+          nada" a ojos del usuario, porque su efecto vive en las pestañas de
+          onda y RSAM) y se puede apagar. Solo se oculta cuando el progreso ya
+          desbloqueó todo por las suyas: ahí sí no queda nada que revelar. */}
+      {(userProgress.revealAll || !tools.picking) && (
         <label className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
-            checked={false}
-            onChange={handleRevealAll}
+            checked={userProgress.revealAll}
+            onChange={handleToggleRevealAll}
             aria-label={t('showAllTools')}
           />
           <span title={t('showAllToolsHint')}>{t('showAllTools')}</span>
+          {userProgress.revealAll && (
+            <span className="text-teal-600 dark:text-teal-400">{t('showAllToolsActive')}</span>
+          )}
         </label>
       )}
     </div>

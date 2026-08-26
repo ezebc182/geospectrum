@@ -134,7 +134,18 @@ export function recordInteraction(
 
 /** Escape hatch. Persistente: quien lo pidió una vez no lo pide de nuevo. */
 export function revealAllTools(p: UserProgress): UserProgress {
-  return { ...p, revealAll: true };
+  return setRevealAll(p, true);
+}
+
+/**
+ * Prender O APAGAR el escape hatch. Apagarlo NO borra el progreso: la
+ * visibilidad vuelve a resolverse por los contadores de siempre. Existe
+ * porque el checkbox de la página es un toggle honesto (2026-08-26): el que
+ * desaparecía al activarse "no hacía nada y desaparecía" — palabras del
+ * usuario — porque su efecto vive en otras pestañas.
+ */
+export function setRevealAll(p: UserProgress, revealAll: boolean): UserProgress {
+  return { ...p, revealAll };
 }
 
 /**

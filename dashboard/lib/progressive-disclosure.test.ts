@@ -8,6 +8,7 @@ import {
   recordInteraction,
   revealAllTools,
   saveProgress,
+  setRevealAll,
   visibleTools,
   type UserProgress,
 } from './progressive-disclosure';
@@ -134,6 +135,25 @@ describe('revealAllTools', () => {
     expect(next.revealAll).toBe(true);
     expect(next.windowsOpened).toBe(2);
     expect(p.revealAll).toBe(false);
+  });
+});
+
+describe('setRevealAll — el toggle honesto', () => {
+  it('apagarlo vuelve a la visibilidad por progreso SIN borrar los contadores', () => {
+    // Con 2 ventanas el picking NO está ganado (umbral: 2 usos analíticos).
+    const p = progress({ windowsOpened: 2, revealAll: true });
+    expect(visibleTools(p).picking).toBe(true); // revelado por la bandera
+
+    const off = setRevealAll(p, false);
+    expect(off.revealAll).toBe(false);
+    expect(off.windowsOpened).toBe(2); // el progreso NO se borra
+    expect(visibleTools(off).picking).toBe(false); // vuelve a estar ganable
+  });
+
+  it('prender y apagar es simétrico: termina en el estado original', () => {
+    const p = progress({ spectraViewed: 1 });
+    const roundTrip = setRevealAll(setRevealAll(p, true), false);
+    expect(roundTrip).toEqual(p);
   });
 });
 

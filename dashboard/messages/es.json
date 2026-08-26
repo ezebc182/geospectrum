@@ -899,7 +899,7 @@
     "waveError": "No se pudo cargar la onda de esta ventana",
     "waveEmpty": "Hacé clic en el helicorder para abrir una ventana de onda",
     "showAllTools": "Mostrar todas las herramientas",
-    "showAllToolsHint": "Las herramientas de análisis aparecen a medida que usás la vista de onda. Activá esto para verlas todas ahora.",
+    "showAllToolsHint": "Desbloquea el espectro 1D, la serie RSAM y el picking en las pestañas Onda y RSAM, sin esperar la progresividad. Se puede volver a ocultar.",
     "helicorderLoading": "Cargando 24 horas de señal… puede tardar un rato",
     "helicorderNoData": "La fuente FDSN no tiene datos de este canal en las últimas 24 horas",
     "helicorderError": "No se pudo cargar la señal de este canal — reintentá en unos minutos",
@@ -930,7 +930,8 @@
     "pickingDistance": "S-P: {sp} s · distancia estimada ≈ {km} km",
     "pickingMagnitude": "Coda: {seconds} s · Mc {mc}",
     "pickingExport": "Exportar CSV",
-    "pickingError": "No se pudo guardar el cambio de picks — probá de nuevo"
+    "pickingError": "No se pudo guardar el cambio de picks — probá de nuevo",
+    "showAllToolsActive": "Activo — espectro, RSAM y picking desbloqueados"
   },
   "stations": {
     "title": "Estaciones",

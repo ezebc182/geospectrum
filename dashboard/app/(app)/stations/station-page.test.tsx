@@ -512,6 +512,21 @@ describe('StationPage - espectro 1D (Fase 3)', () => {
     expect(screen.queryByTestId('spectrum-view')).toBeNull();
   });
 
+  it('el toggle de herramientas es honesto: queda visible, marcado, y apagarlo re-bloquea', () => {
+    renderPage();
+    const checkbox = () => screen.getByLabelText(es.station.showAllTools) as HTMLInputElement;
+
+    fireEvent.click(checkbox());
+    // La versión vieja desaparecía al activarse ("no hace nada y desaparece"):
+    // ahora sigue en pantalla, marcada, y muestra qué desbloqueó.
+    expect(checkbox().checked).toBe(true);
+    expect(screen.getByText(es.station.showAllToolsActive)).toBeTruthy();
+
+    fireEvent.click(checkbox());
+    expect(checkbox().checked).toBe(false);
+    expect(screen.queryByText(es.station.showAllToolsActive)).toBeNull();
+  });
+
   it('con "mostrar todas las herramientas" el botón aparece y abre el espectro de la ventana vigente', () => {
     renderPage();
     // El escape hatch de la progresividad revela el escalón sin ganárselo.

@@ -899,7 +899,7 @@
     "waveError": "Could not load the waveform for this window",
     "waveEmpty": "Click the helicorder to open a waveform window",
     "showAllTools": "Show all tools",
-    "showAllToolsHint": "Analysis tools appear as you use the wave view. Turn this on to see them all now.",
+    "showAllToolsHint": "Unlocks the 1D spectrum, the RSAM series and picking in the Wave and RSAM tabs, without waiting for progression. Can be hidden again.",
     "helicorderLoading": "Loading 24 hours of signal… this can take a while",
     "helicorderNoData": "The FDSN source has no data for this channel in the last 24 hours",
     "helicorderError": "Could not load this channel's signal — try again in a few minutes",
@@ -930,7 +930,8 @@
     "pickingDistance": "S-P: {sp} s · estimated distance ≈ {km} km",
     "pickingMagnitude": "Coda: {seconds} s · Mc {mc}",
     "pickingExport": "Export CSV",
-    "pickingError": "The pick change could not be saved — try again"
+    "pickingError": "The pick change could not be saved — try again",
+    "showAllToolsActive": "Active — spectrum, RSAM and picking unlocked"
   },
   "stations": {
     "title": "Stations",
