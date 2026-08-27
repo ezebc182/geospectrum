@@ -178,6 +178,19 @@ export default function StationPage() {
   // ajuste fino de ventana no hace desaparecer los mensajes.
   const windowComments = useWindowComments(channel, wave.window);
   const { user: authUser } = useAuth();
+
+  // Modo apunte: el clic sobre la onda fija el ancla del PRÓXIMO mensaje.
+  // Armar el apunte desarma la fase de picking y viceversa: un clic, un gesto.
+  const [annotateArmed, setAnnotateArmed] = useState(false);
+  const [pendingAnchorMs, setPendingAnchorMs] = useState<number | null>(null);
+  const waveAnnotations = windowComments.comments
+    .filter((c) => c.anchorTimeMs !== null)
+    .map((c) => ({ id: c.id, timeMs: c.anchorTimeMs as number, label: c.body }));
+
+  const handleSendComment = async (body: string) => {
+    await windowComments.addComment(body, pendingAnchorMs);
+    setPendingAnchorMs(null);
+  };
   const [armedPhase, setArmedPhase] = useState<PickPhase | null>(null);
   const [pickNote, setPickNote] = useState('');
   const [pickMutationFailed, setPickMutationFailed] = useState(false);
@@ -489,16 +502,23 @@ export default function StationPage() {
               filter={filter}
               onFilterChange={(f) => persist({ filter: f })}
               overlay={
-                tools.picking ? (
-                  <PickingOverlay
-                    window={wave.window}
-                    picks={picking.picks}
-                    armedPhase={armedPhase}
-                    onPickAt={handlePickAt}
-                    width={960}
-                    height={280}
-                  />
-                ) : undefined
+                /* Siempre montada: las banderas de apuntes se ven aunque el
+                   picking siga bloqueado por progresividad (sin fase armada
+                   la capa es transparente al zoom, como siempre). */
+                <PickingOverlay
+                  window={wave.window}
+                  picks={picking.picks}
+                  armedPhase={tools.picking ? armedPhase : null}
+                  onPickAt={handlePickAt}
+                  width={960}
+                  height={280}
+                  annotations={waveAnnotations}
+                  annotateArmed={annotateArmed}
+                  onAnnotateAt={(tMs) => {
+                    setPendingAnchorMs(tMs);
+                    setAnnotateArmed(false);
+                  }}
+                />
               }
             />
 
@@ -525,8 +545,15 @@ export default function StationPage() {
                 comments={windowComments.comments}
                 status={windowComments.status}
                 currentUserEmail={authUser?.email ?? null}
-                onSend={windowComments.addComment}
+                onSend={handleSendComment}
                 onDelete={windowComments.removeComment}
+                annotateArmed={annotateArmed}
+                onToggleAnnotate={() => {
+                  setAnnotateArmed((armed) => !armed);
+                  setArmedPhase(null);
+                }}
+                pendingAnchorMs={pendingAnchorMs}
+                onClearAnchor={() => setPendingAnchorMs(null)}
               />
             )}
 

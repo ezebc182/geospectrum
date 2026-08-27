@@ -255,11 +255,14 @@ class SeismicAPI {
     channel: string,
     window: { startMs: number; endMs: number },
     body: string,
+    anchorTimeMs?: number | null,
   ): Promise<WindowCommentRecord> {
     return this.requestJSON<WindowCommentRecord>(this.commentsBase(channel), 'POST', {
       body,
       window_start: new Date(window.startMs).toISOString(),
       window_end: new Date(window.endMs).toISOString(),
+      // Apunte anclado a un instante de la onda (migración 018); null = hilo.
+      anchor_time: anchorTimeMs == null ? null : new Date(anchorTimeMs).toISOString(),
     });
   }
 
@@ -294,6 +297,7 @@ export interface WindowCommentRecord {
   window_start: string;
   window_end: string;
   body: string;
+  anchor_time: string | null;
   author_email: string;
   created_at: string;
 }

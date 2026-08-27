@@ -15,8 +15,8 @@ import { WindowCommentsPanel } from './WindowCommentsPanel';
 afterEach(cleanup);
 
 const COMMENTS: WindowComment[] = [
-  { id: 'c1', body: 'MIRAR ESTO', authorEmail: 'a@example.com', createdAt: '2026-08-24T12:01:00Z' },
-  { id: 'c2', body: 'es un telesismo', authorEmail: 'b@example.com', createdAt: '2026-08-24T12:02:00Z' },
+  { id: 'c1', body: 'MIRAR ESTO', authorEmail: 'a@example.com', createdAt: '2026-08-24T12:01:00Z', anchorTimeMs: Date.UTC(2026, 7, 24, 12, 3, 7) },
+  { id: 'c2', body: 'es un telesismo', authorEmail: 'b@example.com', createdAt: '2026-08-24T12:02:00Z', anchorTimeMs: null },
 ];
 
 function renderPanel(over: Partial<Parameters<typeof WindowCommentsPanel>[0]> = {}) {
@@ -30,6 +30,10 @@ function renderPanel(over: Partial<Parameters<typeof WindowCommentsPanel>[0]> = 
         currentUserEmail={over.currentUserEmail ?? 'a@example.com'}
         onSend={over.onSend ?? onSend}
         onDelete={over.onDelete ?? onDelete}
+        annotateArmed={over.annotateArmed}
+        onToggleAnnotate={over.onToggleAnnotate}
+        pendingAnchorMs={over.pendingAnchorMs}
+        onClearAnchor={over.onClearAnchor}
       />
     </NextIntlClientProvider>,
   );
@@ -83,5 +87,32 @@ describe('WindowCommentsPanel', () => {
   it('hilo vacío: invita a arrancar la conversación en vez de quedar mudo', () => {
     renderPanel({ comments: [] });
     expect(screen.getByTestId('window-comments-empty')).toBeTruthy();
+  });
+});
+
+describe('modo apunte', () => {
+  it('el botón de apuntar dispara onToggleAnnotate', () => {
+    const onToggleAnnotate = vi.fn();
+    renderPanel({ onToggleAnnotate });
+    fireEvent.click(screen.getByTestId('annotate-toggle'));
+    expect(onToggleAnnotate).toHaveBeenCalledTimes(1);
+  });
+
+  it('con un ancla pendiente muestra el chip con la hora y permite soltarla', () => {
+    const onClearAnchor = vi.fn();
+    renderPanel({ pendingAnchorMs: Date.UTC(2026, 7, 24, 12, 3, 7), onClearAnchor });
+
+    const chip = screen.getByTestId('pending-anchor');
+    expect(chip.textContent).toContain('12:03:07Z');
+    fireEvent.click(chip.querySelector('button') as HTMLButtonElement);
+    expect(onClearAnchor).toHaveBeenCalledTimes(1);
+  });
+
+  it('un mensaje anclado muestra su instante en el hilo', () => {
+    renderPanel();
+    const items = screen.getAllByTestId('window-comment');
+    // c1 tiene ancla en 12:03:07 — el badge la muestra; c2 no tiene.
+    expect(items[0].textContent).toContain('⚓ 12:03:07Z');
+    expect(items[1].textContent).not.toContain('⚓');
   });
 });

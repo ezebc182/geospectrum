@@ -56,6 +56,7 @@ async def create_comment(
         _as_utc(payload.window_start),
         _as_utc(payload.window_end),
         payload.body,
+        _as_utc(payload.anchor_time) if payload.anchor_time else None,
     )
 
 

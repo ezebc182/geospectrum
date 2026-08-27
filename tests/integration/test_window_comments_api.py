@@ -238,3 +238,49 @@ def test_ventana_degenerada_da_422(client, two_users):
     _login_as(user_a, client)
     resp = _post_comment(client, "hola", start=W_END, end=W_START)
     assert resp.status_code == 422
+
+
+# =============================================================================
+# Apuntes anclados a la onda (anchor_time, migración 018)
+# =============================================================================
+
+
+def test_un_apunte_anclado_persiste_su_instante(client, two_users):
+    """El apunte ancla a un INSTANTE, no a píxeles: sobrevive zoom y filtros.
+    La lectura de control va directa a la base, como siempre."""
+    user_a, _, dsn = two_users
+    _login_as(user_a, client)
+
+    resp = client.post(
+        BASE,
+        json={
+            "body": "acá arranca el evento",
+            "window_start": W_START,
+            "window_end": W_END,
+            "anchor_time": "2026-08-24T12:03:07.500Z",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["anchor_time"] == "2026-08-24T12:03:07.500000Z"
+
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT anchor_time FROM window_comments")
+            assert cur.fetchone()[0] is not None
+    finally:
+        conn.close()
+
+
+def test_un_mensaje_sin_ancla_sigue_siendo_valido(client, two_users):
+    """Retro-compatibilidad del hilo: el ancla es OPCIONAL. El payload viejo
+    (sin el campo) tiene que seguir funcionando igual."""
+    user_a, _, _ = two_users
+    _login_as(user_a, client)
+
+    resp = _post_comment(client, "mensaje de hilo comun")
+    assert resp.status_code == 201
+    assert resp.json()["anchor_time"] is None
+
+    listado = _listar(client)
+    assert listado.json()["comments"][0]["anchor_time"] is None

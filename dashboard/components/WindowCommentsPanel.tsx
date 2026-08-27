@@ -20,6 +20,12 @@ interface WindowCommentsPanelProps {
   currentUserEmail: string | null;
   onSend: (body: string) => Promise<void>;
   onDelete: (commentId: string) => Promise<void>;
+  /** Modo apunte: armar el clic-sobre-la-onda que fija el ancla. */
+  annotateArmed?: boolean;
+  onToggleAnnotate?: () => void;
+  /** Ancla pendiente para el próximo mensaje (fijada por el clic en la onda). */
+  pendingAnchorMs?: number | null;
+  onClearAnchor?: () => void;
 }
 
 /** "12:01:00Z" — UTC explícito, igual que el resto de la pantalla. */
@@ -35,6 +41,10 @@ export function WindowCommentsPanel({
   currentUserEmail,
   onSend,
   onDelete,
+  annotateArmed = false,
+  onToggleAnnotate,
+  pendingAnchorMs = null,
+  onClearAnchor,
 }: WindowCommentsPanelProps) {
   const t = useTranslations('station');
   const [draft, setDraft] = useState('');
@@ -78,6 +88,11 @@ export function WindowCommentsPanel({
               <div className="min-w-0 flex-1">
                 <span className="font-mono text-xs text-muted-foreground">
                   {comment.authorEmail} · {timeLabel(comment.createdAt)}
+                  {comment.anchorTimeMs !== null && (
+                    <span className="ml-2 rounded bg-sky-500/15 px-1 text-sky-600">
+                      ⚓ {timeLabel(new Date(comment.anchorTimeMs).toISOString())}
+                    </span>
+                  )}
                 </span>
                 <p className="whitespace-pre-wrap break-words text-foreground">{comment.body}</p>
               </div>
@@ -95,6 +110,40 @@ export function WindowCommentsPanel({
           ))}
         </ul>
       )}
+
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {onToggleAnnotate && (
+          <button
+            type="button"
+            data-testid="annotate-toggle"
+            aria-pressed={annotateArmed}
+            onClick={onToggleAnnotate}
+            className={`rounded px-2 py-0.5 text-xs ${
+              annotateArmed
+                ? 'bg-sky-600 text-white'
+                : 'bg-muted text-foreground hover:bg-muted/80'
+            }`}
+          >
+            {annotateArmed ? t('commentsAnnotateArmed') : t('commentsAnnotate')}
+          </button>
+        )}
+        {pendingAnchorMs !== null && (
+          <span
+            data-testid="pending-anchor"
+            className="flex items-center gap-1 rounded bg-sky-500/15 px-2 py-0.5 font-mono text-xs text-sky-600"
+          >
+            ⚓ {timeLabel(new Date(pendingAnchorMs).toISOString())}
+            <button
+              type="button"
+              aria-label={t('commentsClearAnchor')}
+              onClick={onClearAnchor}
+              className="rounded px-1 hover:bg-sky-500/20"
+            >
+              ×
+            </button>
+          </span>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
         <input

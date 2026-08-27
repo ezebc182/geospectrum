@@ -181,3 +181,37 @@ describe('PickingOverlay — la capa sobre el canvas', () => {
     expect(screen.queryByTestId('pick-line-P')).toBeNull();
   });
 });
+
+describe('PickingOverlay — apuntes anclados a la onda', () => {
+  const NOTES = [
+    { id: 'n1', timeMs: WINDOW.startMs + 444_000, label: 'acá arranca el evento' },
+    { id: 'n2', timeMs: WINDOW.startMs - 60_000, label: 'fuera de la ventana' },
+  ];
+
+  it('dibuja una bandera por apunte DENTRO de la ventana visible', () => {
+    renderOverlay({ annotations: NOTES });
+    const flags = screen.getAllByTestId('annotation-flag');
+    expect(flags).toHaveLength(1);
+    expect(flags[0].getAttribute('title')).toBe('acá arranca el evento');
+  });
+
+  it('con el modo apunte armado, el clic entrega el instante señalado', () => {
+    const onAnnotateAt = vi.fn();
+    renderOverlay({ annotateArmed: true, onAnnotateAt });
+
+    const overlay = screen.getByTestId('picking-overlay');
+    overlay.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 960, height: 280, right: 960, bottom: 280, x: 0, y: 0 }) as DOMRect;
+    // Mismo cálculo que el test del pick: 1 px = 1 s en este harness
+    // (ventana de 888 s sobre 888 px de plot). clientX 500 ⇒ T0 + 444 s.
+    fireEvent.click(overlay, { clientX: 500, clientY: 140 });
+
+    expect(onAnnotateAt).toHaveBeenCalledTimes(1);
+    expect(onAnnotateAt).toHaveBeenCalledWith(WINDOW.startMs + 444_000);
+  });
+
+  it('sin modo apunte ni fase armada, la capa sigue transparente al zoom', () => {
+    renderOverlay({ annotations: NOTES });
+    expect(screen.getByTestId('picking-overlay').style.pointerEvents).toBe('none');
+  });
+});

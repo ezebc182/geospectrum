@@ -27,6 +27,7 @@ def _row_to_public(row: asyncpg.Record) -> WindowCommentPublic:
         window_start=row["window_start"],
         window_end=row["window_end"],
         body=row["body"],
+        anchor_time=row["anchor_time"],
         author_email=row["author_email"],
         created_at=row["created_at"],
     )
@@ -46,7 +47,7 @@ class WindowCommentService:
             rows = await conn.fetch(
                 """
                 SELECT c.id, c.channel, c.window_start, c.window_end, c.body,
-                       c.created_at, u.email AS author_email
+                       c.anchor_time, c.created_at, u.email AS author_email
                   FROM window_comments c
                   JOIN users u ON u.id = c.user_id
                  WHERE c.channel = $1
@@ -67,19 +68,21 @@ class WindowCommentService:
         start: datetime,
         end: datetime,
         body: str,
+        anchor_time: datetime | None = None,
     ) -> WindowCommentPublic:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 WITH inserted AS (
                     INSERT INTO window_comments
-                        (channel, window_start, window_end, user_id, body)
-                    VALUES ($1, $2, $3, $4, $5)
+                        (channel, window_start, window_end, user_id, body,
+                         anchor_time)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING id, channel, window_start, window_end, body,
-                              user_id, created_at
+                              anchor_time, user_id, created_at
                 )
                 SELECT i.id, i.channel, i.window_start, i.window_end, i.body,
-                       i.created_at, u.email AS author_email
+                       i.anchor_time, i.created_at, u.email AS author_email
                   FROM inserted i
                   JOIN users u ON u.id = i.user_id
                 """,
@@ -88,6 +91,7 @@ class WindowCommentService:
                 end,
                 user_id,
                 body,
+                anchor_time,
             )
         return _row_to_public(row)
 

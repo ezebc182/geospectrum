@@ -30,6 +30,7 @@ function record(id: string, body: string, email = 'a@example.com'): WindowCommen
     window_start: iso,
     window_end: new Date(T0 + 600_000).toISOString(),
     body,
+    anchor_time: null,
     author_email: email,
     created_at: iso,
   };
@@ -73,7 +74,7 @@ describe('useWindowComments', () => {
       await result.current.addComment('nuevo');
     });
 
-    expect(seismicAPI.createWindowComment).toHaveBeenCalledWith(CHANNEL, WINDOW, 'nuevo');
+    expect(seismicAPI.createWindowComment).toHaveBeenCalledWith(CHANNEL, WINDOW, 'nuevo', null);
     expect(result.current.comments.map((c) => c.body)).toEqual(['hola', 'nuevo']);
   });
 
@@ -101,5 +102,39 @@ describe('useWindowComments', () => {
 
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current.comments).toEqual([]);
+  });
+});
+
+describe('apuntes anclados', () => {
+  it('addComment con ancla la pasa a la API y el mensaje la conserva', async () => {
+    vi.mocked(seismicAPI.getWindowComments).mockResolvedValue({ comments: [] });
+    vi.mocked(seismicAPI.createWindowComment).mockResolvedValue({
+      ...record('c9', 'acá arranca'),
+      anchor_time: new Date(T0 + 187_000).toISOString(),
+    });
+
+    const { result } = renderHook(() => useWindowComments(CHANNEL, WINDOW));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    await act(async () => {
+      await result.current.addComment('acá arranca', T0 + 187_000);
+    });
+
+    expect(seismicAPI.createWindowComment).toHaveBeenCalledWith(
+      CHANNEL,
+      WINDOW,
+      'acá arranca',
+      T0 + 187_000,
+    );
+    expect(result.current.comments[0].anchorTimeMs).toBe(T0 + 187_000);
+  });
+
+  it('sin ancla, anchorTimeMs es null (mensaje común del hilo)', async () => {
+    vi.mocked(seismicAPI.getWindowComments).mockResolvedValue({
+      comments: [record('c1', 'hola')],
+    });
+    const { result } = renderHook(() => useWindowComments(CHANNEL, WINDOW));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.comments[0].anchorTimeMs).toBeNull();
   });
 });

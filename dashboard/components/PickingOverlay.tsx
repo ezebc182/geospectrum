@@ -38,6 +38,13 @@ const PHASE_COLORS: Record<PickPhase, string> = {
 
 const PHASES: PickPhase[] = ['P', 'S', 'coda'];
 
+/** Un apunte anclado a un instante de la onda (comentario con anchor_time). */
+export interface WaveAnnotation {
+  id: string;
+  timeMs: number;
+  label: string;
+}
+
 interface PickingOverlayProps {
   window: TimeWindow;
   picks: SignalPick[];
@@ -46,6 +53,11 @@ interface PickingOverlayProps {
   onPickAt: (pickTimeMs: number) => void;
   width: number;
   height: number;
+  /** Apuntes anclados a instantes; se dibujan como banderas. */
+  annotations?: WaveAnnotation[];
+  /** Modo apunte: el próximo clic entrega su instante a onAnnotateAt. */
+  annotateArmed?: boolean;
+  onAnnotateAt?: (timeMs: number) => void;
 }
 
 export function PickingOverlay({
@@ -55,12 +67,19 @@ export function PickingOverlay({
   onPickAt,
   width,
   height,
+  annotations = [],
+  annotateArmed = false,
+  onAnnotateAt,
 }: PickingOverlayProps) {
   const plotWidth = width - WAVE_MARGIN_LEFT - WAVE_MARGIN_RIGHT;
   const plotHeight = height - WAVE_MARGIN_TOP - WAVE_MARGIN_BOTTOM;
 
+  // La capa captura clics con una fase O el modo apunte armados; sin nada
+  // armado es transparente y el zoom por arrastre sigue vivo.
+  const armed = armedPhase !== null || annotateArmed;
+
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!armedPhase) return;
+    if (!armed) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width === 0) return;
     // Misma conversión CSS→canvas que WaveView: el canvas puede estar escalado.
@@ -69,6 +88,12 @@ export function PickingOverlay({
     // Un clic en el margen no señala ningún instante (mismo criterio que el
     // helicorder): se recorta a la ventana en vez de extrapolar.
     const clamped = Math.min(waveWindow.endMs, Math.max(waveWindow.startMs, tMs));
+    // El modo apunte tiene prioridad: la página desarma uno al armar el otro,
+    // pero si conviven, el gesto más reciente (apuntar) gana.
+    if (annotateArmed && onAnnotateAt) {
+      onAnnotateAt(Math.round(clamped));
+      return;
+    }
     onPickAt(Math.round(clamped));
   };
 
@@ -77,13 +102,31 @@ export function PickingOverlay({
       data-testid="picking-overlay"
       className="absolute inset-0"
       style={{
-        // Sin fase armada la capa es transparente a los gestos: el arrastre de
+        // Sin nada armado la capa es transparente a los gestos: el arrastre de
         // zoom del canvas sigue funcionando exactamente igual.
-        pointerEvents: armedPhase ? 'auto' : 'none',
-        cursor: armedPhase ? 'crosshair' : undefined,
+        pointerEvents: armed ? 'auto' : 'none',
+        cursor: armed ? 'crosshair' : undefined,
       }}
       onClick={handleClick}
     >
+      {annotations
+        .filter((a) => a.timeMs >= waveWindow.startMs && a.timeMs <= waveWindow.endMs)
+        .map((a) => {
+          const x = WAVE_MARGIN_LEFT + timeToX(a.timeMs, waveWindow, plotWidth);
+          return (
+            <div
+              key={a.id}
+              data-testid="annotation-flag"
+              title={a.label}
+              className="absolute border-l border-dashed border-sky-500"
+              style={{ left: x, top: WAVE_MARGIN_TOP, height: plotHeight }}
+            >
+              <span className="absolute left-1 top-0 max-w-40 truncate rounded bg-sky-500/15 px-1 font-mono text-[10px] text-sky-600">
+                {a.label}
+              </span>
+            </div>
+          );
+        })}
       {picks
         .map((pick) => ({ pick, ms: new Date(pick.pickTime).getTime() }))
         .filter(({ ms }) => ms >= waveWindow.startMs && ms <= waveWindow.endMs)

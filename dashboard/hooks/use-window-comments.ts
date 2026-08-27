@@ -16,6 +16,8 @@ export interface WindowComment {
   body: string;
   authorEmail: string;
   createdAt: string;
+  /** Instante anclado en la onda; null = mensaje común del hilo. */
+  anchorTimeMs: number | null;
 }
 
 export type CommentsStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -23,7 +25,7 @@ export type CommentsStatus = 'idle' | 'loading' | 'ready' | 'error';
 export interface UseWindowCommentsResult {
   comments: WindowComment[];
   status: CommentsStatus;
-  addComment: (body: string) => Promise<void>;
+  addComment: (body: string, anchorTimeMs?: number | null) => Promise<void>;
   removeComment: (commentId: string) => Promise<void>;
 }
 
@@ -33,6 +35,7 @@ function toComment(record: WindowCommentRecord): WindowComment {
     body: record.body,
     authorEmail: record.author_email,
     createdAt: record.created_at,
+    anchorTimeMs: record.anchor_time === null ? null : Date.parse(record.anchor_time),
   };
 }
 
@@ -86,9 +89,14 @@ export function useWindowComments(
     };
   }, [channel, startMs, endMs]);
 
-  const addComment = async (body: string) => {
+  const addComment = async (body: string, anchorTimeMs?: number | null) => {
     if (startMs === undefined || endMs === undefined) return;
-    const created = await seismicAPI.createWindowComment(channel, { startMs, endMs }, body);
+    const created = await seismicAPI.createWindowComment(
+      channel,
+      { startMs, endMs },
+      body,
+      anchorTimeMs ?? null,
+    );
     // Al FINAL: el hilo es cronológico y el backend ordena por created_at.
     setComments((current) => [...current, toComment(created)]);
   };

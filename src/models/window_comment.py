@@ -13,6 +13,9 @@ class WindowCommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=500)
     window_start: datetime
     window_end: datetime
+    # Apunte anclado a un instante de la onda (migración 018). Opcional: sin
+    # ancla es un mensaje común del hilo.
+    anchor_time: datetime | None = None
 
     @model_validator(mode="after")
     def _window_valida(self) -> "WindowCommentCreate":
@@ -29,6 +32,7 @@ class WindowCommentPublic(BaseModel):
     window_start: datetime
     window_end: datetime
     body: str
+    anchor_time: datetime | None
     # El email identifica al autor en el hilo (colaborativo: todos ven todo).
     author_email: str
     created_at: datetime
