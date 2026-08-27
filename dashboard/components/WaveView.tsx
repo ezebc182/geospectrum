@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { type TimeWindow, dragSelection } from '@/lib/waveform-scale';
+import { buildTracePolyline } from '@/lib/wave-trace-path';
 import type { WaveformResponse, WaveStatus } from '@/hooks/use-wave-window';
 import type { HelicorderFilter } from '@/lib/helicorder-settings';
 
@@ -138,15 +139,22 @@ export function WaveView({
     ctx.lineTo(MARGIN_LEFT + plotWidth, centerY);
     ctx.stroke();
 
-    // Trazo min/max: una columna por par, igual que el helicorder. Un pico de
-    // una muestra tiene que sobrevivir a la decimación del backend.
+    // Trazo min/max como UN polyline encadenado (buildTracePolyline). Los
+    // segmentos verticales AISLADOS por par eran el bug del QA 2.19: en
+    // passthrough (ventana con menos muestras que `points`) cada par llega
+    // con min == max y un segmento de altura cero no pinta ni un píxel.
+    // El encadenado dibuja la onda en ambos regímenes y sin huecos.
     ctx.strokeStyle = TRACE_COLOR;
     const pairs = data.mins.length;
-    for (let i = 0; i < pairs; i++) {
-      const x = MARGIN_LEFT + (i / Math.max(1, pairs - 1)) * plotWidth;
+    const vertices = buildTracePolyline(data.mins, data.maxs);
+    if (vertices.length > 0) {
       ctx.beginPath();
-      ctx.moveTo(x, centerY - data.maxs[i] * scale);
-      ctx.lineTo(x, centerY - data.mins[i] * scale);
+      vertices.forEach((v, idx) => {
+        const x = MARGIN_LEFT + (v.pair / Math.max(1, pairs - 1)) * plotWidth;
+        const y = centerY - v.value * scale;
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
       ctx.stroke();
     }
 
