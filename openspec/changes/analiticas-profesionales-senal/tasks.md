@@ -79,17 +79,17 @@ comportamiento. Nada de UI nueva.
 
 ### 1.B — El endpoint y su validación
 
-- [ ] 1.4 En `src/main.py:2580-2586` (`get_station_waveform`), cambiar la firma de
+- [x] 1.4 En `src/main.py:2580-2586` (`get_station_waveform`), cambiar la firma de
       `minutes` a `int | None = Query(None, ge=1, le=1440, ...)` y resolver el
       default 1440 **aguas abajo, dentro del handler**, sólo cuando no hay
       `start`/`end`. Es la única forma de distinguir "no lo mandaron" de "lo
       mandaron en 1440" y poder validar la exclusión mutua (FastAPI no distingue
       un default de un valor pasado igual al default).
-- [ ] 1.5 Agregar los parámetros `start: datetime | None` y `end: datetime | None`
+- [x] 1.5 Agregar los parámetros `start: datetime | None` y `end: datetime | None`
       al handler, y normalizar en el BORDE: cualquier datetime sin `tzinfo` se
       interpreta como UTC con `replace(tzinfo=timezone.utc)`. **Nunca
       `datetime.utcnow()`** (este repo ya rotuló 5:10 "UTC" siendo las 02:10).
-- [ ] 1.6 Implementar las 5 validaciones, todas 422 con body `{"detail": ...}` y
+- [x] 1.6 Implementar las 5 validaciones, todas 422 con body `{"detail": ...}` y
       **antes de cualquier fetch a FDSN** (una ventana inválida no debe producir
       tráfico saliente):
       | Condición | Mensaje |
@@ -99,40 +99,40 @@ comportamiento. Nada de UI nueva.
       | `end <= start` | `end debe ser posterior a start` |
       | `end - start > 24 h` | `la ventana no puede superar 24 horas` |
       | `channel` sin 4 partes | `channel debe ser NET.STA.LOC.CHA` (existente, no romper) |
-- [ ] 1.7 Modificar la `cache_key` (`src/main.py:2604`) a la forma con `window_part`:
+- [x] 1.7 Modificar la `cache_key` (`src/main.py:2604`) a la forma con `window_part`:
       `window_part = f"{start.isoformat()}~{end.isoformat()}" if start else f"m{minutes}"`
       y `cache_key = f"waveform:{channel}:{window_part}:{points}:{filter}"`.
       El prefijo `m` es obligatorio para que un `minutes=1440` no pueda colisionar
       con un timestamp. **Los datetime se normalizan a UTC ANTES de formatear**:
       `14:00Z` y `11:00-03:00` son la misma ventana y deben dar la MISMA key.
       La ventana absoluta **reemplaza** a `minutes` en la key, no se suma.
-- [ ] 1.8 Verificar que el resultado vacío de FDSN (404) NO se guarda en cache
+- [x] 1.8 Verificar que el resultado vacío de FDSN (404) NO se guarda en cache
       (un vacío puede venir de un timeout transitorio y cachearlo deja la ventana
       muerta por todo el TTL). Si el código actual ya lo hace, dejar constancia en
       el test; si no, arreglarlo.
 
 ### 1.C — Tests del endpoint (spec `backend-api`)
 
-- [ ] 1.9 En `tests/unit/test_station_waveform_endpoint.py`, agregar los escenarios
+- [x] 1.9 En `tests/unit/test_station_waveform_endpoint.py`, agregar los escenarios
       de validación de la spec, uno por regla: `end < start` → 422; `end == start`
       → 422 (**escenario separado a propósito**: fija el borde en `>` y no `>=`);
       24 h + 1 s → 422; exactamente 24 h → NO 422; `start` sin `end` → 422;
       `start`+`end`+`minutes` explícito → 422; `start=ayer` (formato inválido) →
       422. En todos: verificar el body `{"detail": ...}` **y** que el servicio
       FDSN mockeado no fue llamado.
-- [ ] 1.10 **Test explícito de retro-compatibilidad** (obligatorio): reproducir el
+- [x] 1.10 **Test explícito de retro-compatibilidad** (obligatorio): reproducir el
       llamado actual de `dashboard/components/HelicorderCanvas.tsx:96-99`, que NO
       manda `minutes` — `GET /stations/AK.FIRE..BHZ/waveform?points=...&filter=...`
       — y verificar que sigue devolviendo 24 h (`duration_hours` pedido a FDSN es
       el de 1440 min). **Esta es la tarea que impide que el cambio de `minutes` a
       `None` rompa al único cliente en producción.** Agregar también el caso
       `minutes=90` → `duration_hours = max(1, ceil(90/60)) = 2`.
-- [ ] 1.11 Tests de la `cache_key`: dos ventanas absolutas distintas ⇒ keys
+- [x] 1.11 Tests de la `cache_key`: dos ventanas absolutas distintas ⇒ keys
       distintas y **la segunda produce una llamada NUEVA a FDSN**; la misma
       ventana ⇒ se sirve del cache sin segunda llamada; ventana relativa de 60 min
       y ventana absoluta de 60 min ⇒ keys distintas; `filter=none` vs `filter=bp`
       ⇒ keys distintas; `14:00Z` y `11:00-03:00` ⇒ MISMA key.
-- [ ] 1.12 **Mutación #9** (tabla del diseño): sacar `window_part` de la f-string
+- [x] 1.12 **Mutación #9** (tabla del diseño): sacar `window_part` de la f-string
       de la `cache_key` en `src/main.py`. Protocolo completo: aplicar → confirmar
       con `rg -n "cache_key = f\"waveform" src/main.py` que el archivo cambió →
       correr `./venv/bin/python -m pytest tests/unit/test_station_waveform_endpoint.py -q`
@@ -142,7 +142,7 @@ comportamiento. Nada de UI nueva.
 
 ### 1.D — Clic del helicorder → ventana (frontend, lógica pura)
 
-- [ ] 1.13 Crear `dashboard/lib/helicorder-hit.ts` con `helicorderHitToWindow`
+- [x] 1.13 Crear `dashboard/lib/helicorder-hit.ts` con `helicorderHitToWindow`
       según el contrato del diseño: recibe `{x, y, width, height, marginLeft,
       marginRight, rows, timeChunkMinutes, startMs, windowSeconds = 120}` y
       devuelve `TimeWindow | null`. La ventana se abre **centrada** en el instante
@@ -151,31 +151,31 @@ comportamiento. Nada de UI nueva.
       devolver el borde más cercano abriría una ventana que el usuario no señaló.
       El tipo `TimeWindow` se declara acá o en `waveform-scale.ts`, pero **una
       sola vez** (si la Fase 2 no está hecha, va acá y la Fase 2 lo importa).
-- [ ] 1.14 Crear `dashboard/lib/helicorder-hit.test.ts` con los 5 escenarios de la
+- [x] 1.14 Crear `dashboard/lib/helicorder-hit.test.ts` con los 5 escenarios de la
       spec `signal-analysis`, cada uno con valor esperado calculado a mano: clic en
       la primera columna de la primera fila ⇒ `T0`; clic en la última columna de la
       última fila ⇒ `endMs <= T0 + 24h`; ventana centrada (`T - W/2`, `T + W/2`);
       clic a menos de `W/2` del inicio ⇒ `startMs === T0` exacto y duración > 0;
       clic en el margen ⇒ `null`. *Un test que sólo verifique `startMs < endMs`
       pasaría con un mapeo lineal completamente equivocado.*
-- [ ] 1.15 En `dashboard/components/HelicorderCanvas.tsx`, agregar la prop
+- [x] 1.15 En `dashboard/components/HelicorderCanvas.tsx`, agregar la prop
       **opcional** `onSelectWindow?: (w: TimeWindow) => void`. Con la prop
       presente: `cursor: pointer` y `onClick` que llama a `helicorderHitToWindow`
       con la geometría que el componente ya tiene. Sin la prop: el componente se
       comporta **exactamente como hoy**. La opcionalidad es lo que permite mergear
       la Fase 1 sin la Fase 2.
-- [ ] 1.16 En `dashboard/components/HelicorderCanvas.test.tsx`, agregar el
+- [x] 1.16 En `dashboard/components/HelicorderCanvas.test.tsx`, agregar el
       escenario de la spec `dashboard-ui`: renderizado SIN el callback, el cursor
       NO cambia a `pointer` y un clic no dispara nada.
-- [ ] 1.17 Agregar en `dashboard/lib/api.ts` el soporte de `start`/`end` en el
+- [x] 1.17 Agregar en `dashboard/lib/api.ts` el soporte de `start`/`end` en el
       método de waveform (parámetros opcionales, sin cambiar la firma para los
       llamadores actuales).
 
 ### 1.E — Cierre de fase
 
-- [ ] 1.18 Correr la suite completa de ambos lados y `tsc --noEmit`. Frontend
+- [x] 1.18 Correr la suite completa de ambos lados y `tsc --noEmit`. Frontend
       `>=` baseline (633) y 0 errores de tipos.
-- [ ] 1.19 **Verificación con curl contra el servidor REAL** (criterio de éxito de
+- [x] 1.19 **Verificación con curl contra el servidor REAL** (criterio de éxito de
       la propuesta, no se sustituye con mocks): levantar el backend y ejecutar
       `curl "http://localhost:8000/stations/AK.FIRE..BHZ/waveform?start=2026-08-20T10:00:00Z&end=2026-08-20T11:00:00Z"`,
       confirmar 200 y que `starttime`/`endtime` de la respuesta caen dentro de la
@@ -693,14 +693,23 @@ S-P y coda, export CSV. Es la única fase con esquema.
 
 ## Phase 6: Verificación final y cierre del change
 
-- [ ] 6.1 Correr la suite completa de backend y frontend + `tsc --noEmit`.
+- [x] 6.1 Correr la suite completa de backend y frontend + `tsc --noEmit`.
       Registrar el conteo final contra la baseline de 633/65.
-- [ ] 6.2 Verificar la paridad i18n completa con
+      **HECHO 2026-08-26 sobre `a112314`: backend 975 (unit + integración),
+      frontend 967, `tsc --noEmit` en 0.** El conteo incluye la feature de
+      performance FDSN (cache eterno + warm-up), posterior a la Fase 5.
+- [x] 6.2 Verificar la paridad i18n completa con
       `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`:
       cero claves en `es.json` que falten en `en.json` y viceversa.
-- [ ] 6.3 Auditar la convención de idioma en TODOS los archivos nuevos del change:
+      **HECHO 2026-08-26: 4 passed, paridad completa.**
+- [x] 6.3 Auditar la convención de idioma en TODOS los archivos nuevos del change:
       identificadores en inglés, comentarios y docstrings en español, comillas
       simples en TS.
+      **HECHO 2026-08-26** sobre los 18 archivos nuevos desde el 2026-08-24
+      (componentes, hooks, libs, router de picks, modelos y services): cero
+      comillas dobles en TS, cero comentarios en inglés, cero identificadores
+      en español (heurísticas por rg; los tests de cada fase ya venían con la
+      convención aplicada).
 - [x] 6.4 ~~Resolver el conflicto de `openspec/config.yaml`~~ **YA RESUELTO el
       2026-08-24**, antes de empezar la implementación. Tres cosas estaban mal en
       esa config y las tres se arreglaron:
@@ -718,7 +727,10 @@ S-P y coda, export CSV. Es la única fase con esquema.
       `src/workers/` — **ese directorio no existe**; fue la causa de que la
       propuesta lo listara como afectado. **Sigue vigente: no ejecutar
       `npm run build` durante el desarrollo bajo ninguna circunstancia.**
-- [ ] 6.5 Repasar los 3 items de "Open Questions" del diseño con el usuario tras el
+- [x] 6.5 Repasar los 3 items de "Open Questions" del diseño con el usuario tras el
       QA visual: techo de 1 h para `/spectra`, ventana de 120 s del clic del
       helicorder, y umbrales de progresividad (3 ventanas / 2 usos). Los tres son
       un punto de partida razonable, no un dato medido.
+      **HECHO 2026-08-26: el usuario ratificó los tres valores.** Se revisitan
+      con evidencia de uso real si los QA visuales pendientes (2.19/3.16/4.14/
+      5.33) muestran otra cosa.

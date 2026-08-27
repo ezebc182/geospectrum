@@ -1409,12 +1409,12 @@ Ninguna que bloquee la implementación. Tres decisiones tomadas dentro del marge
 del diseño, que se registran por si el usuario quiere corregirlas antes de
 codificar:
 
-- [ ] **Techo de 1 h para `/spectra`** (vs. las 24 h de waveform). Justificado
+- [x] **Techo de 1 h para `/spectra`** (ratificado por el usuario, 2026-08-26) (vs. las 24 h de waveform). Justificado
       por RAM: la FFT es sobre la señal sin decimar. Si en uso real 1 h se queda
       corta, el número se sube con evidencia.
-- [ ] **La ventana del clic en el helicorder es de 120 s centrada**. Es el orden
+- [x] **La ventana del clic en el helicorder es de 120 s centrada** (ratificado, 2026-08-26). Es el orden
       de magnitud de un evento local visible en una franja de 30 min. Ajustable
       tras el primer QA visual.
-- [ ] **Umbrales de progresividad (3 ventanas / 2 usos)**. Son un punto de
+- [x] **Umbrales de progresividad (3 ventanas / 2 usos)** (ratificado, 2026-08-26). Son un punto de
       partida razonable, no un dato medido. La lib pura hace que cambiarlos sea
       una línea y un test.
