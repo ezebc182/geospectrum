@@ -40,9 +40,17 @@ export function parseWindowParams(
   return { startMs, endMs };
 }
 
-/** Deep link de salida: la URL actual con la ventana en ISO UTC. */
+/**
+ * Dominio canónico del share: el link que viaja por WhatsApp es la cara
+ * pública del producto y lleva la marca — nunca el host interno de Vercel
+ * ni localhost (geospectrum.org sirve la misma app, verificado en el deploy).
+ */
+export const SHARE_CANONICAL_ORIGIN = 'https://geospectrum.org';
+
+/** Deep link de salida: ruta actual + ventana en ISO UTC, dominio canónico. */
 export function rangeUrl(window: TimeWindow, base = globalThis.location?.href ?? ''): string {
-  const url = new URL(base);
+  const current = new URL(base);
+  const url = new URL(current.pathname + current.search, SHARE_CANONICAL_ORIGIN);
   url.searchParams.set('start', new Date(window.startMs).toISOString());
   url.searchParams.set('end', new Date(window.endMs).toISOString());
   return url.toString();
@@ -67,4 +75,31 @@ export function buildRangeShareText(
     messages.headline(channel),
     `${fecha} ${desde}–${hasta} UTC · ${durationS} s`,
   ].join('\n');
+}
+
+/** La nota a compartir: el texto y su instante anclado (o null). */
+export interface ShareableNote {
+  body: string;
+  anchorTimeMs: number | null;
+}
+
+/**
+ * Texto del share de UN apunte: la nota entre comillas, su instante anclado
+ * si lo tiene, y el rango de la ventana. La referencia viaja EN el texto —
+ * quien lo recibe sabe qué mirar antes de abrir el link.
+ */
+export function buildNoteShareText(
+  channel: string,
+  window: TimeWindow,
+  note: ShareableNote,
+  messages: RangeShareMessages,
+): string {
+  const lines = [messages.headline(channel), `«${note.body}»`];
+  if (note.anchorTimeMs !== null) {
+    lines.push(`⚓ ${new Date(note.anchorTimeMs).toISOString().slice(11, 19)}Z`);
+  }
+  const start = new Date(window.startMs).toISOString();
+  const end = new Date(window.endMs).toISOString();
+  lines.push(`${start.slice(0, 10)} ${start.slice(11, 19)}–${end.slice(11, 19)} UTC`);
+  return lines.join('\n');
 }

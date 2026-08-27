@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { buildRangeShareText, parseWindowParams, rangeUrl } from './share-range';
+import { buildNoteShareText, buildRangeShareText, parseWindowParams, rangeUrl } from './share-range';
 
 const START = '2026-08-26T10:59:28.000Z';
 const END = '2026-08-26T11:01:28.000Z';
@@ -48,6 +48,9 @@ describe('rangeUrl — el deep link de salida', () => {
       'https://geo.example/es/stations/IU.MAJO..BHZ',
     );
     const parsed = new URL(url);
+    // Sello de marca: el link SIEMPRE sale con el dominio canónico, aunque
+    // el usuario esté navegando el host de Vercel o localhost.
+    expect(parsed.origin).toBe('https://geospectrum.org');
     expect(parsed.pathname).toBe('/es/stations/IU.MAJO..BHZ');
     expect(parsed.searchParams.get('start')).toBe(START);
     expect(parsed.searchParams.get('end')).toBe(END);
@@ -73,5 +76,35 @@ describe('buildRangeShareText', () => {
     expect(text).toContain('Señal de IU.MAJO..BHZ');
     expect(text).toContain('2026-08-26 10:59:28–11:01:28 UTC');
     expect(text).toContain('120 s');
+  });
+});
+
+describe('buildNoteShareText — compartir un apunte con su referencia', () => {
+  const WINDOW = { startMs: Date.parse(START), endMs: Date.parse(END) };
+  const MESSAGES = { title: 'x', headline: (ch: string) => `Señal de ${ch}` };
+
+  it('incluye el texto de la nota, su instante anclado y el rango', () => {
+    const text = buildNoteShareText(
+      'IU.MAJO..BHZ',
+      WINDOW,
+      { body: 'acá arranca el evento', anchorTimeMs: Date.parse('2026-08-26T11:00:07Z') },
+      MESSAGES,
+    );
+    expect(text).toContain('Señal de IU.MAJO..BHZ');
+    expect(text).toContain('«acá arranca el evento»');
+    // La referencia: el instante exacto del apunte, no solo la ventana.
+    expect(text).toContain('⚓ 11:00:07Z');
+    expect(text).toContain('2026-08-26 10:59:28–11:01:28 UTC');
+  });
+
+  it('una nota sin ancla comparte el texto y el rango, sin instante inventado', () => {
+    const text = buildNoteShareText(
+      'IU.MAJO..BHZ',
+      WINDOW,
+      { body: 'parece ruido antrópico', anchorTimeMs: null },
+      MESSAGES,
+    );
+    expect(text).toContain('«parece ruido antrópico»');
+    expect(text).not.toContain('⚓');
   });
 });

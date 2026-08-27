@@ -247,28 +247,3 @@ describe('WaveView', () => {
     });
   });
 });
-
-describe('compartir rango', () => {
-  it('el botón comparte texto con canal y deep link de la ventana', async () => {
-    // jsdom no tiene navigator.share: el flujo cae al portapapeles, que es
-    // el mismo camino que un usuario de escritorio.
-    const writeText = vi.fn(async (_text: string) => {});
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
-
-    renderWave();
-    fireEvent.click(screen.getByTestId('wave-share'));
-
-    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    const texto = writeText.mock.calls[0][0];
-    // El canal viene del DATO mostrado, no de una prop suelta.
-    expect(texto).toContain('AK.FIRE..BHZ');
-    // El link SIEMPRE va (decisión 2026-08-26), con la ventana en ISO.
-    expect(texto).toContain('start=2026-08-24T12%3A00%3A00.000Z');
-    expect(texto).toContain('end=');
-  });
-
-  it('sin ventana cargada no hay nada que compartir: el botón no está', () => {
-    renderWave({ window: null, data: null, status: 'idle' });
-    expect(screen.queryByTestId('wave-share')).toBeNull();
-  });
-});

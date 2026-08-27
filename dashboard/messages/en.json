@@ -910,6 +910,7 @@
     "commentsAnnotate": "Annotate on the wave",
     "commentsAnnotateArmed": "Click on the wave…",
     "commentsClearAnchor": "Drop the anchor",
+    "commentsShareNote": "Share note",
     "waveLoading": "Loading waveform…",
     "waveError": "Could not load the waveform for this window",
     "waveEmpty": "Click the helicorder to open a waveform window",

@@ -49,7 +49,14 @@ import {
   saveHelicorderSettings,
 } from '@/lib/helicorder-settings';
 import { resolveStationLocation } from '@/lib/station-location';
-import { parseWindowParams } from '@/lib/share-range';
+import {
+  buildNoteShareText,
+  buildRangeShareText,
+  parseWindowParams,
+  rangeUrl,
+} from '@/lib/share-range';
+import { canvasToFile } from '@/lib/canvas-stamp';
+import { shareTextContent, type ShareOutcome } from '@/lib/share-event';
 import { StationMiniMap } from '@/components/StationMiniMap';
 import { useActiveArea } from '@/lib/use-active-area';
 
@@ -190,6 +197,63 @@ export default function StationPage() {
   const handleSendComment = async (body: string) => {
     await windowComments.addComment(body, pendingAnchorMs);
     setPendingAnchorMs(null);
+  };
+
+  // Share desde las notas: "imagen si se puede, link SIEMPRE". La imagen es
+  // el canvas del wave view SELLADO con geospectrum.org (canvas-stamp) y el
+  // link sale con el dominio canónico (rangeUrl). El texto de una nota lleva
+  // su referencia: el cuerpo entre comillas y el instante anclado.
+  const waveCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const shareWithImage = async (text: string): Promise<ShareOutcome> => {
+    if (!wave.window) return 'failed';
+    const url = rangeUrl(wave.window);
+    const image = await canvasToFile(waveCanvasRef.current, `${channel}.png`);
+    if (
+      image &&
+      typeof navigator !== 'undefined' &&
+      typeof navigator.share === 'function' &&
+      navigator.canShare?.({ files: [image] })
+    ) {
+      try {
+        // El link va embebido en el texto ADEMÁS del parámetro url: algunas
+        // plataformas lo descartan cuando viajan archivos.
+        await navigator.share({
+          title: t('waveShareTitle'),
+          text: `${text}\n${url}`,
+          url,
+          files: [image],
+        });
+        return 'shared';
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return 'dismissed';
+        // El share con archivo falló: el texto con link todavía puede salir.
+      }
+    }
+    return shareTextContent(t('waveShareTitle'), text, url);
+  };
+
+  const shareRangeMessages = {
+    title: t('waveShareTitle'),
+    headline: (ch: string) => t('waveShareHeadline', { channel: ch }),
+  };
+
+  const handleShareWindow = async (): Promise<ShareOutcome> => {
+    if (!wave.window) return 'failed';
+    return shareWithImage(buildRangeShareText(channel, wave.window, shareRangeMessages));
+  };
+
+  const handleShareComment = async (commentId: string): Promise<ShareOutcome> => {
+    const comment = windowComments.comments.find((c) => c.id === commentId);
+    if (!comment || !wave.window) return 'failed';
+    return shareWithImage(
+      buildNoteShareText(
+        channel,
+        wave.window,
+        { body: comment.body, anchorTimeMs: comment.anchorTimeMs },
+        shareRangeMessages,
+      ),
+    );
   };
   const [armedPhase, setArmedPhase] = useState<PickPhase | null>(null);
   const [pickNote, setPickNote] = useState('');
@@ -499,6 +563,7 @@ export default function StationPage() {
               onSelectWindow={handleZoomWindow}
               onGoBack={wave.goBack}
               onReset={wave.reset}
+              canvasElementRef={waveCanvasRef}
               filter={filter}
               onFilterChange={(f) => persist({ filter: f })}
               overlay={
@@ -554,6 +619,8 @@ export default function StationPage() {
                 }}
                 pendingAnchorMs={pendingAnchorMs}
                 onClearAnchor={() => setPendingAnchorMs(null)}
+                onShare={handleShareWindow}
+                onShareComment={handleShareComment}
               />
             )}
 

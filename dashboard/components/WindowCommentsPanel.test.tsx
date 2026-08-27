@@ -34,6 +34,8 @@ function renderPanel(over: Partial<Parameters<typeof WindowCommentsPanel>[0]> = 
         onToggleAnnotate={over.onToggleAnnotate}
         pendingAnchorMs={over.pendingAnchorMs}
         onClearAnchor={over.onClearAnchor}
+        onShare={over.onShare}
+        onShareComment={over.onShareComment}
       />
     </NextIntlClientProvider>,
   );
@@ -53,10 +55,11 @@ describe('WindowCommentsPanel', () => {
   it('el botón de borrar aparece SOLO en los mensajes propios', () => {
     renderPanel({ currentUserEmail: 'a@example.com' });
     const items = screen.getAllByTestId('window-comment');
-    expect(items[0].querySelector('button')).not.toBeNull();
+    const borrar = (el: HTMLElement) => el.querySelector('button[aria-label="Borrar mensaje"]');
+    expect(borrar(items[0])).not.toBeNull();
     // El de b@example.com no es mío: el backend daría 404 igual, pero
     // ofrecer un botón que va a fallar es mentirle al usuario.
-    expect(items[1].querySelector('button')).toBeNull();
+    expect(borrar(items[1])).toBeNull();
   });
 
   it('enviar llama onSend con el texto y limpia el input', async () => {
@@ -80,7 +83,9 @@ describe('WindowCommentsPanel', () => {
   it('borrar un mensaje propio llama onDelete con su id', () => {
     const { onDelete } = renderPanel();
     const propio = screen.getAllByTestId('window-comment')[0];
-    fireEvent.click(propio.querySelector('button') as HTMLButtonElement);
+    fireEvent.click(
+      propio.querySelector('button[aria-label="Borrar mensaje"]') as HTMLButtonElement,
+    );
     expect(onDelete).toHaveBeenCalledWith('c1');
   });
 
@@ -114,5 +119,31 @@ describe('modo apunte', () => {
     // c1 tiene ancla en 12:03:07 — el badge la muestra; c2 no tiene.
     expect(items[0].textContent).toContain('⚓ 12:03:07Z');
     expect(items[1].textContent).not.toContain('⚓');
+  });
+});
+
+describe('compartir desde las notas', () => {
+  it('el share general vive en el panel y muestra la devolución', async () => {
+    const onShare = vi.fn(async () => 'copied' as const);
+    renderPanel({ onShare });
+
+    fireEvent.click(screen.getByTestId('comments-share'));
+    expect(onShare).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId('comments-share').textContent).toContain('Copiado'),
+    );
+  });
+
+  it('cada nota (propia o ajena) tiene su compartir con la referencia', () => {
+    const onShareComment = vi.fn(async () => 'shared' as const);
+    renderPanel({ onShareComment });
+
+    const items = screen.getAllByTestId('window-comment');
+    const share = (el: HTMLElement) =>
+      el.querySelector('button[aria-label="Compartir apunte"]') as HTMLButtonElement;
+    expect(share(items[0])).not.toBeNull();
+    expect(share(items[1])).not.toBeNull();
+    fireEvent.click(share(items[1]));
+    expect(onShareComment).toHaveBeenCalledWith('c2');
   });
 });

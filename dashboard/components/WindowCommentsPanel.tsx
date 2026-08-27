@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import type { CommentsStatus, WindowComment } from '@/hooks/use-window-comments';
+import type { ShareOutcome } from '@/lib/share-event';
 
 interface WindowCommentsPanelProps {
   comments: WindowComment[];
@@ -26,6 +27,10 @@ interface WindowCommentsPanelProps {
   /** Ancla pendiente para el próximo mensaje (fijada por el clic en la onda). */
   pendingAnchorMs?: number | null;
   onClearAnchor?: () => void;
+  /** Share de la ventana (vive acá, junto a las notas: es lo que se comparte). */
+  onShare?: () => Promise<ShareOutcome>;
+  /** Share de UNA nota con su referencia (texto + instante anclado). */
+  onShareComment?: (commentId: string) => Promise<ShareOutcome>;
 }
 
 /** "12:01:00Z" — UTC explícito, igual que el resto de la pantalla. */
@@ -45,10 +50,13 @@ export function WindowCommentsPanel({
   onToggleAnnotate,
   pendingAnchorMs = null,
   onClearAnchor,
+  onShare,
+  onShareComment,
 }: WindowCommentsPanelProps) {
   const t = useTranslations('station');
   const [draft, setDraft] = useState('');
   const [failed, setFailed] = useState(false);
+  const [shareOutcome, setShareOutcome] = useState<ShareOutcome | null>(null);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -96,6 +104,18 @@ export function WindowCommentsPanel({
                 </span>
                 <p className="whitespace-pre-wrap break-words text-foreground">{comment.body}</p>
               </div>
+              {onShareComment && (
+                <button
+                  type="button"
+                  aria-label={t('commentsShareNote')}
+                  onClick={() => {
+                    onShareComment(comment.id).catch(() => setFailed(true));
+                  }}
+                  className="rounded bg-muted px-1.5 text-xs text-foreground hover:bg-muted/80"
+                >
+                  ↗
+                </button>
+              )}
               {comment.authorEmail === currentUserEmail && (
                 <button
                   type="button"
@@ -112,6 +132,24 @@ export function WindowCommentsPanel({
       )}
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
+        {onShare && (
+          <button
+            type="button"
+            data-testid="comments-share"
+            onClick={() => {
+              onShare()
+                .then(setShareOutcome)
+                .catch(() => setShareOutcome('failed'));
+            }}
+            className="rounded bg-muted px-2 py-0.5 text-xs text-foreground hover:bg-muted/80"
+          >
+            {shareOutcome === 'copied'
+              ? t('waveShareCopied')
+              : shareOutcome === 'failed'
+                ? t('waveShareFailed')
+                : t('waveShare')}
+          </button>
+        )}
         {onToggleAnnotate && (
           <button
             type="button"

@@ -16,30 +16,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { type TimeWindow, dragSelection } from '@/lib/waveform-scale';
 import { buildTracePolyline } from '@/lib/wave-trace-path';
-import { buildRangeShareText, rangeUrl } from '@/lib/share-range';
-import { shareTextContent, type ShareOutcome } from '@/lib/share-event';
-
-/** El canvas como archivo PNG, o null donde toBlob no existe (jsdom, canvas roto). */
-function canvasToFile(canvas: HTMLCanvasElement | null, name: string): Promise<File | null> {
-  if (!canvas || typeof canvas.toBlob !== 'function') return Promise.resolve(null);
-  return new Promise((resolve) => {
-    // La imagen es BEST-EFFORT: toBlob puede lanzar (canvas tainted), devolver
-    // null, o directamente no llamar nunca al callback (jsdom loguea "Not
-    // implemented" y retorna). El share de texto no puede colgarse esperándola:
-    // a los 300 ms se sigue sin imagen. En browsers reales el callback llega
-    // en milisegundos.
-    const timer = setTimeout(() => resolve(null), 300);
-    try {
-      canvas.toBlob((blob) => {
-        clearTimeout(timer);
-        resolve(blob ? new File([blob], name, { type: 'image/png' }) : null);
-      });
-    } catch {
-      clearTimeout(timer);
-      resolve(null);
-    }
-  });
-}
 import type { WaveformResponse, WaveStatus } from '@/hooks/use-wave-window';
 import type { HelicorderFilter } from '@/lib/helicorder-settings';
 
@@ -52,6 +28,8 @@ interface WaveViewProps {
   onSelectWindow: (w: TimeWindow) => void;
   onGoBack: () => void;
   onReset: () => void;
+  /** Ref externa al canvas: la página la usa para la imagen del share. */
+  canvasElementRef?: React.MutableRefObject<HTMLCanvasElement | null>;
   /**
    * El filtro cambia el DATO (lo aplica el backend), a diferencia de los
    * multiplicadores del helicorder que sólo repintan lo que ya está en memoria.
@@ -99,53 +77,13 @@ export function WaveView({
   onReset,
   filter,
   onFilterChange,
+  canvasElementRef,
   width = 960,
   height = 280,
   overlay,
 }: WaveViewProps) {
   const t = useTranslations('station');
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [shareOutcome, setShareOutcome] = useState<ShareOutcome | null>(null);
-
-  /**
-   * "Imagen si se puede, link SIEMPRE" (decisión 2026-08-26). La imagen es el
-   * canvas ya dibujado; el link va embebido en el texto además del parámetro
-   * `url` porque algunas plataformas lo descartan cuando viajan archivos.
-   */
-  const handleShare = async () => {
-    if (!waveWindow || !data) return;
-    const url = rangeUrl(waveWindow);
-    const text = buildRangeShareText(data.channel, waveWindow, {
-      title: t('waveShareTitle'),
-      headline: (ch) => t('waveShareHeadline', { channel: ch }),
-    });
-
-    const image = await canvasToFile(canvasRef.current, `${data.channel}.png`);
-    if (
-      image &&
-      typeof navigator !== 'undefined' &&
-      typeof navigator.share === 'function' &&
-      navigator.canShare?.({ files: [image] })
-    ) {
-      try {
-        await navigator.share({
-          title: t('waveShareTitle'),
-          text: `${text}\n${url}`,
-          url,
-          files: [image],
-        });
-        setShareOutcome('shared');
-        return;
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          setShareOutcome('dismissed');
-          return;
-        }
-        // El share con archivo falló: el texto con link todavía puede salir.
-      }
-    }
-    setShareOutcome(await shareTextContent(t('waveShareTitle'), text, url));
-  };
 
   /**
    * El arrastre en curso. Vive en estado y no en un ref porque el rectángulo
@@ -323,24 +261,6 @@ export function WaveView({
           />
         </label>
 
-        {/* Share de rango: "imagen si se puede, link SIEMPRE". La imagen sale
-            del canvas ya dibujado (toBlob); si el navegador no comparte
-            archivos, viaja el texto con el deep link. */}
-        {waveWindow && data && (
-          <button
-            type="button"
-            data-testid="wave-share"
-            onClick={handleShare}
-            className="rounded bg-muted px-2 py-0.5 text-foreground hover:bg-muted/80"
-          >
-            {shareOutcome === 'copied'
-              ? t('waveShareCopied')
-              : shareOutcome === 'failed'
-                ? t('waveShareFailed')
-                : t('waveShare')}
-          </button>
-        )}
-
         <span className="text-xs text-muted-foreground">{t('waveZoomHint')}</span>
       </div>
 
@@ -356,7 +276,10 @@ export function WaveView({
       <div className="relative rounded bg-white" style={{ width, height }}>
         <canvas
           data-testid="wave-canvas"
-          ref={canvasRef}
+          ref={(el) => {
+            canvasRef.current = el;
+            if (canvasElementRef) canvasElementRef.current = el;
+          }}
           width={width}
           height={height}
           className="block cursor-crosshair"
