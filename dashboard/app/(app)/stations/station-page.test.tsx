@@ -38,6 +38,13 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => searchParamsMock,
 }));
 
+// La página usa useAuth solo para saber el email propio (borrar mensajes del
+// hilo). Mock con la MISMA referencia siempre, como paramsMock.
+const authMock = { user: { email: 'tester@example.com' } };
+vi.mock('@/hooks/use-auth', () => ({
+  useAuth: () => authMock,
+}));
+
 // La ventana que el helicorder simulado "señala" va inline en el mock: `vi.mock`
 // se hoistea por encima de cualquier constante del módulo.
 vi.mock('@/components/HelicorderCanvas', () => ({

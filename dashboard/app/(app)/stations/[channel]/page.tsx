@@ -21,7 +21,10 @@ import { RsamChart } from '@/components/RsamChart';
 import { SpectrogramLarge } from '@/components/SpectrogramLarge';
 import { SpectrumView } from '@/components/SpectrumView';
 import { WaveView } from '@/components/WaveView';
+import { WindowCommentsPanel } from '@/components/WindowCommentsPanel';
+import { useAuth } from '@/hooks/use-auth';
 import { useSignalPicks } from '@/hooks/use-signal-picks';
+import { useWindowComments } from '@/hooks/use-window-comments';
 import { useWaveWindow } from '@/hooks/use-wave-window';
 import { seismicAPI } from '@/lib/api';
 import type { PickPhase } from '@/lib/signal-picks';
@@ -169,6 +172,12 @@ export default function StationPage() {
    * tráfico muerto.
    */
   const picking = useSignalPicks(channel, tools.picking ? wave.window : null);
+
+  // La conversación de la ventana. Sigue a wave.window (la vigente, con
+  // zoom incluido): el hilo lista por SOLAPAMIENTO en el backend, así un
+  // ajuste fino de ventana no hace desaparecer los mensajes.
+  const windowComments = useWindowComments(channel, wave.window);
+  const { user: authUser } = useAuth();
   const [armedPhase, setArmedPhase] = useState<PickPhase | null>(null);
   const [pickNote, setPickNote] = useState('');
   const [pickMutationFailed, setPickMutationFailed] = useState(false);
@@ -505,6 +514,19 @@ export default function StationPage() {
                 onNoteChange={setPickNote}
                 exportVisible={tools.export}
                 onExport={handleExportPicks}
+              />
+            )}
+
+            {/* Conversación de la ventana: SIN gate de progresividad a
+                propósito — es colaboración, no una herramienta avanzada que
+                haya que ganarse. Solo pide sesión (toda la pantalla la pide). */}
+            {wave.window && (
+              <WindowCommentsPanel
+                comments={windowComments.comments}
+                status={windowComments.status}
+                currentUserEmail={authUser?.email ?? null}
+                onSend={windowComments.addComment}
+                onDelete={windowComments.removeComment}
               />
             )}
 

@@ -237,6 +237,36 @@ class SeismicAPI {
     await this.requestJSON<void>(`${this.picksBase(channel)}/${pickId}`, 'DELETE');
   }
 
+  private commentsBase(channel: string): string {
+    return `/stations/${encodeURIComponent(channel)}/comments`;
+  }
+
+  /** Hilo de conversación de la ventana (colaborativo: se ve el de todos). */
+  async getWindowComments(
+    channel: string,
+    window: { startMs: number; endMs: number },
+  ): Promise<WindowCommentsApiResponse> {
+    return this.fetchJSON<WindowCommentsApiResponse>(
+      `${this.commentsBase(channel)}${this.windowQuery(window)}`,
+    );
+  }
+
+  async createWindowComment(
+    channel: string,
+    window: { startMs: number; endMs: number },
+    body: string,
+  ): Promise<WindowCommentRecord> {
+    return this.requestJSON<WindowCommentRecord>(this.commentsBase(channel), 'POST', {
+      body,
+      window_start: new Date(window.startMs).toISOString(),
+      window_end: new Date(window.endMs).toISOString(),
+    });
+  }
+
+  async deleteWindowComment(channel: string, commentId: string): Promise<void> {
+    await this.requestJSON<void>(`${this.commentsBase(channel)}/${commentId}`, 'DELETE');
+  }
+
   /**
    * CSV de mediciones, ARMADO POR EL BACKEND (las derivadas salen de las
    * fórmulas de Python: el artefacto tiene que coincidir con la pantalla).
@@ -258,6 +288,20 @@ class SeismicAPI {
 }
 
 /** Un pick tal como lo serializa el backend (snake_case, patrón del resto de la API). */
+export interface WindowCommentRecord {
+  id: string;
+  channel: string;
+  window_start: string;
+  window_end: string;
+  body: string;
+  author_email: string;
+  created_at: string;
+}
+
+export interface WindowCommentsApiResponse {
+  comments: WindowCommentRecord[];
+}
+
 export interface PickApiRecord {
   id: string;
   channel: string;
