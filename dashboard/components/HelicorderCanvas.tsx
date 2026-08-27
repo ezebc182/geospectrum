@@ -34,8 +34,11 @@ import {
 import {
   DEFAULT_WINDOW_SECONDS,
   helicorderHitToWindow,
+  windowToRowSegments,
   type TimeWindow,
 } from '@/lib/helicorder-hit';
+import { sliceWaveformWindow } from '@/lib/waveform-slice';
+import { buildTracePolyline } from '@/lib/wave-trace-path';
 
 interface HelicorderCanvasProps {
   /** SCNL completo, ej. "IU.MAJO..BHZ". */
@@ -72,6 +75,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const MARGIN_LEFT = 56; // etiquetas de hora local
 const MARGIN_RIGHT = 56; // etiquetas UTC
 const TOTAL_MINUTES = 1440; // 24 h
+// Tamaño del preview flotante del hover (px del canvas interno).
+const PREVIEW_WIDTH = 220;
+const PREVIEW_HEIGHT = 72;
 
 export function HelicorderCanvas({
   channel,
@@ -94,6 +100,16 @@ export function HelicorderCanvas({
   // a pedir 24 h al backend: clipMult y barMult no cambian el dato, sólo cómo
   // se dibuja.
   const [waveform, setWaveform] = useState<WaveformResponse | null>(null);
+  // Hover: la ventana que un clic abriría + la posición CSS del cursor para
+  // ubicar el preview. El highlight va en un canvas OVERLAY aparte: repintar
+  // las 24 h (38k pares) en cada movimiento del mouse sería carísimo.
+  const [hover, setHover] = useState<{
+    window: TimeWindow;
+    cssX: number;
+    cssY: number;
+  } | null>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLCanvasElement>(null);
 
   // Efecto 1: traer el dato. Depende sólo de lo que cambia el dato.
   useEffect(() => {
@@ -235,6 +251,129 @@ export function HelicorderCanvas({
     // mueve, y sin ellas el slider no repintaría nunca.
   }, [waveform, timeChunkMinutes, width, height, clipMult, barMult]);
 
+  // Mismo cálculo que el dibujo: si acá se usaran 96 filas y el canvas dibujó
+  // 75, el clic/hover señalaría una fila distinta de la que el usuario ve.
+  // ANTES del return condicional: los dos efectos del hover lo usan y los
+  // hooks no pueden quedar detrás de un return (rules of hooks).
+  const drawnRows = waveform
+    ? rowsForWindow(
+        Date.parse(waveform.starttime),
+        Date.parse(waveform.endtime),
+        timeChunkMinutes,
+      ) || rowCount(TOTAL_MINUTES, timeChunkMinutes)
+    : 0;
+
+  /**
+   * Traduce un evento de mouse a la ventana que señala (clic y hover usan el
+   * MISMO mapeo: lo que se resalta es exactamente lo que se abriría). El
+   * cálculo vive en la lib pura `helicorder-hit`; acá sólo se resuelven las
+   * coordenadas relativas al canvas.
+   */
+  const windowAt = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ): { window: TimeWindow | null; cssX: number; cssY: number } | null => {
+    if (!waveform) return null;
+
+    // `clientX/Y` son de página: hay que restarles la posición del canvas. Y el
+    // canvas puede estar escalado por CSS, así que las coordenadas se llevan al
+    // sistema de `width`/`height` con el que se dibujó.
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+
+    const cssX = event.clientX - rect.left;
+    const cssY = event.clientY - rect.top;
+    const selected = helicorderHitToWindow({
+      x: (cssX * width) / rect.width,
+      y: (cssY * height) / rect.height,
+      width,
+      height,
+      marginLeft: MARGIN_LEFT,
+      marginRight: MARGIN_RIGHT,
+      rows: drawnRows,
+      timeChunkMinutes,
+      startMs: Date.parse(waveform.starttime),
+      windowSeconds: selectionWindowSeconds,
+    });
+    return { window: selected, cssX, cssY };
+  };
+
+  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onSelectWindow) return;
+    const hit = windowAt(event);
+    if (hit?.window) onSelectWindow(hit.window);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onSelectWindow) return;
+    const hit = windowAt(event);
+    if (!hit?.window) {
+      setHover(null);
+      return;
+    }
+    setHover({ window: hit.window, cssX: hit.cssX, cssY: hit.cssY });
+  };
+
+  // Efecto: highlight del fragmento hovereado en el canvas overlay. Se pinta
+  // en TODAS las franjas que la ventana cruza (cerca del borde son dos):
+  // resaltar solo la del cursor mentiría sobre qué abre el clic.
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+    if (!hover || !waveform || drawnRows <= 0) return;
+
+    const plotWidth = width - MARGIN_LEFT - MARGIN_RIGHT;
+    const rowHeight = height / drawnRows;
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.18)';
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.55)';
+    for (const seg of windowToRowSegments(hover.window, {
+      startMs: Date.parse(waveform.starttime),
+      timeChunkMinutes,
+      rows: drawnRows,
+    })) {
+      const x = MARGIN_LEFT + seg.fromFraction * plotWidth;
+      const w = Math.max(1, (seg.toFraction - seg.fromFraction) * plotWidth);
+      ctx.fillRect(x, seg.row * rowHeight, w, rowHeight);
+      ctx.strokeRect(x, seg.row * rowHeight, w, rowHeight);
+    }
+  }, [hover, waveform, drawnRows, width, height, timeChunkMinutes]);
+
+  // Efecto: el preview dibuja el RECORTE del dato ya cargado — cero red. La
+  // resolución es la del helicorder: orientación; el análisis fino es el clic.
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (!preview || !hover || !waveform) return;
+    const ctx = preview.getContext('2d');
+    if (!ctx) return;
+
+    const { width: pw, height: ph } = preview;
+    ctx.clearRect(0, 0, pw, ph);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, pw, ph);
+
+    const slice = sliceWaveformWindow(waveform, hover.window);
+    if (!slice) return;
+
+    let peak = 0;
+    for (let i = 0; i < slice.mins.length; i++) {
+      peak = Math.max(peak, Math.abs(slice.mins[i]), Math.abs(slice.maxs[i]));
+    }
+    const scale = (ph / 2 - 2) / (peak > 0 ? peak : 1);
+    const vertices = buildTracePolyline(slice.mins, slice.maxs);
+    const pairs = slice.mins.length;
+    ctx.strokeStyle = '#1d4ed8';
+    ctx.beginPath();
+    vertices.forEach((v, idx) => {
+      const x = (v.pair / Math.max(1, pairs - 1)) * pw;
+      const y = ph / 2 - v.value * scale;
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }, [hover, waveform]);
+
   if (status === 'noData' || status === 'failed') {
     return (
       <div
@@ -249,42 +388,6 @@ export function HelicorderCanvas({
     );
   }
 
-  /**
-   * Traduce el clic a una ventana y la delega. El cálculo vive en la lib pura
-   * `helicorder-hit`: acá sólo se resuelven las coordenadas relativas al canvas.
-   */
-  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onSelectWindow || !waveform) return;
-
-    // `clientX/Y` son de página: hay que restarles la posición del canvas. Y el
-    // canvas puede estar escalado por CSS, así que las coordenadas se llevan al
-    // sistema de `width`/`height` con el que se dibujó.
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-
-    const selected = helicorderHitToWindow({
-      x: ((event.clientX - rect.left) * width) / rect.width,
-      y: ((event.clientY - rect.top) * height) / rect.height,
-      width,
-      height,
-      marginLeft: MARGIN_LEFT,
-      marginRight: MARGIN_RIGHT,
-      // Mismo cálculo que el dibujo: si acá se usaran 96 filas y el canvas
-      // dibujó 75, el clic señalaría una fila distinta de la que el usuario ve.
-      rows:
-        rowsForWindow(
-          Date.parse(waveform.starttime),
-          Date.parse(waveform.endtime),
-          timeChunkMinutes,
-        ) || rowCount(TOTAL_MINUTES, timeChunkMinutes),
-      timeChunkMinutes,
-      startMs: Date.parse(waveform.starttime),
-      windowSeconds: selectionWindowSeconds,
-    });
-
-    if (selected) onSelectWindow(selected);
-  };
-
   return (
     <div className="relative rounded bg-white" style={{ width, height }}>
       <canvas
@@ -294,7 +397,37 @@ export function HelicorderCanvas({
         height={height}
         className={onSelectWindow ? 'block cursor-pointer' : 'block'}
         onClick={onSelectWindow ? handleClick : undefined}
+        onMouseMove={onSelectWindow ? handleMouseMove : undefined}
+        onMouseLeave={onSelectWindow ? () => setHover(null) : undefined}
       />
+      {/* Overlay del highlight: canvas aparte para no repintar 38k pares por
+          movimiento de mouse. pointer-events-none: los eventos son del de abajo. */}
+      {onSelectWindow && (
+        <canvas
+          data-testid="helicorder-hover-overlay"
+          ref={overlayRef}
+          width={width}
+          height={height}
+          className="pointer-events-none absolute inset-0"
+        />
+      )}
+      {hover && (
+        <div
+          data-testid="helicorder-hover-preview"
+          className="pointer-events-none absolute z-10 rounded border border-slate-300 bg-white p-1 shadow-lg"
+          style={{
+            left: Math.min(hover.cssX + 16, width - PREVIEW_WIDTH - 12),
+            top: Math.max(4, hover.cssY - PREVIEW_HEIGHT - 20),
+          }}
+        >
+          <canvas ref={previewRef} width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT} />
+          {/* Timestamps UTC crudos: no necesitan i18n. */}
+          <div className="mt-0.5 text-center font-mono text-[10px] leading-tight text-slate-600">
+            {new Date(hover.window.startMs).toISOString().slice(11, 19)}Z –{' '}
+            {new Date(hover.window.endMs).toISOString().slice(11, 19)}Z
+          </div>
+        </div>
+      )}
       {status === 'loading' && (
         <div
           data-testid="helicorder-loading"

@@ -92,3 +92,47 @@ export function helicorderHitToWindow(hit: HelicorderHit): TimeWindow | null {
 
   return { startMs: windowStart, endMs: windowEnd };
 }
+
+export interface RowSegment {
+  /** Índice de franja. */
+  row: number;
+  /** Fracciones 0..1 del ancho útil de la franja (el renderer las escala). */
+  fromFraction: number;
+  toFraction: number;
+}
+
+/**
+ * Los segmentos de franja que cubre una ventana — el highlight del hover.
+ *
+ * Contraparte de `helicorderHitToWindow`: aquella traduce píxel → ventana,
+ * esta traduce ventana → dónde pintarla. Una ventana centrada cerca del borde
+ * de franja cruza a la siguiente y produce DOS segmentos: resaltar solo la
+ * franja del cursor mentiría sobre qué abre el clic.
+ */
+export function windowToRowSegments(
+  window: TimeWindow,
+  layout: { startMs: number; timeChunkMinutes: number; rows: number },
+): RowSegment[] {
+  const { startMs, timeChunkMinutes, rows } = layout;
+  if (rows <= 0 || timeChunkMinutes <= 0) return [];
+
+  const chunkMs = timeChunkMinutes * 60_000;
+  const dataEndMs = startMs + rows * chunkMs;
+  // Recorte contra el dato: fuera de las franjas no hay nada que pintar.
+  const fromMs = Math.max(window.startMs, startMs);
+  const toMs = Math.min(window.endMs, dataEndMs);
+  if (toMs <= fromMs) return [];
+
+  const segments: RowSegment[] = [];
+  const firstRow = Math.floor((fromMs - startMs) / chunkMs);
+  const lastRow = Math.floor((toMs - startMs - 1) / chunkMs);
+  for (let row = firstRow; row <= lastRow; row++) {
+    const rowStartMs = startMs + row * chunkMs;
+    segments.push({
+      row,
+      fromFraction: Math.max(0, (fromMs - rowStartMs) / chunkMs),
+      toFraction: Math.min(1, (toMs - rowStartMs) / chunkMs),
+    });
+  }
+  return segments;
+}

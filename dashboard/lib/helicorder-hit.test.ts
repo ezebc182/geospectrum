@@ -113,3 +113,53 @@ describe('helicorderHitToWindow', () => {
     expect(w!.endMs).toBeLessThanOrEqual(T0 + 24 * 3_600_000);
   });
 });
+
+// =============================================================================
+// windowToRowSegments — el highlight del hover (contraparte de hitToWindow)
+// =============================================================================
+
+import { windowToRowSegments } from './helicorder-hit';
+
+describe('windowToRowSegments', () => {
+  // Franjas de 30 min (1800 s) arrancando en T0.
+  const T0 = Date.parse('2026-08-26T00:00:00Z');
+  const LAYOUT = { startMs: T0, timeChunkMinutes: 30, rows: 48 };
+  const sec = (s: number) => s * 1000;
+
+  it('una ventana dentro de una franja produce UN segmento con fracciones exactas', () => {
+    const segs = windowToRowSegments(
+      { startMs: T0 + sec(600), endMs: T0 + sec(720) },
+      LAYOUT,
+    );
+    expect(segs).toEqual([{ row: 0, fromFraction: 600 / 1800, toFraction: 720 / 1800 }]);
+  });
+
+  it('una ventana que cruza el borde de franja produce DOS segmentos', () => {
+    // 120 s centrados justo en el borde de la primera franja.
+    const segs = windowToRowSegments(
+      { startMs: T0 + sec(1740), endMs: T0 + sec(1860) },
+      LAYOUT,
+    );
+    expect(segs).toEqual([
+      { row: 0, fromFraction: 1740 / 1800, toFraction: 1 },
+      { row: 1, fromFraction: 0, toFraction: 60 / 1800 },
+    ]);
+  });
+
+  it('recorta contra los bordes del dato: nada antes de la primera franja', () => {
+    const segs = windowToRowSegments(
+      { startMs: T0 - sec(60), endMs: T0 + sec(60) },
+      LAYOUT,
+    );
+    expect(segs).toEqual([{ row: 0, fromFraction: 0, toFraction: 60 / 1800 }]);
+  });
+
+  it('ventana totalmente fuera del dato o degenerada: sin segmentos', () => {
+    expect(
+      windowToRowSegments({ startMs: T0 - sec(600), endMs: T0 - sec(300) }, LAYOUT),
+    ).toEqual([]);
+    expect(
+      windowToRowSegments({ startMs: T0 + sec(60), endMs: T0 + sec(60) }, LAYOUT),
+    ).toEqual([]);
+  });
+});

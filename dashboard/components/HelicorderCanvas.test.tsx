@@ -178,17 +178,24 @@ describe('HelicorderCanvas', () => {
       textBaseline: '',
       textAlign: '',
     };
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
-      ctx as unknown as CanvasRenderingContext2D,
-    );
+    // El spy es sobre el PROTOTYPE: sin restore se filtra a todos los tests
+    // siguientes con un ctx incompleto (mordió al agregar el overlay del
+    // hover, que llama clearRect y acá no existe).
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
 
-    renderHeli(
-      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
-    );
+    try {
+      renderHeli(
+        <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
+      );
 
-    await waitFor(() => expect(ctx.moveTo).toHaveBeenCalled());
-    const malos = coords.filter((c) => !Number.isFinite(c));
-    expect(malos, `${malos.length} coordenadas no finitas`).toHaveLength(0);
+      await waitFor(() => expect(ctx.moveTo).toHaveBeenCalled());
+      const malos = coords.filter((c) => !Number.isFinite(c));
+      expect(malos, `${malos.length} coordenadas no finitas`).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -317,5 +324,72 @@ describe('HelicorderCanvas — selección de ventana por clic', () => {
       startMs: esperado - 60_000,
       endMs: esperado + 60_000,
     });
+  });
+});
+
+describe('hover: preview con highlight del fragmento', () => {
+  const RECT = {
+    left: 0,
+    top: 0,
+    width: 900,
+    height: 620,
+    right: 900,
+    bottom: 620,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect;
+
+  async function renderListo(onSelectWindow = vi.fn()) {
+    renderHeli(
+      <HelicorderCanvas
+        channel="IU.MAJO..BHZ"
+        timeChunkMinutes={30}
+        width={900}
+        height={620}
+        onSelectWindow={onSelectWindow}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId('helicorder-loading')).toBeNull();
+    });
+    const canvas = screen.getByTestId('helicorder-canvas');
+    canvas.getBoundingClientRect = () => RECT;
+    return canvas;
+  }
+
+  it('mover el mouse sobre la señal muestra el preview del fragmento', async () => {
+    const canvas = await renderListo();
+    fireEvent.mouseMove(canvas, { clientX: 450, clientY: 300 });
+    expect(await screen.findByTestId('helicorder-hover-preview')).toBeTruthy();
+  });
+
+  it('salir del canvas esconde el preview', async () => {
+    const canvas = await renderListo();
+    fireEvent.mouseMove(canvas, { clientX: 450, clientY: 300 });
+    await screen.findByTestId('helicorder-hover-preview');
+    fireEvent.mouseLeave(canvas);
+    expect(screen.queryByTestId('helicorder-hover-preview')).toBeNull();
+  });
+
+  it('el margen de etiquetas no es señal: ahí no hay preview', async () => {
+    // x=10 cae en MARGIN_LEFT (56 px): mismo criterio que el clic, que ahí
+    // devuelve null en vez de inventar un instante.
+    const canvas = await renderListo();
+    fireEvent.mouseMove(canvas, { clientX: 10, clientY: 300 });
+    expect(screen.queryByTestId('helicorder-hover-preview')).toBeNull();
+  });
+
+  it('sin onSelectWindow (pantalla no interactiva) el hover no hace nada', async () => {
+    renderHeli(
+      <HelicorderCanvas channel="IU.MAJO..BHZ" timeChunkMinutes={30} width={900} height={620} />,
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId('helicorder-loading')).toBeNull();
+    });
+    const canvas = screen.getByTestId('helicorder-canvas');
+    canvas.getBoundingClientRect = () => RECT;
+    fireEvent.mouseMove(canvas, { clientX: 450, clientY: 300 });
+    expect(screen.queryByTestId('helicorder-hover-preview')).toBeNull();
   });
 });
