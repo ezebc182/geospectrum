@@ -28,8 +28,14 @@ const { paramsMock, activeAreaMock, catalogMock } = vi.hoisted(() => ({
   catalogMock: { current: [] as StationCatalogEntry[] },
 }));
 
+// searchParamsMock: MISMA referencia siempre, igual que paramsMock. Sin
+// start/end por default: el deep link del share es opt-in y estos tests
+// ejercitan la página "normal".
+const searchParamsMock = new URLSearchParams();
+
 vi.mock('next/navigation', () => ({
   useParams: () => paramsMock,
+  useSearchParams: () => searchParamsMock,
 }));
 
 // La ventana que el helicorder simulado "señala" va inline en el mock: `vi.mock`
@@ -290,6 +296,39 @@ describe('StationPage', () => {
       expect(seleccionadas[0].textContent).toMatch(/onda/i);
       // Y el helicorder se desmontó, así que no hay dos vistas compitiendo.
       expect(screen.queryByTestId('helicorder-canvas')).toBeNull();
+    });
+
+    it('un deep link ?start&end abre la pestaña Onda en esa ventana (share de rango)', async () => {
+      searchParamsMock.set('start', '2026-08-24T12:00:00Z');
+      searchParamsMock.set('end', '2026-08-24T12:10:00Z');
+      try {
+        renderPage();
+        await waitFor(() => expect(screen.getByTestId('wave-view')).toBeTruthy());
+        const seleccionadas = screen
+          .getAllByRole('tab')
+          .filter((b) => b.getAttribute('aria-selected') === 'true');
+        expect(seleccionadas[0].textContent).toMatch(/onda/i);
+      } finally {
+        // El mock es compartido por referencia: sin limpiar, el deep link se
+        // filtra a los tests siguientes.
+        searchParamsMock.delete('start');
+        searchParamsMock.delete('end');
+      }
+    });
+
+    it('un deep link inválido se ignora y la página queda como siempre', async () => {
+      searchParamsMock.set('start', 'ayer');
+      searchParamsMock.set('end', 'hoy');
+      try {
+        renderPage();
+        const seleccionadas = screen
+          .getAllByRole('tab')
+          .filter((b) => b.getAttribute('aria-selected') === 'true');
+        expect(seleccionadas[0].textContent).toMatch(/helicorder/i);
+      } finally {
+        searchParamsMock.delete('start');
+        searchParamsMock.delete('end');
+      }
     });
 
     it('la pestaña Onda sin ventana elegida explica cómo abrir una', () => {

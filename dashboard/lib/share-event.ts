@@ -104,11 +104,23 @@ export async function shareEvent(
   messages: ShareMessages,
   url?: string,
 ): Promise<ShareOutcome> {
-  const text = buildShareText(evento, messages);
+  return shareTextContent(messages.title, buildShareText(evento, messages), url);
+}
 
+/**
+ * La mecánica genérica de compartir, separada del evento: la reusa el share
+ * de rango (share-range) y cualquier share futuro. Misma semántica que
+ * siempre: share sheet nativo si existe, portapapeles si no, AbortError =
+ * dismissed (cancelar no es un error).
+ */
+export async function shareTextContent(
+  title: string,
+  text: string,
+  url?: string,
+): Promise<ShareOutcome> {
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: messages.title, text, url });
+      await navigator.share({ title, text, url });
       return 'shared';
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return 'dismissed';

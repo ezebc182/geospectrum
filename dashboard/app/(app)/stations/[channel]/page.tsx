@@ -11,8 +11,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import { HelicorderCanvas } from '@/components/HelicorderCanvas';
@@ -46,6 +46,7 @@ import {
   saveHelicorderSettings,
 } from '@/lib/helicorder-settings';
 import { resolveStationLocation } from '@/lib/station-location';
+import { parseWindowParams } from '@/lib/share-range';
 import { StationMiniMap } from '@/components/StationMiniMap';
 import { useActiveArea } from '@/lib/use-active-area';
 
@@ -139,6 +140,22 @@ export default function StationPage() {
     setActiveTab('wave');
     bumpProgress('window');
   };
+
+  // Deep link de entrada (?start&end, el link que genera el share de rango):
+  // abre el wave view en esa ventana UNA vez al montar. Una ventana inválida
+  // en la URL se ignora y la página queda como siempre — parseWindowParams
+  // aplica los mismos límites que el endpoint, así el link jamás produce 422.
+  const searchParams = useSearchParams();
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current) return;
+    deepLinkApplied.current = true;
+    const shared = parseWindowParams(searchParams.get('start'), searchParams.get('end'));
+    if (shared) handleSelectWindow(shared);
+    // Sólo al montar: la ventana de la URL es el estado INICIAL, no un vínculo
+    // permanente — después manda la navegación del usuario.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** El zoom por arrastre también cuenta como ventana abierta. */
   const handleZoomWindow = (w: TimeWindow) => {
