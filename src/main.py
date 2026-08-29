@@ -75,6 +75,7 @@ from src.services.spectrogram_service import (
     station_catalog,
     LIVE_CANDIDATES_BY_CITY,
 )
+from src.services.ephemeral_channels import DEFAULT_TTL_SECONDS, request_channel_async
 from src.services.event_bus import RedisPubSubBus
 from src.services.event_store import EventStore
 from src.services.events_ingestor import EVENTS_CHANNEL
@@ -458,6 +459,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.fdsn_warmup_concurrency,
         )
 
+    # Alerta de disco de TimescaleDB (fix-disco-timescaledb, post caída del
+    # 2026-08-28). Mismo patrón que el warm-up: apagado por default, y sin
+    # ntfy_topic_url configurado no tiene destino para el aviso.
+    disk_alert_task: Optional[asyncio.Task] = None
+    disk_alert_stop = asyncio.Event()
+    if settings.disk_alert_enabled and settings.ntfy_topic_url:
+        from src.services.disk_alert import run_disk_alert_loop
+
+        disk_alert_task = asyncio.create_task(
+            run_disk_alert_loop(
+                db_pool,
+                volume_capacity_bytes=int(settings.disk_alert_volume_capacity_gb * 1024**3),
+                threshold_ratio=settings.disk_alert_threshold_ratio,
+                ntfy_topic_url=settings.ntfy_topic_url,
+                interval_seconds=settings.disk_alert_interval_seconds,
+                stop_event=disk_alert_stop,
+            )
+        )
+        logger.info(
+            "Alerta de disco activa: umbral %.0f%% de %.0f GB, cada %d s",
+            settings.disk_alert_threshold_ratio * 100,
+            settings.disk_alert_volume_capacity_gb,
+            settings.disk_alert_interval_seconds,
+        )
+    elif settings.disk_alert_enabled:
+        logger.warning(
+            "DISK_ALERT_ENABLED=true pero falta NTFY_TOPIC_URL — alerta de disco deshabilitada"
+        )
+
     yield
 
     if warmup_task is not None:
@@ -467,6 +497,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         warmup_task.cancel()
         try:
             await warmup_task
+        except asyncio.CancelledError:
+            pass
+
+    if disk_alert_task is not None:
+        disk_alert_stop.set()
+        disk_alert_task.cancel()
+        try:
+            await disk_alert_task
         except asyncio.CancelledError:
             pass
 
@@ -2299,6 +2337,38 @@ async def google_callback(
 # estación sin ofrecer como Vivo algo que lleva horas muerto.
 LIVE_FRESHNESS_MINUTES = 10
 
+# Canales del catálogo fijo (los que el ingestor YA suscribe al arrancar).
+# Uno fuera de este set necesita suscripción efímera (ephemeral_channels.py):
+# sin ella el ingestor nunca llamó select_stream() y el WebSocket queda mudo
+# para siempre, sin error, porque nadie publica en spec:<channel>.
+_CATALOG_CHANNELS: set[str] = {
+    seed_id for candidates in LIVE_CANDIDATES_BY_CITY.values() for seed_id in candidates
+}
+
+# Se renueva bien antes de vencer (DEFAULT_TTL_SECONDS=300): un ciclo de
+# renovación perdido por una latencia puntual de Redis no debe cortar la
+# suscripción mientras el WebSocket sigue conectado.
+_EPHEMERAL_RENEWAL_INTERVAL_SECONDS = DEFAULT_TTL_SECONDS / 3
+
+
+async def _renew_ephemeral_channel(channel: str) -> None:
+    """Mientras el WebSocket viva, mantiene viva la suscripción efímera.
+
+    El PRIMER pedido lo hace el caller (ws_spectrogram) antes de crear esta
+    task, de forma síncrona respecto al handler: si se dejara el primer
+    request_channel_async acá adentro, una desconexión inmediata (cliente que
+    abre y cierra al toque) podría cancelar la task antes de que el event loop
+    le diera su primera vuelta, dejando el canal SIN pedir nunca pese a haber
+    habido una conexión real. Este loop solo se ocupa de RENOVAR.
+
+    Cancelado desde afuera (el finally del endpoint) al desconectarse — a
+    partir de ahí nadie renueva y el TTL de Redis la deja caducar sola, que
+    es la baja del canal (ver ephemeral_channels.py).
+    """
+    while True:
+        await asyncio.sleep(_EPHEMERAL_RENEWAL_INTERVAL_SECONDS)
+        await request_channel_async(event_bus.client, channel)
+
 
 @app.websocket("/ws/spectrogram/{channel}")
 async def ws_spectrogram(websocket: WebSocket, channel: str) -> None:
@@ -2307,9 +2377,22 @@ async def ws_spectrogram(websocket: WebSocket, channel: str) -> None:
     (ej. "IU.MAJO.00.BHZ"). Las columnas las produce src/services/seedlink_ingestor.py
     (proceso separado) y las publica en Redis; acá solo hacemos fan-out a
     los navegadores conectados. Requiere que el ingestor esté corriendo.
+
+    Un canal FUERA del catálogo fijo (LIVE_CANDIDATES_BY_CITY) dispara una
+    suscripción efímera: el ingestor tarda hasta EPHEMERAL_POLL_INTERVAL_SECONDS
+    en detectarla y reconectar, así que las primeras columnas de un canal
+    nuevo pueden demorar unos segundos en llegar — no es un bug, es el
+    debounce que evita reconexiones en cascada.
     """
     await websocket.accept()
     logger.info("WebSocket conectado: /ws/spectrogram/%s", channel)
+
+    renewal_task: Optional[asyncio.Task] = None
+    if channel not in _CATALOG_CHANNELS:
+        logger.info("WebSocket: %s fuera del catálogo — suscripción efímera", channel)
+        await request_channel_async(event_bus.client, channel)
+        renewal_task = asyncio.create_task(_renew_ephemeral_channel(channel))
+
     try:
         async for column in event_bus.subscribe(f"spec:{channel}"):
             await websocket.send_json(column)
@@ -2317,6 +2400,13 @@ async def ws_spectrogram(websocket: WebSocket, channel: str) -> None:
         logger.info("WebSocket desconectado: /ws/spectrogram/%s", channel)
     except Exception:
         logger.warning("WebSocket error en /ws/spectrogram/%s", channel, exc_info=True)
+    finally:
+        if renewal_task is not None:
+            renewal_task.cancel()
+            try:
+                await renewal_task
+            except asyncio.CancelledError:
+                pass
 
 
 # =============================================================================

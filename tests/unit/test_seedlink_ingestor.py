@@ -313,6 +313,85 @@ def test_channels_from_catalog_incluye_respaldos_y_deduplica():
     ]
 
 
+# ---------------------------------------------------------------------------
+# Canales efímeros (ephemeral_channels.py): un canal fuera del catálogo fijo
+# pedido en Redis debe entrar en la PRÓXIMA reconexión, sin tocar la lista de
+# canales que ya llegaron por parámetro a run().
+# ---------------------------------------------------------------------------
+
+
+class _FakeEphemeralRedis:
+    """Imita lo mínimo de redis.Redis que usa ephemeral_channels: scan_iter."""
+
+    def __init__(self, keys: list[str]):
+        self._keys = keys
+
+    def scan_iter(self, match: str):
+        return iter(self._keys)
+
+
+def test_canal_efimero_se_suma_en_la_proxima_reconexion(monkeypatch):
+    creados: list[_FakeClient] = []
+
+    def _factory(*args, **kwargs):
+        client = _FakeClient()
+        creados.append(client)
+        return client
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.create_client", _factory)
+    fake_redis = _FakeEphemeralRedis(["ephemeral_channel:IU.MAJO.00.BHZ"])
+    ingestor = _ingestor_rapido(
+        ephemeral_redis=fake_redis, ephemeral_poll_interval_s=0.03
+    )
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ")]), daemon=True
+    )
+    thread.start()
+    deadline = time.monotonic() + 5
+    while len(creados) < 2 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    ingestor.stop()
+    thread.join(timeout=5)
+
+    assert len(creados) >= 2, "el poll de efímeros debió forzar una reconexión"
+    # El primer cliente NO tenía el canal efímero (llegó recién en el poll);
+    # el segundo sí, sumado al catálogo fijo que vino por parámetro.
+    assert creados[0].selected == [("UW", "LON", "HHZ")]
+    assert ("IU", "MAJO", "BHZ") in creados[1].selected
+    assert ("UW", "LON", "HHZ") in creados[1].selected
+
+
+def test_sin_cambios_en_efimeros_no_fuerza_reconexion(monkeypatch):
+    creados: list[_FakeClient] = []
+
+    def _factory(*args, **kwargs):
+        client = _FakeClient()
+        creados.append(client)
+        return client
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.create_client", _factory)
+    # Redis SIN canales efímeros: la lista vigente (vacía) no cambia nunca
+    # respecto al estado inicial (también vacío) — no hay reconexión que forzar.
+    # stale_after_s alto A PROPÓSITO: aísla la variable bajo prueba (el poll de
+    # efímeros) del watchdog de canales mudos, que en _ingestor_rapido por
+    # default reconectaría solo por falta de datos y falsearía el conteo.
+    fake_redis = _FakeEphemeralRedis([])
+    ingestor = _ingestor_rapido(
+        ephemeral_redis=fake_redis, ephemeral_poll_interval_s=0.03, stale_after_s=60
+    )
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ")]), daemon=True
+    )
+    thread.start()
+    time.sleep(0.3)  # varios ciclos de poll sin cambios
+    ingestor.stop()
+    thread.join(timeout=5)
+
+    assert len(creados) == 1, "sin cambios en Redis no debe reconectar de más"
+
+
 def test_compute_column_tiene_paridad_swarm():
     # Un seno de 22 Hz: el pipeline viejo (bandpass 0.1-20 + mascara a 20)
     # lo borraba. Con paridad SWARM (sin filtro, banda a 25 Hz, 20*log10 de

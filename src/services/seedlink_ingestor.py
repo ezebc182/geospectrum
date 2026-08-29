@@ -22,11 +22,14 @@ import asyncio
 import logging
 import threading
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 from obspy import Stream, Trace
 from obspy.clients.seedlink.easyseedlink import create_client
+
+if TYPE_CHECKING:
+    import redis
 
 from src.config.settings import settings
 from src.services.channel_watchdog import ChannelWatchdog
@@ -39,6 +42,7 @@ from src.services.swarm_spectra import (
     swarm_bin_samples,
     swarm_column_db,
 )
+from src.services.ephemeral_channels import list_requested_channels
 from src.services.event_bus import EventBus, RedisPubSubBus
 from src.services.spectrogram_service import LIVE_CANDIDATES_BY_CITY
 from src.services.timescale_service import TimescaleColumnWriter
@@ -69,6 +73,11 @@ GIVE_UP_AFTER_SECONDS = 900
 # Pausa entre ciclos de conexión.
 RECONNECT_DELAY_SECONDS = 5
 
+# Debounce del poll de canales efímeros (ephemeral_channels.py): agrupa
+# pedidos que lleguen en esta ventana en UNA sola reconexión, en vez de
+# cortar el streaming de los canales YA activos por cada pedido individual.
+EPHEMERAL_POLL_INTERVAL_SECONDS = 8
+
 
 class SeedLinkIngestor:
     """Consume 1+ canales SeedLink y publica columnas de espectrograma al bus."""
@@ -83,6 +92,8 @@ class SeedLinkIngestor:
         give_up_after_s: float = GIVE_UP_AFTER_SECONDS,
         reconnect_delay_s: float = RECONNECT_DELAY_SECONDS,
         metrics_store: Optional[MetricsStore] = None,
+        ephemeral_redis: Optional["redis.Redis"] = None,
+        ephemeral_poll_interval_s: float = EPHEMERAL_POLL_INTERVAL_SECONDS,
     ):
         self.bus = bus
         self.server = server
@@ -102,6 +113,13 @@ class SeedLinkIngestor:
         # Excepción que terminó el hilo de run(), si terminó por error. El
         # proceso principal la consulta para decidir su código de salida.
         self.failure: Optional[BaseException] = None
+        # Canales efímeros (ephemeral_channels.py): sin cliente Redis, el
+        # ingestor solo sirve el catálogo fijo — degrada solo, mismo criterio
+        # que metrics_store cuando Redis no está disponible.
+        self._ephemeral_redis = ephemeral_redis
+        self._ephemeral_poll_interval_s = ephemeral_poll_interval_s
+        self._base_channels: list[tuple[str, str, str]] = []
+        self._ephemeral_channels: list[tuple[str, str, str]] = []
 
     def _on_data(self, trace: Trace) -> None:
         """Callback de ObsPy — corre en el hilo bloqueante de client.run()."""
@@ -251,6 +269,41 @@ class SeedLinkIngestor:
             except Exception:
                 logger.exception("seedlink_ingestor: fallo terminando la conexión")
 
+    def _ephemeral_poll_loop(self) -> None:
+        """Hilo daemon: debounce de canales efímeros (ephemeral_channels.py).
+
+        Agrupa pedidos que lleguen dentro de `_ephemeral_poll_interval_s` en
+        UNA sola reconexión — sin esto, 5 usuarios abriendo 5 canales
+        distintos en 10s serían 5 reconexiones completas del catálogo fijo.
+        Mismo mecanismo de terminate() que _watchdog_loop, y misma advertencia:
+        la señal puede perderse, pero el próximo poll la reintenta solo.
+        """
+        while not self._stop.wait(self._ephemeral_poll_interval_s):
+            if self._ephemeral_redis is None:
+                continue
+            try:
+                current = sorted(list_requested_channels(self._ephemeral_redis))
+            except Exception:
+                logger.warning(
+                    "seedlink_ingestor: fallo consultando canales efímeros en Redis",
+                    exc_info=True,
+                )
+                continue
+            if current == sorted(self._ephemeral_channels):
+                continue
+            logger.info(
+                "seedlink_ingestor: canales efímeros cambiaron (%d -> %d) — forzando reconexión",
+                len(self._ephemeral_channels),
+                len(current),
+            )
+            self._ephemeral_channels = current
+            client = self._client
+            if client is not None:
+                try:
+                    client.conn.terminate()
+                except Exception:
+                    logger.exception("seedlink_ingestor: fallo terminando la conexión")
+
     def stop(self) -> None:
         """Corte ordenado (lo usan los tests; en producción el proceso vive)."""
         self._stop.set()
@@ -307,8 +360,10 @@ class SeedLinkIngestor:
                     )
                     self.metrics_store = None
 
-            channel_keys = [f"{net}.{sta}.{cha}" for net, sta, cha in channels]
+            self._base_channels = channels
             threading.Thread(target=self._watchdog_loop, daemon=True).start()
+            if self._ephemeral_redis is not None:
+                threading.Thread(target=self._ephemeral_poll_loop, daemon=True).start()
 
             started_at = datetime.now(timezone.utc)
             first_attempt = True
@@ -324,9 +379,15 @@ class SeedLinkIngestor:
                         f"{self.give_up_after_s:.0f}s pese a reconectar — me rindo "
                         "para que el fallo sea visible y el proceso se reinicie"
                     )
+                # Recalculado en CADA ciclo: un canal efímero pedido después
+                # del arranque solo entra en la próxima reconexión, que es
+                # justo lo que dispara _ephemeral_poll_loop al detectar el
+                # cambio.
+                active_channels = self._base_channels + self._ephemeral_channels
+                channel_keys = [f"{net}.{sta}.{cha}" for net, sta, cha in active_channels]
                 try:
                     client = create_client(self.server, on_data=self._on_data)
-                    for net, sta, cha in channels:
+                    for net, sta, cha in active_channels:
                         client.select_stream(net, sta, cha)
                         logger.info(
                             "seedlink_ingestor: suscripto a %s.%s.%s", net, sta, cha
@@ -436,8 +497,28 @@ if __name__ == "__main__":
         # de Redis se conecta dentro de run(), en el loop del ingestor.
         metrics_store = MetricsStore(settings.redis_url)
 
+        # Cliente Redis SÍNCRONO para el poll de canales efímeros (ver
+        # ephemeral_channels.py): corre en un hilo sin loop de asyncio propio,
+        # igual que _watchdog_loop. Best-effort: sin Redis, el ingestor sirve
+        # solo el catálogo fijo.
+        import redis as _redis_sync
+
+        try:
+            ephemeral_redis = _redis_sync.Redis.from_url(settings.redis_url)
+            ephemeral_redis.ping()
+        except Exception:
+            logger.warning(
+                "seedlink_ingestor: Redis síncrono no disponible — canales "
+                "efímeros deshabilitados, solo catálogo fijo",
+                exc_info=True,
+            )
+            ephemeral_redis = None
+
         ingestor = SeedLinkIngestor(
-            bus, column_writer=column_writer, metrics_store=metrics_store
+            bus,
+            column_writer=column_writer,
+            metrics_store=metrics_store,
+            ephemeral_redis=ephemeral_redis,
         )
         # run() es bloqueante y no-async: se corre en un hilo separado del
         # loop principal, que se queda vivo solo para mantener el proceso.
