@@ -83,6 +83,25 @@ class Settings(BaseSettings):
     fdsn_warmup_cache_ttl_seconds: int = 1200
     fdsn_warmup_concurrency: int = 3
 
+    # Alerta de disco de TimescaleDB (DISK_ALERT_ENABLED=true SOLO en el
+    # servicio api de Railway, mismo criterio que fdsn_warmup_enabled).
+    # Nace de la caída del 2026-08-28: la base se llenó y nadie se enteró
+    # hasta el crash-loop. Mide pg_database_size() contra el tope conocido
+    # del volumen (10 GB tras la migración 002) — no hay forma de leer el
+    # % de disco del contenedor de Postgres desde acá, corre en un servicio
+    # aparte. Sin ntfy_topic_url el chequeo queda deshabilitado igual que
+    # sin resend_api_key deshabilita EmailService: no tiene sentido activar
+    # el loop sin destino para el aviso.
+    disk_alert_enabled: bool = False
+    disk_alert_volume_capacity_gb: float = 10.0
+    # 80%: a ~0,9 GB/día medidos tras la migración 002, deja margen para
+    # investigar antes de llegar al 100% que causó el crash-loop.
+    disk_alert_threshold_ratio: float = 0.8
+    # 1 h: la base crece por chunks diarios, un ciclo más corto no aporta
+    # señal nueva y uno más largo demora demasiado el primer aviso.
+    disk_alert_interval_seconds: int = 3600
+    ntfy_topic_url: Optional[str] = None
+
     # Rate limiting
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60
