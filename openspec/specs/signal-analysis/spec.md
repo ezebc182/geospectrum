@@ -1,7 +1,8 @@
 # Signal Analysis Specification — Fórmulas sismológicas y lógica pura
 
-Dominio NUEVO: no existe `openspec/specs/signal-analysis/spec.md`, por lo que
-este documento es una spec COMPLETA (no delta), acotada al alcance de este change.
+Dominio incorporado por el change `analiticas-profesionales-senal` (archivado
+2026-08-28). No existía `openspec/specs/signal-analysis/spec.md` previo a este
+change, por lo que este documento nació como spec COMPLETA (no delta).
 
 ## Purpose
 
