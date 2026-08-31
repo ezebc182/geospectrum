@@ -228,7 +228,7 @@ async def test_main_no_arranca_el_loop_si_watchdog_enabled_es_false(monkeypatch)
         )
 
     monkeypatch.setattr(watchdog_module, "run_watchdog_loop", _fake_run_watchdog_loop)
-    monkeypatch.setattr(watchdog_module.asyncpg, "create_pool", _fail_if_called)
+    monkeypatch.setattr(watchdog_module.TimescaleColumnWriter, "connect", _fail_if_called)
     monkeypatch.setattr(watchdog_module.aioredis, "from_url", _fail_if_called)
     monkeypatch.setattr(watchdog_module.httpx, "AsyncClient", _fail_if_called)
 

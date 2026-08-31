@@ -33,12 +33,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import asyncpg
 import httpx
 import redis.asyncio as aioredis
 
 from src.config.settings import settings
 from src.services.seedlink_ingestor import DEFAULT_CHANNELS
+from src.services.timescale_service import TimescaleColumnWriter
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ async def check_ui(client: httpx.AsyncClient, url: str, timeout: float) -> Check
 
 
 async def check_seedlink(
-    pool: "asyncpg.Pool | object", stale_after_s: int, expected_channels: list[str]
+    pool: "TimescaleColumnWriter | object", stale_after_s: int, expected_channels: list[str]
 ) -> CheckResult:
     """Determina si seedlink_ingestor está caído por canales mudos.
 
@@ -363,7 +363,7 @@ async def evaluate_and_notify(
 
 async def run_watchdog_loop(
     client: httpx.AsyncClient,
-    pool: "asyncpg.Pool | object",
+    pool: "TimescaleColumnWriter | object",
     redis_client: Any,
     store: "WatchdogStateStore",
     settings_snapshot: dict,
@@ -477,10 +477,16 @@ async def _main() -> None:
         loop.add_signal_handler(sig, stop_event.set)
 
     client = httpx.AsyncClient()
-    # Pool de SOLO LECTURA: mismo DSN que TimescaleColumnWriter, sin permisos
-    # de escritura adicionales — el watchdog únicamente hace SELECT vía
-    # fetch_active_channels.
-    pool = await asyncpg.create_pool(settings.timescaledb_dsn)
+    # check_seedlink llama fetch_active_channels(), que vive en
+    # TimescaleColumnWriter (no en asyncpg.Pool crudo) — mismo objeto que usa
+    # seedlink_ingestor.py, mismo DSN, sin permisos de escritura adicionales:
+    # el watchdog únicamente hace SELECT a través de él. Pasar un
+    # asyncpg.Pool pelado acá revienta con
+    # "'Pool' object has no attribute 'fetch_active_channels'" (bug real
+    # visto en producción el 2026-08-31, nunca cubierto por los tests porque
+    # corrían con un stub que sí exponía el método).
+    column_writer = TimescaleColumnWriter(settings.timescaledb_dsn)
+    await column_writer.connect()
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
     await redis_client.ping()
 
@@ -511,7 +517,7 @@ async def _main() -> None:
     try:
         await run_watchdog_loop(
             client=client,
-            pool=pool,
+            pool=column_writer,
             redis_client=redis_client,
             store=store,
             settings_snapshot=settings_snapshot,
@@ -520,7 +526,7 @@ async def _main() -> None:
     finally:
         logger.info("watchdog: cerrando")
         await client.aclose()
-        await pool.close()
+        await column_writer.close()
         await redis_client.aclose()
 
 
