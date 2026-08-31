@@ -1,0 +1,72 @@
+# =============================================================================
+# Dockerfile para el watchdog externo de servicios (Railway)
+#
+# Mismo build que deploy/docker/Dockerfile (la API): comparte requirements y
+# código fuente. Existe como archivo aparte porque el watchdog es un PROCESO
+# SEPARADO del API (ver src/services/watchdog.py) y Railway elige el
+# Dockerfile por servicio vía RAILWAY_DOCKERFILE_PATH — la única diferencia
+# real es el CMD final. El proceso chequea cada N segundos la salud de api,
+# ui, seedlink y events, y notifica por ntfy en las transiciones up<->down.
+# Sin EXPOSE ni healthcheck HTTP: no escucha ningún puerto, solo hace
+# peticiones salientes y lee/escribe estado en Redis.
+# =============================================================================
+
+FROM python:3.11-slim AS base
+
+# Sin esto Python bufferiza stdout cuando no escribe a una TTY —o sea, siempre
+# dentro de un contenedor— y los logs se pierden si el proceso muere antes de
+# llenar el buffer. La API no lo sufre porque uvicorn hace flush por request;
+# este proceso puede morir en el arranque sin emitir una sola línea.
+ENV PYTHONUNBUFFERED=1
+
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app && \
+    chown appuser:appuser /app
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libpq5 \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# Stage: dependencies
+# =============================================================================
+
+FROM base AS dependencies
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# =============================================================================
+# Stage: production
+# =============================================================================
+
+FROM base AS production
+
+COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=dependencies /usr/local/bin /usr/local/bin
+
+COPY --chown=appuser:appuser src /app/src
+# No se necesita seismic-constants.json: watchdog.py no importa signal_picks
+# ni nada que lo cargue — verificado con rg el 2026-08-30. La cadena de
+# imports de watchdog.py (seedlink_ingestor -> channel_watchdog,
+# metrics_store, swarm_rsam, swarm_spectra, ephemeral_channels, event_bus,
+# spectrogram_service, timescale_service) no toca signal_picks.py, el único
+# módulo que carga ese JSON al importar.
+COPY --chown=appuser:appuser .env.example /app/.env.example
+
+USER appuser
+
+CMD ["python", "-m", "src.services.watchdog"]

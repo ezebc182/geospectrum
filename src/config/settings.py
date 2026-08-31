@@ -102,6 +102,52 @@ class Settings(BaseSettings):
     disk_alert_interval_seconds: int = 3600
     ntfy_topic_url: Optional[str] = None
 
+    # Watchdog de servicios en Railway (WATCHDOG_ENABLED=true SOLO en el
+    # servicio watchdog dedicado, mismo criterio opt-in que
+    # disk_alert_enabled/fdsn_warmup_enabled). Cubre el caso que NI Railway
+    # ni los procesos internos pueden ver por sí mismos: un componente que
+    # sigue VIVO pero dejó de producir algo útil ("falso vivo") — un
+    # seedlink_ingestor colgado sin levantar su RuntimeError, un
+    # events_ingestor sin heartbeat que nadie notaría hasta el próximo sismo,
+    # o el dashboard de Vercel caído sin que el backend se entere. Railway ya
+    # reinicia solo los procesos que crashean de verdad (ver
+    # events_ingestor.py:191-198); este servicio nuevo vigila lo que Railway
+    # no puede: el proceso vivo pero mudo. Topic ntfy dedicado, separado del
+    # de disk_alert, para poder apagar/mover una alerta sin tocar la otra.
+    watchdog_enabled: bool = False
+    watchdog_ntfy_topic_url: Optional[str] = None
+    watchdog_interval_seconds: int = 300
+    watchdog_api_url: str = "https://api.geospectrum.org/health"
+    # Optional[str] = None a propósito, sin default hardcodeado: sin
+    # configurar la URL pública de Vercel, ESE chequeo puntual se salta con
+    # un logger.info y no bloquea a los otros tres (mismo criterio que
+    # google_client_id opcional) — no tiene sentido inventar una URL de
+    # ejemplo que nunca sería la real.
+    watchdog_ui_url: Optional[str] = None
+    watchdog_api_timeout_s: float = 10.0
+    watchdog_ui_timeout_s: float = 10.0
+    # 600 s (10 min) = 2 ciclos del watchdog, un valor PROPIO y explícito,
+    # distinto de las dos constantes internas de seedlink_ingestor.py. NO usa
+    # STALE_AFTER_SECONDS=300 (umbral de UN canal individual mudo, forzar
+    # reconexión — coincide con 1 solo ciclo del watchdog y confundiría una
+    # reconexión rutinaria con una caída real). NO usa
+    # GIVE_UP_AFTER_SECONDS=900 (umbral de "el ingestor se rinde y explota
+    # con RuntimeError" — usar el MISMO valor anularía el propósito del
+    # watchdog: el caso que debe cubrir es el "falso vivo", el proceso
+    # colgado que NUNCA llega a levantar esa excepción). 600s da margen a una
+    # reconexión SeedLink completa sin nunca coincidir con 1 ciclo, y alerta
+    # ANTES que el propio GIVE_UP_AFTER_SECONDS=900 (ver design.md, Decision
+    # "Umbral de seedlink_ingestor caído").
+    watchdog_seedlink_stale_after_seconds: int = 600
+    # TTL del heartbeat de events_ingestor en Redis: 3x el intervalo de
+    # escritura (watchdog_events_heartbeat_interval_seconds, ver más abajo),
+    # mismo margen 3x que ya usa fdsn_warmup entre ciclo y TTL de su caché.
+    watchdog_events_heartbeat_ttl_seconds: int = 180
+    # La ESCRIBE events_ingestor.py (no watchdog.py), pero se declara acá,
+    # en el mismo bloque watchdog_*, para no crear un Settings paralelo.
+    # 60 s coincide con el poll de USGS.
+    watchdog_events_heartbeat_interval_seconds: int = 60
+
     # Rate limiting
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 60

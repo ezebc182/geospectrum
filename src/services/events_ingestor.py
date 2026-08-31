@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 import asyncpg
+import redis.asyncio as aioredis
 
 from src.config.settings import settings
 from src.ingestors.emsc_listener import EMSCListener
@@ -43,6 +45,11 @@ logger = logging.getLogger(__name__)
 # vivas del proyecto).
 EVENTS_CHANNEL = "events:new"
 
+# Key de Redis que lee el watchdog (src/services/watchdog.py, check_events).
+# Con TTL: su ausencia (expiró o nunca se escribió) es la señal de "proceso
+# colgado". Ver openspec/changes/watchdog-servicios-railway/design.md.
+HEARTBEAT_KEY = "events_ingestor:heartbeat"
+
 
 class EventsIngestor:
     """
@@ -57,9 +64,23 @@ class EventsIngestor:
         bus: EventBus,
         store: EventStore,
         min_magnitude: Optional[float] = None,
+        redis_client: Optional[Any] = None,
     ) -> None:
+        """
+        `redis_client`: cliente `redis.asyncio` YA CONECTADO, usado
+        exclusivamente por `_heartbeat_loop` para que el watchdog externo
+        (src/services/watchdog.py) pueda detectar un proceso colgado sin
+        excepción. Es OPCIONAL (default None) a propósito: en producción el
+        `__main__` de este módulo siempre lo pasa conectado, pero un
+        `EventsIngestor` sin él sigue siendo válido (p. ej. en tests que no
+        les interesa el heartbeat) — si no hay cliente, `_heartbeat_loop` no
+        intenta escribir nada, solo lo loguea una vez y sigue vivo sin hacer
+        nada más en cada vuelta. Nunca debe interpretarse como "el heartbeat
+        se rompió": es un camino explícito y testeado.
+        """
         self._bus = bus
         self._store = store
+        self._redis_client = redis_client
         self.emsc = EMSCListener(on_event=self.handle_event)
         self.usgs = USGSPoller(on_event=self.handle_event, min_magnitude=min_magnitude)
         # Igual que SeedLinkIngestor.failure (:104): por qué murió, para que el
@@ -101,14 +122,79 @@ class EventsIngestor:
                 exc_info=True,
             )
 
+    async def _heartbeat_loop(
+        self,
+        interval_s: Optional[float] = None,
+        ttl_s: Optional[int] = None,
+    ) -> None:
+        """
+        Escribe `HEARTBEAT_KEY` en Redis cada `interval_s` segundos,
+        independiente de si hubo sismos nuevos — cubre explícitamente el
+        escenario de spec "Heartbeat expirado sin sismos nuevos en el
+        período": una calma sísmica real NUNCA debe leerse como proceso
+        caído.
+
+        Riesgo que este método existe para neutralizar (ver design.md,
+        Decision "Heartbeat como tarea paralela dentro del mismo gather()"):
+        esta corrutina corre DENTRO de `asyncio.gather()` junto a EMSC/USGS
+        en `run()`. Si propagara cualquier excepción que no sea
+        `asyncio.CancelledError`, `gather()` cancelaría las otras dos y
+        tumbaría la ingesta real por un simple fallo de Redis — exactamente
+        el incidente ya vivido en este proyecto ("el ingestor salía con exit
+        0"). Por eso el `try/except` envuelve ÚNICAMENTE la escritura
+        individual, nunca el `while` completo: un bug en el manejo del error
+        no puede sacar al loop de su ciclo.
+        """
+        interval = interval_s if interval_s is not None else (
+            settings.watchdog_events_heartbeat_interval_seconds
+        )
+        ttl = ttl_s if ttl_s is not None else settings.watchdog_events_heartbeat_ttl_seconds
+
+        if self._redis_client is None:
+            logger.warning(
+                "events_ingestor: heartbeat deshabilitado (sin redis_client) — "
+                "el watchdog no va a poder detectar si este proceso se cuelga"
+            )
+
+        while True:
+            if self._redis_client is not None:
+                try:
+                    await self._redis_client.set(
+                        HEARTBEAT_KEY,
+                        datetime.now(timezone.utc).isoformat(),
+                        ex=ttl,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Un fallo de Redis acá NUNCA debe tumbar EMSC/USGS. Se
+                    # loguea y se reintenta en la próxima vuelta — mismo
+                    # criterio que el fallo de publish() en handle_event.
+                    logger.warning(
+                        "events_ingestor: no se pudo escribir el heartbeat en Redis",
+                        exc_info=True,
+                    )
+            await asyncio.sleep(interval)
+
     async def run(self) -> None:
         """
-        Corre las dos fuentes en paralelo. Vuelve sólo si ambas terminaron, y
-        eso siempre es un fallo (ver el `raise` del __main__).
+        Corre las dos fuentes MÁS el heartbeat en paralelo. Vuelve sólo si
+        alguna de las tres terminó, y eso siempre es un fallo (ver el `raise`
+        del __main__).
+
+        `_heartbeat_loop()` va DENTRO del mismo gather() (no como Task
+        suelta): así queda sujeta al mismo ciclo de vida que EMSC/USGS y
+        cualquier excepción no atrapada sería visible acá en vez de perderse
+        en silencio como unhandled exception de una Task sin await. Pero
+        `_heartbeat_loop()` está diseñada para jamás propagar salvo
+        CancelledError — ver su docstring — así que en la práctica esto
+        NUNCA debería ser lo que tumbe el gather(). NO se envuelve esta línea
+        en ningún try/except adicional: el try/except de abajo sigue siendo
+        el único punto de captura para un fallo REAL de ingesta.
         """
-        logger.info("events_ingestor: arrancando EMSC (WS) + USGS (poll 60 s)")
+        logger.info("events_ingestor: arrancando EMSC (WS) + USGS (poll 60 s) + heartbeat")
         try:
-            await asyncio.gather(self.emsc.run(), self.usgs.run())
+            await asyncio.gather(self.emsc.run(), self.usgs.run(), self._heartbeat_loop())
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
@@ -150,6 +236,15 @@ if __name__ == "__main__":
         await bus.connect()
         logger.info("events_ingestor: conectado a Redis en %s", settings.redis_url)
 
+        # Cliente Redis PROPIO para el heartbeat, no el del bus: RedisPubSubBus
+        # expone `.client` recién después de connect(), pero acoplar el
+        # heartbeat a esa instancia mezclaría el ciclo de vida del pub/sub
+        # (cierre, reconexión de subscribers) con el de una simple escritura
+        # SET con TTL. Mismo patrón que MetricsStore (src/services/metrics_store.py):
+        # una conexión redis.asyncio dedicada y liviana.
+        heartbeat_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await heartbeat_redis.ping()
+
         # El pool nace acá, dentro del loop que lo va a usar: la lección de
         # seedlink_ingestor.py:423-426.
         store = EventStore(settings.timescaledb_dsn)
@@ -174,7 +269,12 @@ if __name__ == "__main__":
             stats["ultimo_evento_utc"] or "ninguno",
         )
 
-        ingestor = EventsIngestor(bus, store, min_magnitude=settings.source_min_magnitude)
+        ingestor = EventsIngestor(
+            bus,
+            store,
+            min_magnitude=settings.source_min_magnitude,
+            redis_client=heartbeat_redis,
+        )
 
         try:
             await ingestor.run()
@@ -187,6 +287,7 @@ if __name__ == "__main__":
             )
             await store.close()
             await bus.close()
+            await heartbeat_redis.aclose()
 
         # run() no vuelve mientras todo va bien: que hayamos llegado acá
         # significa que las dos fuentes terminaron, y eso siempre es un fallo.
