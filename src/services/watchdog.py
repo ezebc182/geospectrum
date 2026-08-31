@@ -288,11 +288,20 @@ async def _notify_ntfy(
                 "disponible durante la caída)."
             )
 
+    # httpx exige headers en ASCII puro por defecto (RFC 7230) y `title`
+    # puede traer tildes de los labels de _NTFY_COMPONENT_INFO (ej. "sísmicos")
+    # o de "CAÍDO" — pasarlo como bytes UTF-8 evita el UnicodeEncodeError de
+    # normalize_header_value, mismo criterio que ya usa `content` acá abajo.
+    # ntfy soporta UTF-8 en el header Title (ver docs.ntfy.sh/publish).
     async with httpx.AsyncClient(timeout=10.0) as client:
         await client.post(
             ntfy_topic_url,
             content=body.encode("utf-8"),
-            headers={"Title": title, "Priority": priority, "Tags": tags},
+            headers={
+                "Title": title.encode("utf-8"),
+                "Priority": priority,
+                "Tags": tags,
+            },
         )
 
 

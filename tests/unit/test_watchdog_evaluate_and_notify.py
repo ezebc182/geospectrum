@@ -15,6 +15,7 @@ ntfy"), mockeando `httpx.AsyncClient.post` en vez de `_notify_ntfy` mismo.
 
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from src.services.watchdog import CheckResult, WatchdogStateStore, _notify_ntfy, evaluate_and_notify
@@ -180,10 +181,20 @@ _EXPECTED_NTFY_INFO = {
 
 @pytest.fixture
 def post_mock(monkeypatch):
-    """Mockea httpx.AsyncClient.post capturando (url, kwargs) de cada llamada."""
+    """Mockea httpx.AsyncClient.post capturando (url, kwargs) de cada llamada.
+
+    Construye un httpx.Request real con esos mismos kwargs ANTES de
+    guardarlos: eso fuerza la validación real de httpx sobre los headers
+    (normalize_header_value exige ASCII puro por defecto) — sin este paso,
+    un header con tildes pasaría el mock en verde pero reventaría en
+    producción con UnicodeEncodeError (bug real visto el 2026-08-31 en
+    _notify_ntfy, título "... sísmicos CAÍDO" con headers en str en vez de
+    bytes UTF-8).
+    """
     calls: list[tuple[str, dict]] = []
 
     async def _fake_post(self, url, **kwargs):
+        httpx.Request("POST", url, **kwargs)  # valida headers de verdad
         calls.append((url, kwargs))
 
     monkeypatch.setattr("httpx.AsyncClient.post", _fake_post)
@@ -200,7 +211,7 @@ async def test_notify_ntfy_arma_el_payload_correcto_por_componente_caida(compone
     url, kwargs = post_mock[0]
     assert url == NTFY_URL
     headers = kwargs["headers"]
-    assert headers["Title"] == f"GeoSpectrum watchdog: {label} CAÍDO"
+    assert headers["Title"] == f"GeoSpectrum watchdog: {label} CAÍDO".encode("utf-8")
     assert headers["Priority"] == "urgent"
     assert headers["Tags"] == f"warning,{tag}"
     assert "HTTP 500" in kwargs["content"].decode("utf-8")
@@ -216,7 +227,7 @@ async def test_notify_ntfy_arma_el_payload_correcto_por_componente_recuperacion(
     url, kwargs = post_mock[0]
     assert url == NTFY_URL
     headers = kwargs["headers"]
-    assert headers["Title"] == f"GeoSpectrum watchdog: {label} recuperado"
+    assert headers["Title"] == f"GeoSpectrum watchdog: {label} recuperado".encode("utf-8")
     assert headers["Priority"] == "default"
     assert headers["Tags"] == f"white_check_mark,{tag}"
     body = kwargs["content"].decode("utf-8")
