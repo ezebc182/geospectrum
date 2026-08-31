@@ -325,19 +325,26 @@ async def evaluate_and_notify(
     saber si ya se había notificado, se acepta el spam si es Redis caído), y
     NUNCA se notifica `up` (no hay "since" del cual calcular duración ni
     evidencia de que antes estuviera caído — sería una "recuperación
-    fantasma"). Si el resultado actual es `up`, se intenta persistir un
-    estado inicial (best-effort vía `set_state`, que ya degrada sola a
-    no-op si Redis está caído) para que la próxima comparación tenga un
-    "previous" real, sin que esto dispare ninguna notificación.
+    fantasma"). Sea cual sea el resultado actual, se persiste un estado
+    inicial (best-effort vía `set_state`, que ya degrada sola a no-op si
+    Redis está caído) para que la PRÓXIMA comparación tenga un "previous"
+    real — si no se persistiera también en la rama `down`, la primera
+    caída detectada de un componente (antes de que exista cualquier `up`
+    previo) dejaría a Redis sin estado escrito, y el siguiente ciclo
+    volvería a ver `previous is None`, repitiendo el camino de "primera
+    vez" indefinidamente sin notificar nunca la recuperación (bug real
+    visto en producción el 2026-08-31: seedlink cayó como primer chequeo
+    de su historia, notificó `down`, pero nunca notificó `up` al
+    recuperarse porque nunca se guardó el `since` de esa caída).
     """
     previous = await store.get_state(component)
     current_status = "up" if result.up else "down"
 
     if previous is None:
+        since = datetime.now(timezone.utc).isoformat()
+        await store.set_state(component, status=current_status, since=since)
         if current_status == "down":
             await _notify_ntfy(component, "down", ntfy_topic_url, extra={"detail": result.detail})
-        else:
-            await store.set_state(component, status="up", since=datetime.now(timezone.utc).isoformat())
         return
 
     previous_status = previous.get("status")

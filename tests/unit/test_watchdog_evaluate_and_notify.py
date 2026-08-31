@@ -119,6 +119,27 @@ async def test_redis_caido_no_notifica_recuperacion_fantasma(notify_mock):
     notify_mock.assert_not_awaited()
 
 
+async def test_primera_caida_de_la_historia_persiste_estado_para_poder_recuperar(notify_mock):
+    """Bug real visto en producción el 2026-08-31: si el PRIMER chequeo de
+    la vida de un componente (nunca hubo estado en Redis) ya viene `down`
+    (ej. seedlink cayó justo en el primer ciclo del watchdog), el estado
+    inicial también debe persistirse — si no, el próximo ciclo vuelve a ver
+    `previous is None` y jamás notifica la recuperación aunque el
+    componente ya esté `up` de nuevo.
+    """
+    store = _FakeStateStore(previous=None)  # nunca se chequeó este componente antes
+    result = CheckResult(up=False, detail="sin datos de 74/74 canales")
+
+    await evaluate_and_notify("seedlink", result, store, NTFY_URL)
+
+    notify_mock.assert_awaited_once()
+    assert len(store.set_state_calls) == 1
+    component, status, since = store.set_state_calls[0]
+    assert component == "seedlink"
+    assert status == "down"
+    assert since  # debe quedar un "since" real para poder calcular la duración después
+
+
 # ---------------------------------------------------------------------------
 # Contra un WatchdogStateStore real (no el doble), para blindar el contrato
 # get_state/set_state usado por evaluate_and_notify.
