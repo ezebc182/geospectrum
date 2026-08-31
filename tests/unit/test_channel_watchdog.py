@@ -83,6 +83,55 @@ def test_canal_que_sigue_mudo_tras_max_strikes_queda_en_cuarentena():
     assert not wd.should_reconnect(now=ahora)
 
 
+def test_quarantined_channels_expone_el_canal_tras_max_strikes():
+    """quarantined_channels() es lo que seedlink_ingestor.py usa para
+    filtrar active_channels de verdad — antes de esto, stale_channels()
+    dejar de reportar al canal NO evitaba que se lo siguiera re-suscribiendo
+    en cada reconexión disparada por otro motivo (caso IU.MAJO/GUMO/SNZO)."""
+    wd = _wd(stale_after_s=300, max_strikes=3)
+    ahora = T0
+    for _ in range(3):
+        ahora += timedelta(seconds=301)
+        wd.note_data("UW.LON.HHZ", now=ahora)
+        assert wd.quarantined_channels() == []
+        wd.note_reconnect(now=ahora)
+
+    assert wd.quarantined_channels() == ["JP.JYT.BHZ"]
+
+
+def test_quarantined_channels_vacio_sin_cuarentena():
+    wd = _wd(stale_after_s=300, max_strikes=3)
+    assert wd.quarantined_channels() == []
+
+
+def test_cuarentena_se_libera_cada_release_every_reconexiones():
+    """Reversibilidad: tras RELEASE_EVERY reconexiones reales, el canal
+    cuarentenado vuelve a tener chance (strikes a 0) — no queda abandonado
+    para siempre. Si sigue mudo, vuelve a acumular y cae en cuarentena de
+    nuevo solo; si el servidor lo revive, note_data lo saca para siempre."""
+    wd = _wd(stale_after_s=300, max_strikes=3)
+    ahora = T0
+    # 3 reconexiones para poner a JP.JYT en cuarentena.
+    for _ in range(3):
+        ahora += timedelta(seconds=301)
+        wd.note_data("UW.LON.HHZ", now=ahora)
+        wd.note_reconnect(now=ahora)
+    assert wd.quarantined_channels() == ["JP.JYT.BHZ"]
+
+    # Reconexiones 4..11: sigue en cuarentena, RELEASE_EVERY (12) no llegó.
+    for _ in range(ChannelWatchdog.RELEASE_EVERY - 3 - 1):
+        ahora += timedelta(seconds=301)
+        wd.note_data("UW.LON.HHZ", now=ahora)
+        wd.note_reconnect(now=ahora)
+    assert wd.quarantined_channels() == ["JP.JYT.BHZ"]
+
+    # La reconexión número RELEASE_EVERY libera a JP.JYT (strikes a 0).
+    ahora += timedelta(seconds=301)
+    wd.note_data("UW.LON.HHZ", now=ahora)
+    wd.note_reconnect(now=ahora)
+    assert wd.quarantined_channels() == []
+
+
 def test_un_dato_saca_al_canal_de_cuarentena():
     wd = _wd(stale_after_s=300, max_strikes=1)
     ahora = T0 + timedelta(seconds=301)

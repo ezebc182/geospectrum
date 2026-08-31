@@ -383,7 +383,31 @@ class SeedLinkIngestor:
                 # del arranque solo entra en la próxima reconexión, que es
                 # justo lo que dispara _ephemeral_poll_loop al detectar el
                 # cambio.
-                active_channels = self._base_channels + self._ephemeral_channels
+                candidate_channels = self._base_channels + self._ephemeral_channels
+                # Cuarentena REAL: un canal que agotó max_strikes (ej. el
+                # servidor ya no lo sirve — caso IU.MAJO/GUMO/SNZO del 31/8)
+                # no vuelve a re-suscribirse hasta que ChannelWatchdog lo
+                # libere (ver RELEASE_EVERY). Sin este filtro la cuarentena
+                # de ChannelWatchdog solo evitaba que ESE canal disparara la
+                # PRÓXIMA reconexión, pero cualquier otro motivo (otro canal
+                # mudo, un efímero nuevo) lo volvía a incluir igual.
+                quarantined = set(self.watchdog.quarantined_channels())
+                active_channels = [
+                    (net, sta, cha)
+                    for net, sta, cha in candidate_channels
+                    if f"{net}.{sta}.{cha}" not in quarantined
+                ]
+                if quarantined:
+                    excluded = quarantined & {
+                        f"{net}.{sta}.{cha}" for net, sta, cha in candidate_channels
+                    }
+                    if excluded:
+                        logger.warning(
+                            "seedlink_ingestor: excluyendo %d canal(es) en cuarentena "
+                            "de la resuscripción: %s",
+                            len(excluded),
+                            ", ".join(sorted(excluded)),
+                        )
                 channel_keys = [f"{net}.{sta}.{cha}" for net, sta, cha in active_channels]
                 try:
                     client = create_client(self.server, on_data=self._on_data)

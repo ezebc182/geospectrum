@@ -292,6 +292,71 @@ def test_canal_muerto_permanente_quema_strikes_solo_al_reconectar(monkeypatch):
     )
 
 
+def test_canal_en_cuarentena_no_se_resuscribe_por_otro_motivo(monkeypatch):
+    """EL BUG REAL (caso IU.MAJO/GUMO/SNZO del 31/8, servidor que ya no sirve
+    esas estaciones): un canal cuarentenado (max_strikes agotados) no debe
+    volver a aparecer en `selected` de una reconexión disparada por CUALQUIER
+    otro motivo — acá, un canal efímero nuevo. Antes de este fix, el filtro
+    de cuarentena solo evitaba que ESE canal disparara la PRÓXIMA reconexión,
+    pero `active_channels` seguía incluyéndolo siempre iba en `client.
+    select_stream(...)` de cada ciclo."""
+    creados: list[_FakeClient] = []
+
+    def _factory(*args, **kwargs):
+        client = _FakeClient()
+        creados.append(client)
+        return client
+
+    monkeypatch.setattr("src.services.seedlink_ingestor.create_client", _factory)
+    # UW.LON siempre vivo (nunca stale); JP.JYT nunca manda datos y stale_after_s
+    # bajo hace que agote max_strikes rápido con reconexiones reales.
+    fake_redis = _FakeEphemeralRedis([])
+    ingestor = _ingestor_rapido(
+        give_up_after_s=30, ephemeral_redis=fake_redis, ephemeral_poll_interval_s=0.03
+    )
+
+    # Mantiene vivo a UW.LON.HHZ manualmente para que JP.JYT sea el único
+    # mudo y las reconexiones sean atribuibles solo a él.
+    def _keep_uw_alive():
+        while not ingestor._stop.is_set():
+            ingestor.watchdog.note_data("UW.LON.HHZ", datetime.now(timezone.utc))
+            time.sleep(0.01)
+
+    keeper = threading.Thread(target=_keep_uw_alive, daemon=True)
+    keeper.start()
+
+    thread = threading.Thread(
+        target=lambda: ingestor.run([("UW", "LON", "HHZ"), ("JP", "JYT", "BHZ")]),
+        daemon=True,
+    )
+    thread.start()
+    # 1 inicial + 3 reconexiones ponen a JP.JYT en cuarentena.
+    deadline = time.monotonic() + 5
+    while len(creados) < 4 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert len(creados) >= 4, "JP.JYT debió agotar sus strikes y quedar en cuarentena"
+
+    # Ahora fuerzo una reconexión por OTRO motivo (canal efímero nuevo) y
+    # verifico que JP.JYT NO vuelva a re-suscribirse pese a estar en la
+    # lista de canales base que se pasó a run().
+    fake_redis._keys = ["ephemeral_channel:IU.MAJO.00.BHZ"]
+    deadline = time.monotonic() + 5
+    while len(creados) < 5 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    ingestor.stop()
+    keeper.join(timeout=2)
+    thread.join(timeout=5)
+
+    assert len(creados) >= 5, "el canal efímero debió forzar una reconexión más"
+    ultimo = creados[-1]
+    assert ("JP", "JYT", "BHZ") not in ultimo.selected, (
+        "el canal en cuarentena se re-suscribió igual pese a haber agotado "
+        "sus strikes — la cuarentena no está siendo respetada"
+    )
+    assert ("UW", "LON", "HHZ") in ultimo.selected
+    assert ("IU", "MAJO", "BHZ") in ultimo.selected
+
+
 # ---------------------------------------------------------------------------
 # Derivación de suscripciones del catálogo multi-candidata: el ingestor debe
 # suscribir TODAS las candidatas (primaria + respaldos), no solo la primaria
