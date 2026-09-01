@@ -475,3 +475,146 @@ hay alternativa técnica, se cargan sabiendo que son frágiles.
   resolver multi-servidor primero", no acotar al servidor actual). Alcance
   ya decidido: herramienta INTERNA para el equipo, no feature de usuario
   final — reduce mucho el trabajo de filtrado/UI cuando se retome.
+
+## Verificación completa (Fase 1 de mega-wall-estaciones-cuaderno)
+
+**Medido el 2026-09-01 14:10 UTC** contra `rtserve.earthscope.org:18000` y
+`geofon.gfz-potsdam.de:18000` (`INFO STREAMS` crudo por socket) + los dos
+metadatas FDSN de EarthScope y GEOFON. Herramienta: `scripts/station_survey/`.
+
+**Sanity check del parser previo a leer un solo resultado: 5/5.** `II.UOSS`
+3,7 min · `GE.KBU` 2,1 min · `WM.AVE` 2,0 min · `MN.TRI` 2,1 min (las cuatro
+vivas) y `WM.TIO` 5705 min = 3,96 días (muerta, esperada muerta). Sin este
+control no hay forma de distinguir un falso negativo del parser de una caída
+real — ya pasó una vez, casi se publica "Emiratos se cayó" como conclusión.
+
+Umbral de "viva": `end_time` a menos de 30 min. Los ceros se re-verificaron a
+60 min y a 24 h antes de darlos por ausencia real.
+
+**Resultado: 63 de 76 zonas con estación viva, 13 en cero.**
+
+| País | Zona | SEED ID | Servidor | Canal | Atraso | Veredicto |
+|---|---|---|---|---|---|---|
+| Argentina | Salta | `GE.SALTA` | geofon | HHZ | 3.4 min | Confirmada. **UNICA candidata** |
+| Argentina | San Juan | `WA.ZON` | rtserve | HHZ | 4.9 min | Confirmada. **UNICA candidata** |
+| Argentina | Mendoza | `C1.MT08` | rtserve | HHZ | 4.9 min | Confirmada. 4 candidatas |
+| Argentina | Ushuaia / Tierra del Fuego | `C1.MG01` | rtserve | BHZ | 4.9 min | Confirmada. **UNICA candidata** |
+| Chile | Zona N (Antofagasta) | `CX.PB02` | geofon | HHZ | 3.4 min | Confirmada. 17 candidatas |
+| Chile | Zona M (Valparaiso/Santiago) | `C1.BO04` | rtserve | HHZ | 4.9 min | Confirmada. 24 candidatas |
+| Chile | Zona S (Bio Bio/Los Lagos) | `C1.BI05` | rtserve | HHZ | 4.9 min | Confirmada. 13 candidatas |
+| Peru | Lima | `II.NNA` | rtserve | BHZ | 5.2 min | Confirmada. **UNICA candidata** |
+| Peru | otras | `II.NNA` | rtserve | BHZ | 5.2 min | Confirmada. **UNICA candidata** |
+| Ecuador | (cualquiera) | `EC.PULU` | rtserve | HHZ | 4.9 min | Confirmada. 8 candidatas |
+| Colombia | (cualquiera) | `CM.ARGC` | rtserve | HLZ | 4.9 min | Confirmada. 7 candidatas |
+| Venezuela | (cualquiera) | `IU.SDV` | rtserve | BHZ | 4.9 min | Confirmada. **UNICA candidata** |
+| Puerto Rico | Zona N | `PR.CG01` | rtserve | HNZ | 5.0 min | Confirmada. 14 candidatas |
+| Puerto Rico | Zona S | `PR.BRR1` | rtserve | HNZ | 5.0 min | Confirmada. 15 candidatas |
+| Nicaragua | (cualquiera) | `GE.BOAB` | geofon | HHZ | 3.4 min | Confirmada. 8 candidatas |
+| Costa Rica | (cualquiera) | `TC.QUEP` | rtserve | EHZ | 4.9 min | Confirmada. 11 candidatas |
+| Guatemala | (cualquiera) | — | — | — | — | SIN COBERTURA confirmada: los 7 hits del box son red SV (El Salvador), lat 13,7-14,4 / lon -89,2 a -89,8 |
+| Mexico | Zona N (Golfo California) | `MX.SRIG` | rtserve | BHZ | 5.0 min | FALSO NEGATIVO del filtro: Santa Rosalia (27.32,-112.24), Baja California Sur. El sitio no dice "Mexico" |
+| Mexico | Mexico DF | `G.UNM` | rtserve | HNZ | 4.9 min | Confirmada. **UNICA candidata** |
+| Mexico | Oaxaca | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| Mexico | Chiapas | `MX.CCIG` | rtserve | BHZ | 5.5 min | Confirmada. **UNICA candidata** |
+| USA CA | Capetown (Cape Mendocino) | `PB.B045` | rtserve | EHZ | 5.1 min | Confirmada. 3 candidatas |
+| USA CA | Mount Shasta | `PB.B039` | rtserve | EHZ | 5.0 min | Confirmada. **UNICA candidata** |
+| USA CA | Long Valley | `CI.MLAC` | rtserve | HNZ | 4.9 min | Confirmada. **UNICA candidata** |
+| USA CA | Salton | `CI.BC3` | rtserve | HHZ | 4.9 min | Confirmada. 13 candidatas |
+| USA | Oregon | `UO.SLPT` | rtserve | ENZ | 4.9 min | Confirmada. 197 candidatas |
+| USA WA | Mount Rainier | `UW.STAR` | rtserve | HNZ | 4.9 min | Confirmada. 34 candidatas |
+| USA WA | Volcan St. Helens | `PB.B201` | rtserve | EHZ | 4.9 min | Confirmada. 21 candidatas |
+| USA | Volcan 3 Sisters | `CC.PRLK` | rtserve | HHZ | 5.0 min | Confirmada. 5 candidatas |
+| USA | Texas | `TX.PH02` | rtserve | HNZ | 4.9 min | Confirmada. 24 candidatas |
+| USA | Yellowstone | `US.LKWY` | rtserve | HHZ | 5.0 min | Confirmada. 38 candidatas |
+| USA AK | Anchorage | `AK.ER02` | rtserve | HNZ | 4.9 min | Confirmada. 16 candidatas |
+| USA AK | Volcan Redoubt | `AV.RDJH` | rtserve | BHZ | 5.1 min | Confirmada. 8 candidatas |
+| USA AK | Volcan Shishaldin | `AV.SSLN` | rtserve | BHZ | 5.0 min | Confirmada. 5 candidatas |
+| USA AK | Volcan Okmok | `AV.OKCF` | rtserve | BHZ | 5.0 min | Confirmada. 9 candidatas |
+| USA AK | Volcan Gareloi | `AV.GALA` | rtserve | BHZ | 5.2 min | Confirmada. 4 candidatas |
+| USA HI | Mauna Loa | `PT.KHU` | rtserve | HHZ | 4.9 min | Confirmada. 15 candidatas |
+| USA HI | Kilauea | `HV.DEVL` | rtserve | HNZ | 5.0 min | Confirmada. 25 candidatas |
+| Canada | Mount Bella (BC) | `CN.BBB` | rtserve | HHZ | 4.9 min | Confirmada. 2 candidatas |
+| Islas | Santa Elena | `II.SHEL` | rtserve | BHZ | 5.1 min | Confirmada. **UNICA candidata** |
+| Islas | Azores | `PM.ROSA` | rtserve | BHZ | 5.3 min | Confirmada. 2 candidatas |
+| Islas | Canarias | `IU.MACI` | rtserve | BHZ | 5.0 min | Confirmada. **UNICA candidata** |
+| Portugal | Lisboa | `PM.PESTR` | rtserve | HHZ | 4.9 min | Confirmada. 2 candidatas |
+| Espana | (cualquiera) | `WM.CART` | geofon | BLZ | 3.4 min | Confirmada. 6 candidatas |
+| Espana | Granada | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| Francia | (cualquiera) | `G.SSB` | rtserve | HNZ | 4.9 min | Confirmada. 2 candidatas |
+| Italia | continental | `MN.TUE` | geofon | BHZ | 3.4 min | Confirmada. 5 candidatas |
+| Italia | Vesubio/Napoles | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| Italia | Etna/Sicilia | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| Grecia | continental | `GE.APE` | geofon | HHZ | 3.5 min | Confirmada. 5 candidatas |
+| Grecia | Dodecaneso | `GE.KARP` | geofon | BHZ | 4.0 min | Confirmada. 2 candidatas |
+| Islandia | (cualquiera) | — | — | — | — | II.BORG desaparecio del catalogo otra vez (cero ocurrencias). Confirmado a 24 h |
+| Turquia | Estambul | `2Q.BUAD` | geofon | HNZ | 3.4 min | Confirmada. **UNICA candidata** |
+| Turquia | Gaziantep | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| UAE | II.UOSS (Sharjah) | `II.UOSS` | rtserve | BHZ | 5.1 min | Confirmada. **UNICA candidata** |
+| Afganistan | Kabul | `GE.KBU` | geofon | SHZ | 3.6 min | Confirmada. **UNICA candidata** |
+| Pakistan | (cualquiera) | `II.NIL` | rtserve | BHZ | 5.2 min | Confirmada. **UNICA candidata** |
+| Nepal | Everest | `IO.EVN` | geofon | HHZ | 3.6 min | Confirmada. **UNICA candidata** |
+| India | (1 sola) | `IN.MNC` | rtserve | HHZ | 5.0 min | Confirmada. **UNICA candidata** |
+| China | (no oficial) | `IC.BJT` | rtserve | HHZ | 34.7 min | VIVA pero con 34,7 min de atraso (fuera del umbral de 30 min). Tambien IC.MDJ / IC.QIZ / IC.HIA |
+| Japon | Zona N | `JP.JMM` | rtserve | BHZ | 4.9 min | Confirmada. 6 candidatas |
+| Japon | Tokio | — | — | — | — | CERO REAL: cero a 30 min, 60 min y 24 h, con y sin filtro. Perdio su unica estacion |
+| Japon | Zona S | `JP.JMZ` | rtserve | BHZ | 5.0 min | Confirmada. 5 candidatas |
+| Rusia | Kamchatka | `IU.MA2` | rtserve | BHZ | 5.1 min | Confirmada. **UNICA candidata** |
+| Filipinas | (cualquiera) | `IU.DAV` | rtserve | LHZ | 8.3 min | Confirmada. **UNICA candidata** |
+| Indonesia | Sumatra | `GE.PMBI` | geofon | BHZ | 3.6 min | Confirmada. **UNICA candidata** |
+| Indonesia | Java | — | — | — | — | EXISTE SIN DATO: GE.BBJI/JAGI/SMRI/UGM en catalogo, las 4 con 6314 min (4,38 d). Feed BMKG cortado |
+| Indonesia | otras | `GE.SOEI` | geofon | HHZ | 3.5 min | Confirmada. 3 candidatas |
+| Nueva Zelanda | (cualquiera) | `NZ.BKZ` | rtserve | HNZ | 4.9 min | Confirmada. 9 candidatas |
+| Samoa | (cualquiera) | `IU.AFI` | rtserve | BHZ | 5.0 min | Confirmada. **UNICA candidata** |
+| Australia | Norte | `AU.BMEBF` | rtserve | HHZ | 4.9 min | Confirmada. 91 candidatas |
+| Australia | Sur | `AU.ARPS` | rtserve | BNZ | 4.9 min | Confirmada. 134 candidatas |
+| Marruecos | WM.AVE (Averroes) | `WM.AVE` | geofon | BHZ | 3.5 min | Confirmada. **UNICA candidata** |
+| Sudan | (sin servidor conocido) | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| Somalia | (sin servidor conocido) | — | — | — | — | SIN ESTACION VIVA. Confirmado a 24 h. |
+| Madagascar | (cualquiera) | `GE.VOI` | geofon | SHZ | 3.4 min | Confirmada. 3 candidatas |
+### Cierre de la Fase 1 — zonas sin dato vivo (tarea 1.6)
+
+Las 13 zonas en cero **no son todas el mismo caso**. Mezclarlas sería el error:
+una cosa es "no existe estación pública" y otra muy distinta "existe y hoy no
+publica". Solo la primera categoría es definitiva.
+
+**A. Sin servidor SeedLink público conocido (definitivo, no reabrir sin dato nuevo)**
+
+| Zona | Evidencia |
+|---|---|
+| Sudán | Box 8,7–22,2 / 21,8–38,6 vacío. Los "hits" previos caían en Etiopía |
+| Somalia | Box −1,7–12,0 / 40,9–51,4 vacío. Los "hits" previos caían en Yibuti |
+| Guatemala | 7 estaciones en el box, **todas red `SV`** (El Salvador), a ~150 km |
+| España / Granada | Cero a 24 h. España sí tiene cobertura vía `WM.CART` |
+| Italia / Vesubio-Nápoles | Cero a 24 h. Italia continental cubierta por `MN.TUE` |
+| Italia / Etna-Sicilia | Cero a 24 h. **Re-verificado**: sigue sin resultado, como en la medición previa |
+| Turquía / Gaziantep | Cero a 24 h. Turquía cubierta vía `2Q.BUAD` (Estambul) |
+| México / Oaxaca | Cero a 24 h, con y sin filtro por país |
+
+**B. Estación existente sin dato vivo (transitorio — volver a medir, NO descartar)**
+
+| Zona | Evidencia |
+|---|---|
+| Indonesia / Java | `GE.BBJI`, `GE.JAGI`, `GE.SMRI`, `GE.UGM` en catálogo, las **cuatro con 6314 min exactos** (4,38 d). Es el feed BMKG cortado en un punto, no cuatro equipos fallando: toda la red `GE` de Indonesia comparte el número. Excepciones vivas: `GE.PMBI` (Sumatra) y `GE.SOEI` (Timor). Ayer eran 3,54 d — sumó exactamente un día, el feed sigue congelado |
+| Islandia | `II.BORG` **desapareció del catálogo otra vez** (cero ocurrencias literales). Ya había desaparecido y vuelto en 20 min el 2026-08-31. Rotación, no baja |
+| Japón / Tokio | Cero a 30 min, 60 min y 24 h, con y sin filtro. Perdió su única estación. Japón N (`JP.JMM`) y S (`JP.JMZ`) siguen vivas |
+
+**C. Reclasificadas — el filtro automático mentía**
+
+| Zona | Corrección |
+|---|---|
+| México / Zona N | **TIENE cobertura**: `MX.SRIG` (Santa Rosalía, Baja California Sur, 27,32/−112,24) viva a 5,0 min. El filtro `["mexico"]` la descartó porque el SiteName dice "SANTA ROSALIA". Es el falso negativo que el README de `station_survey` predijo textualmente |
+| China | **TIENE cobertura**: red `IC` viva — `IC.BJT` (Beijing), `IC.MDJ`, `IC.QIZ`, `IC.HIA` — pero a **34,7 min**, fuera del umbral de 30 min. No es ausencia, es retardo. Responde la pregunta abierta del cuaderno ("no oficial, tiene el USGS"): sí hay vía redes internacionales |
+
+**D. Fragilidad — el riesgo real del catálogo**
+
+**23 de las 63 zonas cubiertas cuelgan de UNA sola candidata.** Entre ellas
+Salta, San Juan, Ushuaia, Lima, Venezuela, México DF, México/Chiapas,
+Marruecos, UAE, Afganistán, Pakistán, Nepal, India, Kamchatka, Samoa,
+Filipinas, Canarias, Santa Elena. Si esa estación rota fuera del catálogo —
+como acaba de pasar con `II.BORG` y con Tokio — la zona cae entera. Este es
+el argumento por el que `LIVE_CANDIDATES_BY_CITY` debe cargar **listas
+ordenadas de candidatas por zona**, no una estación por zona.
+
+**Advertencia de vigencia**: este relevamiento es una foto. Medido con 20 min
+de diferencia el 2026-08-31, `II.BORG` e `IN.MNC` desaparecieron y `IU.MAJO`,
+`IU.GUMO`, `IU.SNZO` volvieron. Re-medir antes de cargar el catálogo definitivo.

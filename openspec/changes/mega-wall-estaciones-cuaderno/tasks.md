@@ -77,7 +77,7 @@ resultado de esta fase (una tabla país→estación→servidor→verificado)
 alimenta directamente el catálogo de código de la Fase 2 — sin esta fase
 cerrada, la Fase 2 no tiene qué escribir.
 
-- [ ] 1.1 Verificar contra `rtserve.earthscope.org` (`INFO STREAMS`) las
+- [x] 1.1 Verificar contra `rtserve.earthscope.org` (`INFO STREAMS`) las
       entradas de **Sudamérica con zona/ciudad específica** del cuaderno que
       todavía NO están en `LIVE_CANDIDATES_BY_CITY`: Argentina (Salta, San
       Juan, Mendoza, Ushuaia), Chile (Zona N/Antofagasta ya cubierta
@@ -94,7 +94,7 @@ cerrada, la Fase 2 no tiene qué escribir.
       un encabezado `## Verificación completa (Fase 1 de mega-wall-estaciones-cuaderno)`.
       *Criterio de aceptación*: cada estación de esta lista tiene una fila con
       veredicto explícito, sin ninguna fila "pendiente" sin investigar.
-- [ ] 1.2 Verificar contra `rtserve.earthscope.org` **USA por región** que
+- [x] 1.2 Verificar contra `rtserve.earthscope.org` **USA por región** que
       todavía NO están en el catálogo: California (Capetown, Mount Shasta,
       Long Valley, Salton — Los Angeles/San Diego/San Francisco/Portland ya
       cubiertas), Washington (Mount Rainier, Volcán St. Helens, Volcán 3
@@ -109,7 +109,7 @@ cerrada, la Fase 2 no tiene qué escribir.
       incluyendo explícitamente el listado completo de las 46 estaciones de
       Yellowstone SOLO como referencia documentada (no verificadas una por
       una, no cargadas — ver Out of Scope del proposal).
-- [ ] 1.3 Verificar contra `rtserve.earthscope.org` **Canadá** (Mount Bella,
+- [x] 1.3 Verificar contra `rtserve.earthscope.org` **Canadá** (Mount Bella,
       Columbia Británica — nota "BELLA BC" tachada bajo Washington, la entrada
       válida es esta) y **Asia** con zona específica: Japón (Zona N, Tokio ya
       cubierta, Zonas S — nuevas además de las ya presentes), Rusia
@@ -117,7 +117,7 @@ cerrada, la Fase 2 no tiene qué escribir.
       Nepal (Everest, si existe una viva), China ("no oficial, tiene el
       USGS" — verificar si hay alguna vía redes internacionales tipo `IC`).
       Registrar en la misma tabla.
-- [ ] 1.4 Verificar contra `rtserve.earthscope.org` **Australia** (N y S) y
+- [x] 1.4 Verificar contra `rtserve.earthscope.org` **Australia** (N y S) y
       re-confirmar que las 12/19 entradas "(cualquiera)" ya listadas como
       confirmadas en el documento (España `WM.CART`, Francia `G.SSB`, Grecia
       `HL.ITM`, Islandia `II.BORG`, Ecuador `OV.VPCC`, Colombia `CM.RUS`,
@@ -127,7 +127,7 @@ cerrada, la Fase 2 no tiene qué escribir.
       esta verificación (re-chequeo rápido, no la investigación completa de
       nuevo — la fecha de la verificación original fue 2026-08-31, mismo día
       de esta fase salvo que haya pasado más tiempo entre sesiones).
-- [ ] 1.5 Verificar contra `geofon.gfz-potsdam.de` (`INFO STREAMS`) las
+- [x] 1.5 Verificar contra `geofon.gfz-potsdam.de` (`INFO STREAMS`) las
       entradas que `rtserve.earthscope.org` NO sirve, más allá de la ya
       confirmada `MN.TRI` (Trieste, Italia continental): revisar
       específicamente Venezuela y Guatemala en el catálogo GEOFON (quedaron
@@ -138,7 +138,7 @@ cerrada, la Fase 2 no tiene qué escribir.
       (68 estaciones de Indonesia — identificar si alguna es específicamente
       de la isla de Java, no solo "Indonesia en general"). Registrar
       resultado en la tabla.
-- [ ] 1.6 Cerrar la Fase 1 documentando explícitamente en
+- [x] 1.6 Cerrar la Fase 1 documentando explícitamente en
       `docs/superpowers/plans/2026-08-31-mega-wall-catalogo-cuaderno.md` los
       **5 países que quedan sin servidor SeedLink público conocido** tras
       TODA la verificación (UAE, Afganistán, Java específico si 1.5 no
@@ -148,6 +148,27 @@ cerrada, la Fase 2 no tiene qué escribir.
       `live-station-catalog`, Requirement "Verificación de disponibilidad...",
       escenario "País sin servidor SeedLink público conocido queda
       documentado, no bloquea el resto").
+
+
+**RESULTADO (2026-09-01 14:10 UTC)**: Fase 1 cerrada. 76 zonas medidas contra
+los dos servidores, **63 con estación viva, 13 en cero**. Tabla completa con
+veredicto por zona + el cierre de la 1.6 en
+`docs/superpowers/plans/2026-08-31-mega-wall-catalogo-cuaderno.md`, sección
+"Verificación completa (Fase 1 de mega-wall-estaciones-cuaderno)".
+Herramienta: `scripts/station_survey/` (ya existía, no se reescribió).
+Sanity check del parser previo a leer resultados: **5/5**.
+
+Hallazgos que cambian el catálogo respecto de lo asumido:
+- **México/Zona N SÍ tiene**: `MX.SRIG` viva a 5,0 min — el filtro por país la
+  descartaba (SiteName "SANTA ROSALIA"). Falso negativo, no ausencia.
+- **China SÍ tiene**: red `IC` (`IC.BJT`/`MDJ`/`QIZ`/`HIA`) viva a 34,7 min,
+  fuera del umbral de 30 min. Responde la pregunta abierta del cuaderno.
+- **Java existe sin dato**: `GE.BBJI`/`JAGI`/`SMRI`/`UGM` con 6314 min exactos
+  las cuatro (feed BMKG cortado). Ayer 3,54 d, hoy 4,38 d: sumó un día justo.
+- **Tokio cayó**: cero a 30 min, 60 min y 24 h. Perdió su única estación.
+- **`II.BORG` (Islandia) desapareció otra vez** del catálogo.
+- **23 de las 63 zonas cubiertas cuelgan de UNA sola candidata** — el argumento
+  duro para cargar listas ordenadas por zona, no una estación por zona.
 
 ---
 
