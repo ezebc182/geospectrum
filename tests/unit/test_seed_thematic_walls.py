@@ -211,3 +211,40 @@ def test_full_catalog_layout_por_region_respeta_max_wall_channels(wall):
         f"{wall['name']}: {total} canales, máximo {MAX_WALL_CHANNELS}. "
         f"Desglosar esta región en REGION_WALL_NAMES."
     )
+
+
+async def test_create_resuelve_el_dsn_de_la_instancia_de_settings(monkeypatch):
+    """La rama real de conexión de _create, que el resto de la suite no pisa.
+
+    Los imports de _create viven DENTRO de la función, así que 17 tests
+    verdes y un --dry-run validado no la ejecutan nunca: el primer intento
+    real en producción reventó con AttributeError porque el script importaba
+    el MÓDULO src.config.settings en vez de la INSTANCIA (el mismo import
+    que watchdog.py hace bien). Este test ejecuta _create de verdad, con la
+    base reemplazada por un fake, y compara el DSN contra el de la instancia
+    real — si el import vuelve a apuntar al módulo, esto revienta igual que
+    producción.
+    """
+    import asyncpg
+
+    from scripts.seed_thematic_walls import _create
+    from src.config.settings import settings as real_settings
+
+    captured = {}
+
+    class _FakePool:
+        async def close(self):
+            captured["closed"] = True
+
+    async def fake_create_pool(dsn, **kwargs):
+        captured["dsn"] = dsn
+        return _FakePool()
+
+    monkeypatch.setattr(asyncpg, "create_pool", fake_create_pool)
+
+    from uuid import UUID
+
+    await _create([], UUID("00000000-0000-0000-0000-000000000001"))
+
+    assert captured["closed"] is True
+    assert captured["dsn"] == real_settings.timescaledb_dsn

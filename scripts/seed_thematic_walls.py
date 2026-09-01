@@ -157,7 +157,9 @@ def _print_layout(wall: dict) -> None:
 async def _create(walls: list[dict], owner: UUID) -> None:
     import asyncpg
 
-    from src.config import settings
+    # La INSTANCIA, no el módulo src.config.settings — el módulo no tiene
+    # timescaledb_dsn y revienta con AttributeError (pasó en producción).
+    from src.config.settings import settings
 
     pool = await asyncpg.create_pool(settings.timescaledb_dsn, min_size=1, max_size=2)
     try:
