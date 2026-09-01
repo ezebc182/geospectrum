@@ -1,8 +1,11 @@
 """station_catalog expone TODAS las candidatas (75), no solo la ganadora
 por ciudad que devuelve resolve_live_catalog (27)."""
 
+import pytest
+
 from src.services.spectrogram_service import (
     LIVE_CANDIDATES_BY_CITY,
+    LIVE_CANDIDATES_GEOFON_BY_CITY,
     station_catalog,
 )
 
@@ -54,6 +57,47 @@ def test_desglosa_red_y_estacion_del_scnl():
     assert result[0]["network"] == "II"
     assert result[0]["station"] == "NNA"
     assert result[0]["city_id"] == "lima"
+
+
+@pytest.mark.parametrize(
+    "catalogo",
+    [LIVE_CANDIDATES_BY_CITY, LIVE_CANDIDATES_GEOFON_BY_CITY],
+    ids=["rtserve", "geofon"],
+)
+def test_live_candidates_geofon_by_city_tiene_la_misma_forma_que_rtserve(catalogo):
+    # Los dos catálogos alimentan las MISMAS funciones (channels_from_catalog,
+    # resolve_live_catalog, station_catalog), que hacen seed_id.split(".") y
+    # esperan 4 componentes. Una entrada mal formada en el de GEOFON revienta
+    # el ingestor nuevo en el arranque, no en un test.
+    assert catalogo, "el catálogo no puede estar vacío"
+    for city_id, candidates in catalogo.items():
+        assert isinstance(candidates, list) and candidates, (
+            f"{city_id}: las candidatas deben ser una lista no vacía"
+        )
+        for seed_id in candidates:
+            assert isinstance(seed_id, str), f"{city_id}: {seed_id!r} no es un string"
+            partes = seed_id.split(".")
+            assert len(partes) == 4, (
+                f"{city_id}: {seed_id!r} no tiene forma net.sta.loc.cha"
+            )
+            net, sta, _loc, cha = partes
+            # loc puede ser vacío ("MN.TRI..HHZ"); el resto no.
+            assert net and sta and cha, f"{city_id}: {seed_id!r} tiene campos vacíos"
+
+
+def test_ningun_candidato_geofon_usa_canal_de_1hz():
+    # LHZ/LLZ están VIVOS en GE.KBU y WM.AVE, pero son banda larga a 1 Hz: el
+    # espectrograma grafica hasta Nyquist, así que el eje de frecuencia moriría
+    # en 0,5 Hz. "Vivo" no es lo mismo que "útil" — este test es la regla que
+    # separa las dos cosas, para que un respaldo de 1 Hz no entre al catálogo
+    # creyendo que suma redundancia.
+    for city_id, candidates in LIVE_CANDIDATES_GEOFON_BY_CITY.items():
+        for seed_id in candidates:
+            banda = seed_id.split(".")[3][0]
+            assert banda != "L", (
+                f"{city_id}: {seed_id!r} es un canal de banda larga (1 Hz), "
+                "inservible para el espectrograma"
+            )
 
 
 def test_el_catalogo_real_expone_mas_canales_que_ciudades():
