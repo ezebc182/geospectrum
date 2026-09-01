@@ -125,6 +125,37 @@ LIVE_CANDIDATES_BY_CITY: Dict[str, List[str]] = {
     "wellington": ["IU.SNZO.00.BHZ", "NZ.BFZ.10.HHZ", "NZ.KHZ.10.HHZ"],
     "auckland": ["NZ.HIZ.10.HHZ", "NZ.OUZ.10.HHZ", "NZ.URZ.10.HHZ"],
     "christchurch": ["NZ.KHZ.10.HHZ", "NZ.RPZ.10.HHZ", "NZ.ODZ.10.HHZ"],
+    # ------------------------------------------------------------------
+    # Mega wall — subconjunto de PRUEBA DE HUMO (tareas 4.1/4.2, 2026-09-01).
+    # Una sola candidata por zona A PROPÓSITO: esta fase mide la carga
+    # agregada sobre el cliente SeedLink único de rtserve, no la resiliencia
+    # por zona — los respaldos se cargan en la Fase 6 con el catálogo
+    # completo. SEED IDs medidos contra INFO STREAMS el 2026-09-01 18:11 UTC
+    # (sanity check del parser 5/5): todas vivas con atraso < 4 min.
+    # Bajas respecto de la Fase 1 (el catálogo rota en minutos):
+    #   - Canarias: IU.MACI desapareció del catálogo (era única candidata).
+    #   - Puerto Rico: PR.CG01 desapareció; la reemplaza PR.AGPR (Aguadilla).
+    #   - Pakistán: II.NIL solo tiene vivo el LHZ de 1 Hz — afuera por la
+    #     misma regla de sample rate del catálogo GEOFON (muere en 0,5 Hz).
+    "sanjuan": ["WA.ZON..HHZ"],
+    "ushuaia": ["C1.MG01..BHZ"],
+    "merida": ["IU.SDV.00.BHZ"],
+    "aguadilla": ["PR.AGPR.00.HHZ"],
+    "santarosalia": ["MX.SRIG..BHZ"],
+    "tuxtla": ["MX.CCIG..BHZ"],
+    "mountshasta": ["PB.B039..EHZ"],
+    "longvalley": ["CI.MLAC..HHZ"],
+    "mountrainier": ["UW.STAR.01.EHZ"],
+    "sthelens": ["PB.B201..EHZ"],
+    "yellowstone": ["US.LKWY.00.HHZ"],
+    "texas": ["TX.PH02.00.HNZ"],
+    "redoubt": ["AV.RDJH..BHZ"],
+    "maunaloa": ["PT.KHU..HNZ"],
+    "kilauea": ["HV.DEVL..HHZ"],
+    "santaelena": ["II.SHEL.10.BHZ"],
+    "sharjah": ["II.UOSS.10.BHZ"],
+    "magadan": ["IU.MA2.10.BHZ"],
+    "davao": ["IU.DAV.00.BHZ"],
 }
 
 # Catálogo del SEGUNDO servidor SeedLink: geofon.gfz-potsdam.de (GFZ Potsdam).
@@ -162,6 +193,17 @@ LIVE_CANDIDATES_GEOFON_BY_CITY: Dict[str, List[str]] = {
     "trieste": ["MN.TRI..HHZ"],
     "kabul": ["GE.KBU..BHZ", "GE.KBU..SHZ"],
     "casablanca": ["WM.AVE..HHZ", "WM.AVE..BHZ"],
+    # Mega wall — subconjunto de PRUEBA DE HUMO (tareas 4.1/4.2, 2026-09-01).
+    # Mismo criterio que arriba: respaldo = otro canal de la MISMA estación,
+    # LHZ/LLZ afuera por sample rate. Medido contra INFO STREAMS el
+    # 2026-09-01 18:11 UTC, todas vivas con atraso < 6 min.
+    # OJO Palembang: el location importa — GE.PMBI.00.BHZ está viva y
+    # GE.PMBI..BHZ (location vacío, la misma estación) lleva 4,5 días muerta.
+    "salta": ["GE.SALTA..HHZ", "GE.SALTA..BHZ"],
+    "cartagena": ["WM.CART..HHZ", "WM.CART..BHZ"],
+    "naxos": ["GE.APE..HHZ", "GE.APE..BHZ"],
+    "palembang": ["GE.PMBI.00.BHZ", "GE.PMBI.10.BHZ"],
+    "madagascar": ["GE.VOI..SHZ", "GE.VOI..BHZ"],
 }
 
 def resolve_live_catalog(

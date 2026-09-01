@@ -390,7 +390,7 @@ redesplegado con el catálogo combinado, y existe un wall de prueba con ese
 subconjunto. Esta fase se OBSERVA en producción antes de decidir si avanzar
 a la Fase 6 — es un punto de parada explícito, no un trámite.
 
-- [ ] 4.1 Seleccionar el subconjunto de 20-30 estaciones para la prueba de
+- [x] 4.1 Seleccionar el subconjunto de 20-30 estaciones para la prueba de
       humo a partir del resultado verificado de la Fase 1: mezcla deliberada
       de estaciones `rtserve` nuevas (para medir el riesgo de saturación del
       cliente único) y estaciones GEOFON nuevas más allá de `MN.TRI` (para
@@ -399,13 +399,40 @@ a la Fase 6 — es un punto de parada explícito, no un trámite.
       en `openspec/changes/mega-wall-estaciones-cuaderno/design.md` o en un
       comentario en el propio commit — debe quedar trazable cuál fue el
       subconjunto de prueba, distinto del catálogo completo.
-- [ ] 4.2 Agregar el subconjunto elegido a `LIVE_CANDIDATES_BY_CITY` y
+
+      **HECHA (2026-09-01)**: 24 estaciones — 19 rtserve + 5 GEOFON, mezcla
+      deliberada. Selección re-MEDIDA el mismo día contra INFO STREAMS de
+      ambos servidores (sanity check del parser 5/5 antes de leer): todas
+      vivas con atraso < 6 min. La selección exacta y el porqué quedaron
+      documentados en los comentarios de los dos dicts en
+      `spectrogram_service.py` (trazable en el commit). Bajas respecto de la
+      Fase 1, prueba de que re-medir no era opcional: `IU.MACI` (Canarias,
+      única candidata) y `PR.CG01` desaparecieron del catálogo en un día —
+      PR se reemplazó por `PR.AGPR.00.HHZ`, Canarias se difiere a Fase 6;
+      `II.NIL` (Pakistán) solo tiene vivo el LHZ de 1 Hz → afuera por la
+      regla de sample rate. Hallazgo clave: `GE.PMBI.00.BHZ` viva y
+      `GE.PMBI..BHZ` (misma estación, location vacío) muerta hace 4,5 días —
+      el location code se mide, no se adivina.
+- [x] 4.2 Agregar el subconjunto elegido a `LIVE_CANDIDATES_BY_CITY` y
       `LIVE_CANDIDATES_GEOFON_BY_CITY` en `src/services/spectrogram_service.py`
       (aditivo — las 27 ciudades/74 canales actuales no se tocan, spec
       `live-station-catalog` Requirement "Catálogo ampliado es aditivo").
       Actualizar `CITY_REGIONS`/`CITY_LABELS` en `src/services/wall_service.py`
       con las ciudades nuevas de este subconjunto, para que `build_global_wall()`
       (el wall "Global" existente) no las deje caer en "OTROS".
+
+      **HECHA (2026-09-01)**: 19 zonas nuevas en `LIVE_CANDIDATES_BY_CITY`
+      (aditivo, las 27 ciudades/74 canales intactos) y 5 en
+      `LIVE_CANDIDATES_GEOFON_BY_CITY` (respaldo = otro canal de la misma
+      estación, patrón de la casa). `CITY_REGIONS`/`CITY_LABELS` con las 24
+      nuevas MÁS `trieste`/`kabul`/`casablanca` que la 4.3 había detectado
+      cayendo en "OTROS" con el id crudo; `santaelena` y `madagascar` van a
+      "OTROS" explícito a propósito. Verificado: 40 tests de las suites
+      afectadas verdes (las aserciones de cardinalidad son relativas al
+      dict), `ruff check` limpio en lo agregado (el F841 de la línea 766 y el
+      would-reformat son preexistentes, verificados contra HEAD con stash), y
+      `--dry-run` del seed valida los 7 walls con todas las ciudades
+      etiquetadas.
 - [x] 4.3 Crear `scripts/seed_thematic_walls.py` con el flag `--smoke-test`
       que exige `design.md` (Decision "La prueba de humo es un wall real..."):
       lee ambos catálogos, agrupa por `CITY_REGIONS` (reutilizando
@@ -450,7 +477,7 @@ a la Fase 6 — es un punto de parada explícito, no un trámite.
       (el catálogo real nunca se acerca a 120) — se agregó un test con catálogo
       fabricado de `MAX_WALL_CHANNELS + 5` ciudades que ahora lo caza.
       `ruff check` limpio. Suite: 759 passed, 9 failed preexistentes.
-- [ ] 4.5 En Railway: crear el servicio nuevo `seedlink-geofon`
+- [x] 4.5 En Railway: crear el servicio nuevo `seedlink-geofon`
       (`RAILWAY_DOCKERFILE_PATH=deploy/docker/Dockerfile.seedlink-geofon`,
       mismas variables `REDIS_URL`/`TIMESCALEDB_*` compartidas del proyecto,
       sin puerto expuesto). Redeploy del servicio `watchdog` existente (toma
@@ -458,6 +485,19 @@ a la Fase 6 — es un punto de parada explícito, no un trámite.
       `seedlink` existente (toma el subconjunto ampliado de 4.2). Documentar
       en el reporte de esta tarea la confirmación real de que los 3 servicios
       arrancaron sin excepciones en sus logs de Railway (no "debería andar").
+
+      **HECHA (2026-09-01, sesión anterior) con una salvedad**: el servicio
+      `seedlink-geofon` existe (creado desde el dashboard — la CLI no puede
+      conectar el repo a un Empty Service), arrancó sin excepciones,
+      ingiere, y se verificó EN LA BASE de producción que sus columnas
+      llegan. El `watchdog` se redeployó y reporta el catálogo combinado de
+      79 canales (74 + 5). **Salvedad**: el redeploy de `seedlink` con el
+      subconjunto ampliado de 4.2 quedó naturalmente para DESPUÉS de esta
+      tanda (4.1/4.2 se hicieron hoy): al mergear este commit hay que
+      redeployar `seedlink`, `seedlink-geofon` Y `watchdog` — este último
+      además levanta el fix e950dea, sin el cual su chequeo de seedlink
+      está ciego (comparaba formatos incompatibles, ver
+      `test_watchdog_checks.py`).
 - [ ] 4.6 Ejecutar `./venv/bin/python -m scripts.seed_thematic_walls --smoke-test`
       manualmente, UNA vez, contra el DSN de producción — crea el wall de
       prueba. Confirmar en la UI de walls que aparece y que sus tiras cargan

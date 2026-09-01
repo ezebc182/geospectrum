@@ -29,6 +29,23 @@ CITY_REGIONS: dict[str, str] = {
     "seattle": "NORTEAMÉRICA", "vancouver": "NORTEAMÉRICA", "anchorage": "NORTEAMÉRICA",
     "istanbul": "EUROPA-MEDITERRÁNEO",
     "wellington": "OCEANÍA", "auckland": "OCEANÍA", "christchurch": "OCEANÍA",
+    # Mega wall (Fase 4, 2026-09-01): las tres zonas GEOFON ya deployadas más
+    # el subconjunto de prueba de humo. santaelena y madagascar van a "OTROS"
+    # EXPLÍCITO: no hay región que les quepa y dejarlas caer al fallback
+    # escondería la decisión.
+    "salta": "SUDAMÉRICA", "sanjuan": "SUDAMÉRICA", "ushuaia": "SUDAMÉRICA",
+    "merida": "SUDAMÉRICA",
+    "aguadilla": "CENTROAMÉRICA Y CARIBE", "santarosalia": "CENTROAMÉRICA Y CARIBE",
+    "tuxtla": "CENTROAMÉRICA Y CARIBE",
+    "mountshasta": "NORTEAMÉRICA", "longvalley": "NORTEAMÉRICA",
+    "mountrainier": "NORTEAMÉRICA", "sthelens": "NORTEAMÉRICA",
+    "yellowstone": "NORTEAMÉRICA", "texas": "NORTEAMÉRICA",
+    "redoubt": "NORTEAMÉRICA", "maunaloa": "NORTEAMÉRICA", "kilauea": "NORTEAMÉRICA",
+    "trieste": "EUROPA-MEDITERRÁNEO", "cartagena": "EUROPA-MEDITERRÁNEO",
+    "naxos": "EUROPA-MEDITERRÁNEO", "casablanca": "EUROPA-MEDITERRÁNEO",
+    "kabul": "ASIA-PACÍFICO", "sharjah": "ASIA-PACÍFICO",
+    "magadan": "ASIA-PACÍFICO", "davao": "ASIA-PACÍFICO", "palembang": "ASIA-PACÍFICO",
+    "santaelena": "OTROS", "madagascar": "OTROS",
 }
 
 # Nombres de ciudad para la etiqueta (el frontend tiene su catálogo, pero el
@@ -43,6 +60,17 @@ CITY_LABELS: dict[str, str] = {
     "portland": "Portland", "seattle": "Seattle", "vancouver": "Vancouver",
     "anchorage": "Anchorage", "istanbul": "Istanbul", "wellington": "Wellington",
     "auckland": "Auckland", "christchurch": "Christchurch",
+    # Mega wall (Fase 4, 2026-09-01)
+    "salta": "Salta", "sanjuan": "San Juan", "ushuaia": "Ushuaia",
+    "merida": "Mérida", "aguadilla": "Aguadilla", "santarosalia": "Santa Rosalía",
+    "tuxtla": "Tuxtla Gutiérrez", "mountshasta": "Mount Shasta",
+    "longvalley": "Long Valley", "mountrainier": "Mount Rainier",
+    "sthelens": "St. Helens", "yellowstone": "Yellowstone", "texas": "Texas",
+    "redoubt": "Volcán Redoubt", "maunaloa": "Mauna Loa", "kilauea": "Kilauea",
+    "trieste": "Trieste", "cartagena": "Cartagena", "naxos": "Naxos",
+    "casablanca": "Casablanca", "kabul": "Kabul", "sharjah": "Sharjah",
+    "magadan": "Magadán", "davao": "Davao", "palembang": "Palembang",
+    "santaelena": "Santa Elena", "madagascar": "Madagascar",
 }
 
 GLOBAL_WALL_COLUMNS = 5  # como el muro de SPECTRONET: columnas verticales densas
