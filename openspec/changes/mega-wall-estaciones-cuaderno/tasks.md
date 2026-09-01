@@ -271,7 +271,7 @@ NO se modifica como clase en ningún punto de esta fase.
       — si `seedlink_ingestor.py` ya lo tiene por herencia del Dockerfile
       calcado, mantenerlo sin reabrir la pregunta; si no, omitirlo con el
       mismo comentario explicativo fechado).
-- [ ] 2.7 Verificar el build localmente:
+- [x] 2.7 Verificar el build localmente:
       `docker build -f deploy/docker/Dockerfile.seedlink-geofon -t geospectrum-seedlink-geofon:test .`
       desde la raíz del repo. Si Docker no está disponible en el entorno de
       ejecución de esta sesión, dejarlo explícito en el reporte de la tarea
@@ -279,14 +279,39 @@ NO se modifica como clase en ningún punto de esta fase.
       — "no verificado por Docker caído", nunca "debería funcionar por
       analogía"). No requiere `docker run`, solo que el build termine sin
       errores.
-      **BLOQUEADA (2026-08-31)**: Docker Desktop no arranca en esta máquina.
-      Verificado, no supuesto: `docker info` cuelga, y un test de integración
-      aislado devuelve `docker.errors.DockerException: Error while fetching
-      server API version: 503 Server Error ... ("Docker Desktop is unable to
-      start")`. Es la misma causa de los 333 errores de la suite, idénticos
-      antes y después de este change. El Dockerfile está escrito (tarea 2.6)
-      pero **su build NO fue verificado** — queda pendiente para cuando Docker
-      levante, ANTES del deploy a Railway.
+      **VERIFICADA (2026-09-01)**: Docker levantado por el usuario
+      (Server 29.7.2). El build **falla en arm64 y pasa en amd64**:
+
+      - `docker build` sin `--platform` en Mac Apple Silicon → **FALLA**:
+        `Failed to build obspy`, `gcc ... obspy/io/gcf/src/gcf_io.c` exit 1,
+        directorio `build/temp.linux-aarch64-cpython-311`. Causa verificada
+        contra PyPI: **obspy no publica NINGÚN wheel `linux_aarch64`** — ni
+        siquiera en 1.5.1, solo `manylinux_*_x86_64`. En ARM intenta compilar
+        de fuente y el toolchain del stage `dependencies` no alcanza.
+      - `docker build --platform linux/amd64` → **OK**, imagen de 728 MB.
+        Es la plataforma de Railway, así que el Dockerfile es correcto para
+        producción. **No requiere cambios.**
+
+      Nota para quien buildee desde una Mac con Apple Silicon: usar
+      `--platform linux/amd64` siempre, o el fallo de obspy se lee como un
+      Dockerfile roto cuando no lo está.
+
+      **Verificación extra (no pedida por la tarea, pero necesaria)**: el
+      comentario del propio Dockerfile avisa que `signal_picks.py` revienta AL
+      IMPORTAR si falta `dashboard/lib/seismic-constants.json` — un build verde
+      no prueba eso. Corrido dentro del contenedor:
+      `docker run --entrypoint python ... -c "import src.services.seedlink_ingestor_geofon"`
+      → **IMPORT OK**, `GEOFON_SERVER=geofon.gfz-potsdam.de`, 5 canales
+      cargados (`MN.TRI.HHZ`, `GE.KBU.BHZ/SHZ`, `WM.AVE.HHZ/BHZ`).
+
+      `diff` contra `Dockerfile.seedlink`: las únicas diferencias son los
+      comentarios y el `CMD`. Build idéntico al que ya corre en producción.
+
+      **Hallazgo lateral**: medido con dump fresco, `WM.AVE.BHZ` está a 397 min
+      (6,6 h) mientras los otros cuatro canales del catálogo están a 1,6-1,8
+      min. Es un canal caído real, no artefacto. **Cubierto por la cuarentena**
+      de `ChannelWatchdog` (`RELEASE_EVERY = 12`): entra en cuarentena y se
+      reintenta cada 12 reconexiones. No requiere cambio en el catálogo.
 - [x] 2.8 Correr `./venv/bin/python -m pytest tests/unit/test_station_catalog.py tests/unit/test_seedlink_ingestor_geofon.py -q`
       (o los archivos que correspondan según dónde quedaron los tests de
       2.2/2.4/2.5) y confirmar verde antes de avanzar a la Fase 3.
