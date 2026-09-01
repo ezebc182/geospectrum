@@ -116,23 +116,53 @@ class _FakePoolForFetchActiveChannels:
         return self._active_channels
 
 
+# expected_channels llega como clave de suscripción "NET.STA.CHAN" (así lo
+# arma build_expected_channels: el location code no se puede derivar de
+# antemano). La base, en cambio, guarda trace.id de obspy: SIEMPRE 4 partes
+# "NET.STA.LOC.CHAN", con location vacío incluido ("GE.KBU..BHZ"). Medido en
+# producción el 2026-09-01: 85 de 85 canales activos tenían location code.
+# Estos tests usan ESOS dos formatos reales; con strings fabricados iguales
+# de ambos lados el desajuste de formato es invisible y el test no puede
+# fallar.
+_EXPECTED = ["GE.KBU.BHZ", "IU.MAJO.BHZ", "MN.TRI.HHZ"]
+
+
 async def test_check_seedlink_todos_mudos_marca_down():
     pool = _FakePoolForFetchActiveChannels(active_channels=[])
-    result = await check_seedlink(pool, stale_after_s=600, expected_channels=["A1", "A2", "A3"])
+    result = await check_seedlink(pool, stale_after_s=600, expected_channels=_EXPECTED)
+    assert result.up is False
+    assert "3/3" in result.detail
+
+
+async def test_check_seedlink_activos_de_otro_catalogo_no_cuentan_como_vivos():
+    # Hay datos frescos en la tabla, pero de un canal que NO está en el
+    # catálogo esperado (p. ej. una suscripción efímera): los esperados
+    # siguen todos mudos y eso ES caída.
+    pool = _FakePoolForFetchActiveChannels(active_channels=["NZ.KHZ.10.HHZ"])
+    result = await check_seedlink(pool, stale_after_s=600, expected_channels=_EXPECTED)
     assert result.up is False
     assert "3/3" in result.detail
 
 
 async def test_check_seedlink_un_canal_mudo_otros_activos_marca_up():
-    pool = _FakePoolForFetchActiveChannels(active_channels=["A2", "A3"])  # falta A1
-    result = await check_seedlink(pool, stale_after_s=600, expected_channels=["A1", "A2", "A3"])
+    # Falta GE.KBU; los otros dos llegan como los guarda la base, con
+    # location code explícito y con location vacío.
+    pool = _FakePoolForFetchActiveChannels(active_channels=["IU.MAJO.00.BHZ", "MN.TRI..HHZ"])
+    result = await check_seedlink(pool, stale_after_s=600, expected_channels=_EXPECTED)
     assert result.up is True
+    assert "1/3" in result.detail
 
 
-async def test_check_seedlink_todos_activos_marca_up():
-    pool = _FakePoolForFetchActiveChannels(active_channels=["A1", "A2", "A3"])
-    result = await check_seedlink(pool, stale_after_s=600, expected_channels=["A1", "A2", "A3"])
+async def test_check_seedlink_todos_activos_en_formato_de_la_base_marca_up():
+    # El caso que el bug de formato rompía: todos los esperados están
+    # transmitiendo, pero la igualdad exacta de strings daba intersección
+    # vacía y reportaba caída total.
+    pool = _FakePoolForFetchActiveChannels(
+        active_channels=["GE.KBU..BHZ", "IU.MAJO.00.BHZ", "MN.TRI..HHZ"]
+    )
+    result = await check_seedlink(pool, stale_after_s=600, expected_channels=_EXPECTED)
     assert result.up is True
+    assert "3/3" in result.detail
 
 
 async def test_check_seedlink_catalogo_vacio_no_es_caida():
