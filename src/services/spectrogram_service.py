@@ -127,6 +127,43 @@ LIVE_CANDIDATES_BY_CITY: Dict[str, List[str]] = {
     "christchurch": ["NZ.KHZ.10.HHZ", "NZ.RPZ.10.HHZ", "NZ.ODZ.10.HHZ"],
 }
 
+# Catálogo del SEGUNDO servidor SeedLink: geofon.gfz-potsdam.de (GFZ Potsdam).
+#
+# Vive en un dict aparte y no como un campo extra del de arriba porque el
+# servidor NO es un atributo de la estación: es un atributo del PROCESO que la
+# consume. Cada ingestor de Railway arranca con su propio catálogo desde su
+# propio __main__ (seedlink_ingestor.py lee el de arriba,
+# seedlink_ingestor_geofon.py lee este) y ningún consumidor existente
+# (resolve_live_catalog, station_catalog, channels_from_catalog,
+# WallManager.build_global_wall) tiene que enterarse de que hay dos servidores:
+# todos reciben el dict por parámetro, no lo leen como global.
+#
+# Los dos catálogos son DISJUNTOS: se verificó que ninguna de estas estaciones
+# aparece en rtserve.earthscope.org, y que II.UOSS (Emiratos), que sí está en
+# rtserve, está ausente de GEOFON. No hay solapamiento que dedupear.
+#
+# Respaldos: acá las candidatas de una zona son OTROS CANALES de la misma
+# estación, no otras estaciones. No es una elección de diseño, es lo que hay:
+# el bounding box sobre el catálogo GEOFON vivo (2026-08-31) no devolvió una
+# segunda estación en ninguna de las tres zonas (el vecino más cercano de
+# WM.AVE es WM.SFS, que está en San Fernando, ESPAÑA, cruzando el estrecho).
+# Los canales sí son redundancia real: son digitalizadores y sensores distintos
+# del mismo sitio, y si el flujo HHZ se corta, BHZ sigue llegando.
+#
+# LHZ/LLZ están vivos en KBU y AVE y quedan AFUERA a propósito: son banda larga
+# a 1 Hz de muestreo, así que el espectrograma daría un eje de frecuencia que
+# muere en 0,5 Hz. El filtro es el sample rate, no el estar vivo.
+#
+# Trieste queda con UNA sola candidata, medido y a propósito: MN.TRI no tiene
+# segundo canal vertical ni segunda estación en la zona. Es la primera que se
+# va a apagar cuando GEOFON rote — riesgo conocido, no se rellena con una
+# estación de otro país para que la tabla se vea completa.
+LIVE_CANDIDATES_GEOFON_BY_CITY: Dict[str, List[str]] = {
+    "trieste": ["MN.TRI..HHZ"],
+    "kabul": ["GE.KBU..BHZ", "GE.KBU..SHZ"],
+    "casablanca": ["WM.AVE..HHZ", "WM.AVE..BHZ"],
+}
+
 def resolve_live_catalog(
     candidates_by_city: Dict[str, List[str]], active_channels: Optional[set]
 ) -> List[Dict[str, str]]:

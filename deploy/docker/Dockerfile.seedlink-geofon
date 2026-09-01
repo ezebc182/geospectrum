@@ -1,0 +1,75 @@
+# =============================================================================
+# Dockerfile para el ingestor SeedLink de GEOFON (Railway)
+#
+# Calco de deploy/docker/Dockerfile.seedlink: mismo build, mismas dependencias,
+# mismo código fuente. La ÚNICA diferencia es el CMD — apunta al __main__ de
+# src/services/seedlink_ingestor_geofon.py, que se conecta a
+# geofon.gfz-potsdam.de en vez de rtserve.earthscope.org.
+#
+# Existe como archivo aparte (y no como una env var en el otro servicio) para
+# que apagar este ingestor NO afecte al de rtserve: son dos servicios de
+# Railway independientes, cada uno con su RAILWAY_DOCKERFILE_PATH. Mismo patrón
+# que ya usan Dockerfile.watchdog y Dockerfile.events-worker.
+#
+# Sin EXPOSE ni healthcheck HTTP: este proceso no escucha ningún puerto,
+# consume SeedLink y escribe en TimescaleDB.
+# =============================================================================
+
+FROM python:3.11-slim AS base
+
+# Sin esto Python bufferiza stdout cuando no escribe a una TTY —o sea, siempre
+# dentro de un contenedor— y los logs se pierden si el proceso muere antes de
+# llenar el buffer. La API no lo sufre porque uvicorn hace flush por request;
+# este proceso puede morir en el arranque sin emitir una sola línea.
+ENV PYTHONUNBUFFERED=1
+
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app && \
+    chown appuser:appuser /app
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libpq5 \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# Stage: dependencies
+# =============================================================================
+
+FROM base AS dependencies
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# =============================================================================
+# Stage: production
+# =============================================================================
+
+FROM base AS production
+
+COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=dependencies /usr/local/bin /usr/local/bin
+
+COPY --chown=appuser:appuser src /app/src
+# Fuente única de constantes sismológicas compartida con el frontend: la carga
+# src/services/signal_picks.py AL IMPORTAR y revienta sin ella (a propósito —
+# mejor no arrancar que calcular una distancia con defaults). Verificado el
+# 2026-08-26: sin este COPY el api de Railway murió con FileNotFoundError.
+COPY --chown=appuser:appuser dashboard/lib/seismic-constants.json /app/dashboard/lib/seismic-constants.json
+COPY --chown=appuser:appuser .env.example /app/.env.example
+
+USER appuser
+
+CMD ["python", "-m", "src.services.seedlink_ingestor_geofon"]

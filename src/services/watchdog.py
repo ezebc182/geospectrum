@@ -38,6 +38,7 @@ import redis.asyncio as aioredis
 
 from src.config.settings import settings
 from src.services.seedlink_ingestor import DEFAULT_CHANNELS
+from src.services.seedlink_ingestor_geofon import DEFAULT_CHANNELS_GEOFON
 from src.services.timescale_service import TimescaleColumnWriter
 
 logger = logging.getLogger(__name__)
@@ -377,6 +378,26 @@ async def evaluate_and_notify(
         )
 
 
+def build_expected_channels() -> list[str]:
+    """Canales que el watchdog espera ver frescos en spectrogram_columns.
+
+    Son los de LOS DOS ingestores SeedLink concatenados: rtserve
+    (seedlink_ingestor.py) y GEOFON (seedlink_ingestor_geofon.py). Ambos
+    escriben en la misma tabla, así que la vigilancia tiene que cubrir a los
+    dos: un canal de GEOFON ausente de esta lista jamás se puede reportar como
+    mudo, porque nunca se lo esperó.
+
+    Se reutilizan las dos constantes tal cual, sin duplicar ninguna lista. El
+    formato es "NET.STA.CHAN" (sin location code), que es exactamente lo que
+    escribe seedlink_ingestor.py en spectrogram_columns.channel — un formato
+    distinto acá reportaría TODOS los canales como mudos aunque estén llegando.
+    """
+    return [
+        f"{net}.{sta}.{cha}"
+        for net, sta, cha in DEFAULT_CHANNELS + DEFAULT_CHANNELS_GEOFON
+    ]
+
+
 async def run_watchdog_loop(
     client: httpx.AsyncClient,
     pool: "TimescaleColumnWriter | object",
@@ -508,10 +529,7 @@ async def _main() -> None:
 
     store = WatchdogStateStore(redis_client)
 
-    # Catálogo de canales activos esperados: reutiliza DEFAULT_CHANNELS tal
-    # cual (sin duplicar la lista), mismo formato "NET.STA.CHAN" que escribe
-    # seedlink_ingestor.py:387 en spectrogram_columns.
-    expected_channels = [f"{net}.{sta}.{cha}" for net, sta, cha in DEFAULT_CHANNELS]
+    expected_channels = build_expected_channels()
 
     settings_snapshot = {
         "interval_seconds": settings.watchdog_interval_seconds,
