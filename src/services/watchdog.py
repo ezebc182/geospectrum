@@ -106,6 +106,28 @@ async def check_ui(client: httpx.AsyncClient, url: str, timeout: float) -> Check
     return CheckResult(up=True, detail="HTTP 200")
 
 
+def _to_subscription_key(channel: str) -> str:
+    """Reduce un channel de la base a la clave de suscripción "NET.STA.CHAN".
+
+    spectrogram_columns.channel guarda el trace.id de obspy, que SIEMPRE trae
+    location code — 4 partes, incluso con location vacío ("GE.KBU..BHZ",
+    "IU.MAJO.00.BHZ"; medido en producción 2026-09-01: 85 de 85 canales
+    activos). expected_channels, en cambio, viene en clave de suscripción de
+    3 partes, porque el location no se puede derivar de antemano (ver
+    spectrogram_service.py:45). Sin esta normalización la igualdad exacta de
+    strings da intersección vacía SIEMPRE y el chequeo queda ciego. Mismo
+    criterio que el watchdog interno del ingestor (seedlink_ingestor.py:132).
+
+    Cualquier otra forma (3 partes, o algo inesperado) se devuelve tal cual:
+    un string que no matchea nada es preferible a inventar una clave.
+    """
+    parts = channel.split(".")
+    if len(parts) == 4:
+        net, sta, _loc, cha = parts
+        return f"{net}.{sta}.{cha}"
+    return channel
+
+
 async def check_seedlink(
     pool: "TimescaleColumnWriter | object", stale_after_s: int, expected_channels: list[str]
 ) -> CheckResult:
@@ -115,6 +137,10 @@ async def check_seedlink(
     están mudos por encima de `stale_after_s`. Un subconjunto mudo, mientras
     quede al menos un canal activo, es comportamiento normal (SeedLink cae
     de a ratos por canal) y NO debe marcar `down`.
+
+    La comparación se hace en clave de suscripción "NET.STA.CHAN": los
+    channels de la base traen location code y acá se les quita con
+    `_to_subscription_key` antes de intersectar.
 
     Catálogo vacío (`expected_channels=[]`) es "no hay nada que chequear",
     NO "todo mudo" — se devuelve `up` sin tocar la base, para no confundir
@@ -130,7 +156,10 @@ async def check_seedlink(
     # garantiza que fetch_active_channels() nunca sea más exigente que
     # stale_after_s.
     minutes = math.ceil(stale_after_s / 60)
-    active_channels = set(await pool.fetch_active_channels(minutes=minutes))
+    active_channels = {
+        _to_subscription_key(channel)
+        for channel in await pool.fetch_active_channels(minutes=minutes)
+    }
     expected = set(expected_channels)
     muted = expected - active_channels
 
@@ -388,14 +417,13 @@ def build_expected_channels() -> list[str]:
     mudo, porque nunca se lo esperó.
 
     Se reutilizan las dos constantes tal cual, sin duplicar ninguna lista. El
-    formato es "NET.STA.CHAN" (sin location code), que es exactamente lo que
-    escribe seedlink_ingestor.py en spectrogram_columns.channel — un formato
-    distinto acá reportaría TODOS los canales como mudos aunque estén llegando.
+    formato es la clave de suscripción "NET.STA.CHAN" (sin location code),
+    porque el location no se puede derivar de antemano. OJO: NO es lo que
+    guarda la base — spectrogram_columns.channel lleva el trace.id de 4
+    partes con location — así que check_seedlink normaliza el lado activo
+    con _to_subscription_key antes de comparar.
     """
-    return [
-        f"{net}.{sta}.{cha}"
-        for net, sta, cha in DEFAULT_CHANNELS + DEFAULT_CHANNELS_GEOFON
-    ]
+    return [f"{net}.{sta}.{cha}" for net, sta, cha in DEFAULT_CHANNELS + DEFAULT_CHANNELS_GEOFON]
 
 
 async def run_watchdog_loop(
@@ -433,7 +461,9 @@ async def run_watchdog_loop(
             )
             await evaluate_and_notify("api", api_result, store, ntfy_topic_url)
         except Exception:
-            logger.warning("watchdog: chequeo de api falló, se reintenta en el próximo ciclo", exc_info=True)
+            logger.warning(
+                "watchdog: chequeo de api falló, se reintenta en el próximo ciclo", exc_info=True
+            )
 
         try:
             ui_url = settings_snapshot.get("ui_url")
@@ -443,7 +473,9 @@ async def run_watchdog_loop(
                 ui_result = await check_ui(client, ui_url, settings_snapshot["ui_timeout_s"])
                 await evaluate_and_notify("ui", ui_result, store, ntfy_topic_url)
         except Exception:
-            logger.warning("watchdog: chequeo de ui falló, se reintenta en el próximo ciclo", exc_info=True)
+            logger.warning(
+                "watchdog: chequeo de ui falló, se reintenta en el próximo ciclo", exc_info=True
+            )
 
         try:
             seedlink_result = await check_seedlink(
@@ -454,7 +486,8 @@ async def run_watchdog_loop(
             await evaluate_and_notify("seedlink", seedlink_result, store, ntfy_topic_url)
         except Exception:
             logger.warning(
-                "watchdog: chequeo de seedlink falló, se reintenta en el próximo ciclo", exc_info=True
+                "watchdog: chequeo de seedlink falló, se reintenta en el próximo ciclo",
+                exc_info=True,
             )
 
         try:

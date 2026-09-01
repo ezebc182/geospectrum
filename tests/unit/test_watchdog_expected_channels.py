@@ -23,10 +23,11 @@ def test_incluye_los_canales_de_los_dos_ingestores():
     assert len(expected) == len(DEFAULT_CHANNELS) + len(DEFAULT_CHANNELS_GEOFON)
 
 
-def test_usa_el_formato_NET_STA_CHAN_que_escribe_el_ingestor():
-    # seedlink_ingestor.py escribe "NET.STA.CHAN" en spectrogram_columns (sin
-    # location code). Un formato distinto acá hace que TODOS los canales se
-    # reporten mudos aunque estén llegando.
+def test_usa_la_clave_de_suscripcion_NET_STA_CHAN():
+    # La clave de suscripción es de 3 partes porque el location code no se
+    # puede derivar de antemano. NO es el formato de la base: la base guarda
+    # trace.id de 4 partes con location, y check_seedlink normaliza el lado
+    # activo con _to_subscription_key antes de comparar.
     for canal in build_expected_channels():
         partes = canal.split(".")
         assert len(partes) == 3, f"{canal!r} no tiene forma NET.STA.CHAN"
