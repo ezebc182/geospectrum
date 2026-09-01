@@ -73,3 +73,59 @@ Nota de método: entre cada mutación y su reversión se corrió
 Sin eso, mutar y revertir dentro del mismo segundo deja un `.pyc` del mismo
 tamaño y timestamp, y pytest ejecuta el bytecode viejo — una mutación que
 "no muta" no prueba nada.
+
+---
+
+## Fase 4/5 — `scripts/seed_thematic_walls.py` (2026-09-01)
+
+La convención de este change dice que el script de seed NO lleva mutación
+crítica. Se corrieron igual tres, y **dos de las tres encontraron un test que
+no podía fallar** — que es exactamente el motivo por el que se corren.
+
+### Mutación 1 (INVÁLIDA — no mutaba nada)
+
+Cambiar el fallback `REGION_WALL_NAMES.get(region, REGION_WALL_NAMES["OTROS"])`
+por un `continue` cuando la región no está mapeada.
+
+**Resultado: 9/9 verdes.** Parecía un test que no detecta nada, pero la
+mutación era el problema: **`"OTROS"` ESTÁ en `REGION_WALL_NAMES`**, así que
+`.get(region)` devolvía un nombre válido y el `continue` nunca se ejecutaba.
+Una mutación que no muta no prueba nada.
+
+### Mutación 1b (válida) — DETECTADA
+
+La misma, pero borrando además la entrada `"OTROS"` del dict, de modo que las
+ciudades sin región se descarten de verdad.
+
+**Resultado: 1 failed** —
+`test_no_pierde_ninguna_ciudad_entre_todos_los_walls`. Correcto: las tres
+ciudades GEOFON (`trieste`, `kabul`, `casablanca`) no están en `CITY_REGIONS`
+(verificado, no supuesto), así que ejercen el camino "OTROS" obligatoriamente.
+
+### Mutación 2 — NO detectada al principio, test agregado
+
+`if total > MAX_WALL_CHANNELS:` → `> MAX_WALL_CHANNELS * 100`.
+
+**Resultado inicial: 9/9 verdes.** El guard no estaba cubierto: el catálogo
+real tiene 7 canales en su wall más grande y nunca se acerca a 120, así que
+subir el límite no rompía nada. El fallo habría aparecido recién al insertar
+en producción con el catálogo completo.
+
+Se agregó `test_una_region_que_excede_el_limite_falla_al_armar_no_al_insertar`,
+que fabrica un catálogo de `MAX_WALL_CHANNELS + 5` ciudades.
+**Con el test nuevo: 1 failed.** Mutación detectada.
+
+### Mutación 3 — DETECTADA
+
+`candidates[0]` → `candidates[-1]` (usar el último candidato en vez del
+primario).
+
+**Resultado: 2 failed** — `test_incluye_una_tira_por_ciudad_de_ambos_catalogos`
+y `test_no_pierde_ninguna_ciudad_entre_todos_los_walls`.
+
+### Estado final
+
+Revertido con `diff` contra el backup (sin diferencias), **10/10 verdes**,
+`ruff check` limpio. Suite completa: 759 passed / 9 failed — los 9 son los
+preexistentes de `test_ws_events.py` (`Event loop is closed`), verificados
+antes y después.

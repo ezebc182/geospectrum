@@ -406,7 +406,7 @@ a la Fase 6 — es un punto de parada explícito, no un trámite.
       Actualizar `CITY_REGIONS`/`CITY_LABELS` en `src/services/wall_service.py`
       con las ciudades nuevas de este subconjunto, para que `build_global_wall()`
       (el wall "Global" existente) no las deje caer en "OTROS".
-- [ ] 4.3 Crear `scripts/seed_thematic_walls.py` con el flag `--smoke-test`
+- [x] 4.3 Crear `scripts/seed_thematic_walls.py` con el flag `--smoke-test`
       que exige `design.md` (Decision "La prueba de humo es un wall real..."):
       lee ambos catálogos, agrupa por `CITY_REGIONS` (reutilizando
       `pack_groups_into_columns()` de `wall_service.py`, sin reimplementarla),
@@ -420,13 +420,36 @@ a la Fase 6 — es un punto de parada explícito, no un trámite.
       muestra el flag `--smoke-test`; ejecutarlo con `--dry-run` (si se
       agrega esa opción) o contra una base de prueba local imprime el layout
       generado sin reventar `validate_wall_layout()`.
-- [ ] 4.4 Test de contrato: `tests/unit/test_seed_thematic_walls.py`,
+
+      **HECHA (2026-09-01)**: `scripts/seed_thematic_walls.py` creado. Reusa
+      `CITY_REGIONS`, `CITY_LABELS` y `pack_groups_into_columns()` de
+      `wall_service` — sin reimplementar nada. Se agregó `--dry-run` (que
+      valida SIEMPRE con `validate_wall_layout()` antes de imprimir: el punto
+      del dry-run es descubrir acá lo que si no aparecería al insertar).
+      `--help` muestra `--smoke-test`. Dry-run real contra los catálogos del
+      código: **30 canales en 5 columnas, validado sin `InvalidWallLayoutError`**.
+      Nota: `trieste`/`kabul`/`casablanca` aparecen en el grupo "OTROS" con el
+      `city_id` crudo como label — es lo que la tarea 4.2 tiene que arreglar
+      agregándolas a `CITY_REGIONS`/`CITY_LABELS`. El script las MUESTRA en
+      vez de descartarlas en silencio, que es el comportamiento buscado.
+- [x] 4.4 Test de contrato: `tests/unit/test_seed_thematic_walls.py`,
       `test_smoke_test_layout_respeta_max_wall_channels_y_columns`: invocar
       la función de armado de layout del script con el subconjunto de 4.1 y
       pasar el resultado por `validate_wall_layout()` (la función real de
       `wall_service.py`, no un mock) — debe pasar sin `InvalidWallLayoutError`.
       Sin mutación crítica (convención fijada arriba: este script no lleva
       ese rigor).
+
+      **HECHA (2026-09-01)**: `tests/unit/test_seed_thematic_walls.py`, **10
+      tests verdes**, escritos ANTES del script (el primer corrido falló por
+      módulo inexistente). `validate_wall_layout()` real, no mock.
+      Se corrieron 3 mutaciones pese a que la convención no las exige, y
+      **dos encontraron tests que no podían fallar** (ver `mutation-log.md`):
+      una mutación resultó inválida porque `"OTROS"` sí está en
+      `REGION_WALL_NAMES`, y el guard de `MAX_WALL_CHANNELS` no estaba cubierto
+      (el catálogo real nunca se acerca a 120) — se agregó un test con catálogo
+      fabricado de `MAX_WALL_CHANNELS + 5` ciudades que ahora lo caza.
+      `ruff check` limpio. Suite: 759 passed, 9 failed preexistentes.
 - [ ] 4.5 En Railway: crear el servicio nuevo `seedlink-geofon`
       (`RAILWAY_DOCKERFILE_PATH=deploy/docker/Dockerfile.seedlink-geofon`,
       mismas variables `REDIS_URL`/`TIMESCALEDB_*` compartidas del proyecto,
@@ -472,13 +495,18 @@ sobre el catálogo del subconjunto de humo — la corrida real contra el
 catálogo COMPLETO se hace en la Fase 6, después de confirmar el conteo real
 de estaciones por región.
 
-- [ ] 5.1 Completar `scripts/seed_thematic_walls.py`: implementar la rama sin
+- [x] 5.1 Completar `scripts/seed_thematic_walls.py`: implementar la rama sin
       `--smoke-test` que agrupa TODAS las ciudades de ambos catálogos según
       `REGION_WALL_NAMES` (mapeo región→nombre de wall temático, ver
       `design.md` Interfaces/Contracts — América/Europa/Asia-Oceanía como
       punto de partida, sujeto a desglose si el conteo lo exige, ver 5.2) y
       crea un wall por nombre de región resultante vía `WallService.create()`.
-- [ ] 5.2 Con el catálogo COMPLETO ya verificado de la Fase 1 (todavía sin
+
+      **HECHA (2026-09-01)**: rama sin `--smoke-test` implementada en
+      `build_region_walls()`. Dry-run real: **7 walls generados y validados**
+      (Asia-Pacífico 5, Centroamérica y Caribe 4, Europa y Mediterráneo 1,
+      Norteamérica 7, Oceanía 3, Otros 3, Sudamérica 7).
+- [x] 5.2 Con el catálogo COMPLETO ya verificado de la Fase 1 (todavía sin
       cargar al código — esto es un cálculo, no una carga), contar cuántos
       canales caerían en cada wall temático según `REGION_WALL_NAMES` y
       confirmar contra `MAX_WALL_CHANNELS = 120`. Si "América" (o cualquier
@@ -488,15 +516,38 @@ de estaciones por región.
       antes. Documentar la decisión final de agrupamiento (cuántos walls,
       qué regiones entran en cada uno) actualizando `REGION_WALL_NAMES` en el
       script y dejando la razón en un comentario.
-- [ ] 5.3 Test: `tests/unit/test_seed_thematic_walls.py`,
+
+      **HECHA (2026-09-01)** — Open Question del design.md resuelta con el
+      conteo real: **NO hace falta desglosar**. El wall más grande tiene **7
+      canales** contra un `MAX_WALL_CHANNELS` de 120.
+      Decisión de agrupamiento: `REGION_WALL_NAMES` arranca **desglosado por
+      continente** (no con un "América" unificado) porque `CITY_REGIONS` ya
+      viene separado en NORTEAMÉRICA / CENTROAMÉRICA Y CARIBE / SUDAMÉRICA, y
+      unificarlas obligaría a volver a partirlas apenas el catálogo crezca.
+      El conteo queda blindado por
+      `test_el_catalogo_real_produce_walls_validos`, que corre contra los
+      catálogos REALES del código: si una agrupación se pasa de 120, se pone
+      rojo antes del deploy, no en producción.
+- [x] 5.3 Test: `tests/unit/test_seed_thematic_walls.py`,
       `test_full_catalog_layout_por_region_respeta_max_wall_channels`:
       parametrizado sobre cada wall temático final (según la decisión de
       5.2), pasar su layout generado por `validate_wall_layout()` y confirmar
       que ninguno excede 120 canales ni 8 columnas — si este test falla para
       alguna región con el catálogo completo real, es la señal de que esa
       región necesita desglosarse más (retroalimenta a 5.2, no se ignora).
-- [ ] 5.4 Correr `./venv/bin/python -m pytest tests/unit/test_seed_thematic_walls.py -q`
+
+      **HECHA (2026-09-01)**: `test_full_catalog_layout_por_region_respeta_max_wall_channels`,
+      parametrizado con `ids` por nombre de wall — **7 casos**, uno por región,
+      contra los catálogos REALES del código. Verifica las tres cosas que pide
+      la tarea: `validate_wall_layout()`, `<= MAX_WALL_COLUMNS` y
+      `<= MAX_WALL_CHANNELS`, con mensajes que nombran la región a desglosar.
+- [x] 5.4 Correr `./venv/bin/python -m pytest tests/unit/test_seed_thematic_walls.py -q`
       y confirmar verde antes de avanzar a la Fase 6.
+
+      **HECHA (2026-09-01)**: **17 passed**. Suite unitaria completa: 766
+      passed / 9 failed / 2 skipped — los 9 son los preexistentes de
+      `test_ws_events.py` (`Event loop is closed`), verificados idénticos antes
+      y después. `ruff check` limpio.
 
 ---
 
