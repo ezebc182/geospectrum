@@ -9,7 +9,7 @@
  * mockea porque jsdom no trae `matchMedia`.
  */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -87,5 +87,15 @@ describe('AppSidebar — entrada Feedback para todos', () => {
     expect(adminGroup).not.toBeNull();
     expect(adminGroup).not.toHaveTextContent(N.feedback);
     expect(adminGroup).toHaveTextContent(N.access);
+  });
+});
+
+describe('AppSidebar — disparador de reporte en la base', () => {
+  it('el botón destacado del footer abre el diálogo de FeedbackWidget', () => {
+    renderSidebar('viewer');
+    const F = es.feedback.widget;
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: F.button }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

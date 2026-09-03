@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 import {
   Activity,
   Antenna,
@@ -11,16 +12,19 @@ import {
   Globe2,
   LineChart,
   MessageSquare,
+  MessageSquarePlus,
   RadioTower,
   UserCheck,
 } from 'lucide-react';
 
+import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
 import { LiveIndicator } from '@/components/LiveIndicator';
 import { useAuth } from '@/hooks/use-auth';
 import { useLiveEvents } from '@/hooks/use-live-events';
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -45,6 +49,10 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
   const t = useTranslations('nav');
+  const tFeedback = useTranslations('feedback.widget');
+  // Disparador del reporte: vive acá (base del sidebar) en vez de un botón
+  // flotante propio del widget, que ahora es controlado desde afuera.
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   // Estado del stream compartido con la cartelera del globo. Fuera del
   // provider devuelve 'offline' en vez de romper (ver useLiveEvents).
   const { status: liveStatus } = useLiveEvents();
@@ -141,6 +149,23 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => setFeedbackOpen(true)}
+              tooltip={tFeedback('button')}
+              className="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 hover:text-sidebar-primary-foreground active:bg-sidebar-primary/90 active:text-sidebar-primary-foreground"
+            >
+              <MessageSquarePlus />
+              <span>{tFeedback('button')}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+
+      <FeedbackWidget open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </Sidebar>
   );
 }

@@ -5,6 +5,10 @@
  * design Decision 8). Se monta UNA vez en `app/(app)/layout.tsx`: lo global va
  * en el layout, no página por página.
  *
+ * - El disparador vive en `AppSidebar` (base, botón de acento); este
+ *   componente ya no renderiza uno propio. `open`/`onOpenChange` opcionales
+ *   permiten controlarlo desde afuera; sin ellos el diálogo simplemente no
+ *   se abre solo (necesita un trigger externo que llame a `onOpenChange`).
  * - El contexto (ruta, URL completa, user agent) se captura EN EL SUBMIT y se
  *   trunca a los límites del backend (300/2000/400): es metadata defensiva,
  *   mejor un UA recortado que un 422 que se come el reporte.
@@ -24,7 +28,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useSWRConfig } from 'swr';
-import { MessageSquarePlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -58,7 +61,15 @@ type Outcome = { kind: 'failed'; status: number | null } | { kind: 'sessionExpir
 const TEXTAREA_CLASS =
   'min-h-28 w-full min-w-0 resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40';
 
-export function FeedbackWidget() {
+interface FeedbackWidgetProps {
+  /** Abierto/cerrado controlado desde afuera (AppSidebar). Sin trigger
+   * propio: `open` en `true` sin más no hace nada útil por sí solo, el
+   * caller decide cuándo mostrarlo. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp }: FeedbackWidgetProps = {}) {
   const t = useTranslations('feedback.widget');
   const pathname = usePathname();
   const { mutate } = useSWRConfig();
@@ -79,13 +90,20 @@ export function FeedbackWidget() {
   const handleOpenChange = (open: boolean) => {
     if (open) {
       setPhase('open');
+      onOpenChangeProp?.(true);
       return;
     }
     // Cerrar no borra el texto: si el tester cerró sin enviar, lo recupera al
     // reabrir. El formulario solo se vacía tras un 201.
     setPhase('idle');
     setOutcome(null);
+    onOpenChangeProp?.(false);
   };
+
+  // openProp es la fuente de verdad de apertura cuando el caller la controla
+  // (AppSidebar): NO hay useEffect espejando estado en estado (trampa
+  // documentada, useEffect+ref/estado como dependencia). En vez de eso, el
+  // Dialog recibe directamente `openProp ?? isOpen` — un solo lugar decide.
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -130,22 +148,13 @@ export function FeedbackWidget() {
 
   const submitLabel = isSending ? t('sending') : phase === 'error' ? t('retry') : t('submit');
 
-  return (
-    <>
-      <Button
-        type="button"
-        size="icon-lg"
-        aria-label={t('button')}
-        title={t('button')}
-        onClick={() => handleOpenChange(true)}
-        // z-[1050]: por encima de los panes de Leaflet (z-[1000]) y por debajo
-        // de los overlays de Radix (z-[1100]) para que el dialog lo tape.
-        className="fixed right-6 bottom-6 z-[1050] rounded-full shadow-lg"
-      >
-        <MessageSquarePlus />
-      </Button>
+  // Sin trigger propio: `openProp` (controlado por AppSidebar) manda cuando
+  // está presente; si el caller no lo pasa, el diálogo no tiene forma de
+  // abrirse (no hay caso de uso hoy sin AppSidebar montado).
+  const dialogOpen = openProp ?? isOpen;
 
-      <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+  return (
+    <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('title')}</DialogTitle>
@@ -221,7 +230,6 @@ export function FeedbackWidget() {
             </form>
           )}
         </DialogContent>
-      </Dialog>
-    </>
+    </Dialog>
   );
 }

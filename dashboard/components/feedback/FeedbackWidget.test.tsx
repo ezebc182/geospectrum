@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,10 +37,25 @@ function setUserAgent(value: string) {
   Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
 }
 
+// Sin trigger propio (vive en AppSidebar): el harness posee `open`/onOpenChange
+// como lo haría el caller real, con un botón externo equivalente al del
+// sidebar para disparar la apertura desde el test.
+function ControlledWidget() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        {W.button}
+      </button>
+      <FeedbackWidget open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 function renderWidget() {
   render(
     <NextIntlClientProvider locale="es-AR" messages={es}>
-      <FeedbackWidget />
+      <ControlledWidget />
     </NextIntlClientProvider>,
   );
 }
