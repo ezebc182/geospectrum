@@ -20,6 +20,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import en from '@/messages/en.json';
 import es from '@/messages/es.json';
 import type { FeedbackReport } from '@/lib/feedback';
 import { IntlTestProvider } from '@/lib/test-intl';
@@ -318,6 +319,54 @@ describe('FeedbackBoard — modo gestión', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: C.clear }));
     expect(onComment).toHaveBeenLastCalledWith('p1', null);
     expect(onComment).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('FeedbackBoard — con en.json el enum crudo nunca se ve (tarea 5.2)', () => {
+  // Los tres valores del enum que NO coinciden con ninguna palabra inglesa
+  // (`new` y `done` sí, y además son data-status, no texto). Case-sensitive a
+  // propósito: "Discarded" (traducción) no debe matar el test, "discarded" sí.
+  const RAW_STATUS = /\b(in_analysis|in_progress|discarded)\b/;
+  const EN_S = en.feedback.status;
+  const EN_B = en.feedback.board;
+
+  function renderBoardEn(canManage: boolean) {
+    render(
+      <IntlTestProvider locale="en" messages={en}>
+        <FeedbackBoard reports={ALL_REPORTS} canManage={canManage} onMove={vi.fn()} onComment={vi.fn()} />
+      </IntlTestProvider>,
+    );
+  }
+
+  it('las columnas se titulan "In analysis" y "Discarded"; ningún nodo muestra el valor crudo', () => {
+    renderBoardEn(false);
+    expect(screen.queryByText(RAW_STATUS)).toBeNull();
+    expect(screen.getByRole('heading', { name: 'In analysis' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Discarded' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: EN_S.in_analysis })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: EN_S.discarded })).toBeInTheDocument();
+    // Más fuerte que queryByText: cubre texto partido entre elementos.
+    expect(document.body.textContent).not.toMatch(RAW_STATUS);
+  });
+
+  it('el menú "Move to…" y el badge del detalle también traducen los estados', () => {
+    renderBoardEn(true);
+    const card = cardContaining('Sugerencia en análisis');
+
+    fireEvent.keyDown(within(card).getByRole('button', { name: EN_B.moveTo }), { key: 'Enter' });
+    const items = within(screen.getByRole('menu'))
+      .getAllByRole('menuitem')
+      .map((el) => el.textContent);
+    expect(items).toEqual([EN_S.new, EN_S.in_analysis, EN_S.in_progress, EN_S.done, EN_S.discarded]);
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+
+    fireEvent.click(within(card).getByRole('button', { name: EN_B.openDetail }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('In analysis');
+    expect(dialog).toHaveTextContent(EN_B.technicalContext);
+
+    expect(screen.queryByText(RAW_STATUS)).toBeNull();
+    expect(document.body.textContent).not.toMatch(RAW_STATUS);
   });
 });
 

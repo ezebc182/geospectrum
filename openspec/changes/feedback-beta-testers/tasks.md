@@ -583,7 +583,8 @@ rechazo del backend revierte la tarjeta.
 **Estado al cerrar la fase**: ningún literal hardcodeado, ningún valor crudo
 del enum visible, paridad es/en verde.
 
-- [ ] 5.1 Paridad es/en de todo el namespace.
+- [x] 5.1 Paridad es/en de todo el namespace.
+      *Evidencia 2026-09-03 10:27 UTC-3*: `vitest run messages/parity.test.ts` ⇒ **4 passed**; `rg -c '"feedback"'` ⇒ **2** en cada JSON (`nav.feedback` l.45 + namespace `feedback` l.982, misma línea en ambos); el bloque `feedback.*` tiene las mismas 52 hojas en es y en (widget 18, status 5, board 20, comment 5, errors 4). No hubo que tocar ningún JSON.
       *Archivos*: `dashboard/messages/es.json`, `dashboard/messages/en.json`
       (solo si falta algo).
       *Qué*: correr `parity.test.ts`; verificar que `feedback.*` y
@@ -591,7 +592,8 @@ del enum visible, paridad es/en verde.
       *Aceptación*: paridad verde, mismas claves en ambos idiomas.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`.
       *Mutación*: NO — `parity.test.ts` ES el guardián.
-- [ ] 5.2 Auditoría: sin literales ni enum crudo.
+- [x] 5.2 Auditoría: sin literales ni enum crudo.
+      *Evidencia 2026-09-03*: (a) el `rg` de la tarea sobre los 6 archivos de producción (excluidos `*.test.tsx`) ⇒ **cero matches** (exit 1); un segundo barrido más ancho (líneas de texto suelto fuera de comentarios y literales `{'…'}` en JSX) solo encontró `{' · '}` en `FeedbackCardDetail.tsx:112` — separador tipográfico entre fecha y email, no texto de usuario; el enum crudo aparece únicamente en `data-status={status}` (atributo, no texto) y en `key`/`id`. (b) Dos tests nuevos en `FeedbackBoard.test.tsx` renderizando con `en.json` (`IntlTestProvider locale="en" messages={en}`): `queryByText(/\b(in_analysis|in_progress|discarded)\b/)` ⇒ `null`, `document.body.textContent` sin el enum, headings "In analysis"/"Discarded", menú "Move to…" con los cinco labels en inglés y badge del detalle traducido ⇒ **21 passed**. Verificado que el test NO es tautológico: con `const label = status;` en `FeedbackColumn.tsx` mueren 6 tests (los 2 nuevos + 4 previos); revertido con `git checkout` y `git diff --quiet` limpio.
       *Archivos*: `dashboard/components/feedback/*.tsx`, `dashboard/app/(app)/feedback/page.tsx`.
       *Qué*: (a) `rg -n ">[A-Za-zÁ-ú][^<{]*<" dashboard/components/feedback
       "dashboard/app/(app)/feedback"` — todo texto visible sale de `t(...)`;
@@ -602,7 +604,8 @@ del enum visible, paridad es/en verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/feedback/FeedbackBoard.test.tsx`.
       *Mutación*: NO — es una auditoría estática más un test de presentación
       sin decisión de producción.
-- [ ] 5.3 Tipos.
+- [x] 5.3 Tipos.
+      *Evidencia 2026-09-03*: `./node_modules/.bin/tsc --noEmit` ⇒ **exit 0**. Suite completa del dashboard tras la fase ⇒ **100 files / 1093 passed** (1091 de la Fase 4 + 2 tests de 5.2), cero regresiones.
       *Qué*: `tsc --noEmit` exit 0 sobre el dashboard completo (nunca `next build`).
       *Verificación*: `cd dashboard && ./node_modules/.bin/tsc --noEmit; echo $?`.
       *Mutación*: no aplica.
