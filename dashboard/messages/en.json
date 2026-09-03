@@ -41,7 +41,8 @@
       "moderador": "Moderator",
       "viewer": "Viewer"
     },
-    "stations": "Stations"
+    "stations": "Stations",
+    "feedback": "Feedback"
   },
   "auth": {
     "badge": "Invitation-only access",
@@ -976,6 +977,72 @@
       "noResults": "No matches in the catalog",
       "live": "Recent data",
       "fullSearch": "Full station search…"
+    }
+  },
+  "feedback": {
+    "widget": {
+      "button": "Send feedback",
+      "title": "Tell us what you found",
+      "typeLabel": "Report type",
+      "types": {
+        "bug": "Bug",
+        "suggestion": "Suggestion"
+      },
+      "placeholder": "What happened, what you expected, or what you would improve…",
+      "counter": "{count} / {max}",
+      "contextNotice": "The current page context is attached automatically: route, full URL and browser.",
+      "visibilityNotice": "Your report, along with your email, will be visible to the other beta testers on the feedback board.",
+      "submit": "Send",
+      "sending": "Sending…",
+      "sent": "Thanks! Your report was sent.",
+      "viewBoard": "View on the board",
+      "close": "Close",
+      "error": "We could not send the report. Your text is still here: try again in a moment.",
+      "sessionExpired": "Your session expired. Sign in again; your text is still here.",
+      "retry": "Retry",
+      "tooLong": "The report exceeds 2000 characters."
+    },
+    "status": {
+      "new": "New",
+      "in_analysis": "In analysis",
+      "in_progress": "In progress",
+      "done": "Done",
+      "discarded": "Discarded"
+    },
+    "board": {
+      "title": "Feedback board",
+      "subtitle": "Reports from every beta tester, with their email, newest first.",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "loading": "Loading reports…",
+      "loadError": "We could not load the board. Try again in a moment.",
+      "empty": "No reports",
+      "count": "{count, plural, =1 {1 report} other {# reports}}",
+      "flowGroup": "Workflow",
+      "moveTo": "Move to…",
+      "dragHandle": "Drag card",
+      "openDetail": "View details",
+      "detailTitle": "Report details",
+      "technicalContext": "Technical context",
+      "route": "Route",
+      "url": "URL",
+      "userAgent": "Browser",
+      "createdAt": "Sent on {date}",
+      "movedAt": "In this column since {date}",
+      "close": "Close"
+    },
+    "comment": {
+      "label": "Team comment",
+      "placeholder": "Note visible to every tester…",
+      "save": "Save",
+      "clear": "Clear",
+      "counter": "{count} / {max}"
+    },
+    "errors": {
+      "moveFailed": "The card could not be moved; it went back to its column.",
+      "forbidden": "Your account no longer has management permissions; the card went back to its column.",
+      "commentFailed": "The comment could not be saved; the previous one was restored.",
+      "sessionExpired": "Your session expired. Sign in again."
     }
   }
 }

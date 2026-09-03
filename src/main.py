@@ -124,11 +124,13 @@ from src.services.invitation_service import (
 )
 from src.api.routers import areas as areas_router
 from src.api.routers import comments as comments_router
+from src.api.routers import feedback as feedback_router
 from src.api.routers import picks as picks_router
 from src.api.routers import stations as stations_router
 from src.api.routers import walls as walls_router
 from src.services.signal_picks import SignalPickService
 from src.services.window_comments import WindowCommentService
+from src.services.feedback_service import FeedbackService
 from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
 from src.services.wall_service import WallService
@@ -387,6 +389,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Hilo de conversación por ventana (comments.py). Mismo patrón.
     app.state.window_comment_service = WindowCommentService(db_pool)
 
+    # Feedback de beta testers con tablero Kanban (feedback.py). Mismo patrón.
+    app.state.feedback_service = FeedbackService(db_pool)
+
     # Cache eterno de resultados FDSN (performance FDSN). Mismo patrón de
     # pool prestado; degrada solo (get→None, set→noop) si la base falla.
     app.state.fdsn_result_cache = FdsnResultCache(
@@ -576,6 +581,7 @@ app.add_middleware(
 app.include_router(areas_router.router)
 app.include_router(picks_router.router)
 app.include_router(comments_router.router)
+app.include_router(feedback_router.router)
 app.include_router(walls_router.router)
 app.include_router(stations_router.router)
 

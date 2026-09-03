@@ -41,7 +41,8 @@
       "moderador": "Moderador",
       "viewer": "Viewer"
     },
-    "stations": "Estaciones"
+    "stations": "Estaciones",
+    "feedback": "Feedback"
   },
   "auth": {
     "badge": "Acceso por invitación",
@@ -976,6 +977,72 @@
       "noResults": "Sin coincidencias en el catálogo",
       "live": "Con datos recientes",
       "fullSearch": "Búsqueda completa de estaciones…"
+    }
+  },
+  "feedback": {
+    "widget": {
+      "button": "Enviar feedback",
+      "title": "Contanos qué encontraste",
+      "typeLabel": "Tipo de reporte",
+      "types": {
+        "bug": "Falla",
+        "suggestion": "Sugerencia"
+      },
+      "placeholder": "Qué pasó, qué esperabas que pasara, o qué mejorarías…",
+      "counter": "{count} / {max}",
+      "contextNotice": "Se adjunta automáticamente el contexto de la página actual: ruta, URL completa y navegador.",
+      "visibilityNotice": "Tu reporte, junto con tu email, será visible para los demás beta testers en el tablero de feedback.",
+      "submit": "Enviar",
+      "sending": "Enviando…",
+      "sent": "¡Gracias! Tu reporte fue enviado.",
+      "viewBoard": "Ver en el tablero",
+      "close": "Cerrar",
+      "error": "No pudimos enviar el reporte. Tu texto sigue acá: reintentá en un momento.",
+      "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión; tu texto sigue acá.",
+      "retry": "Reintentar",
+      "tooLong": "El reporte supera los 2000 caracteres."
+    },
+    "status": {
+      "new": "Nuevo",
+      "in_analysis": "En análisis",
+      "in_progress": "En progreso",
+      "done": "Hecho",
+      "discarded": "Descartado"
+    },
+    "board": {
+      "title": "Tablero de feedback",
+      "subtitle": "Reportes de todos los beta testers, con su email, ordenados del más nuevo al más viejo.",
+      "refresh": "Actualizar",
+      "refreshing": "Actualizando…",
+      "loading": "Cargando reportes…",
+      "loadError": "No pudimos cargar el tablero. Reintentá en un momento.",
+      "empty": "Sin reportes",
+      "count": "{count, plural, =1 {1 reporte} other {# reportes}}",
+      "flowGroup": "Flujo de trabajo",
+      "moveTo": "Mover a…",
+      "dragHandle": "Arrastrar tarjeta",
+      "openDetail": "Ver detalle",
+      "detailTitle": "Detalle del reporte",
+      "technicalContext": "Contexto técnico",
+      "route": "Ruta",
+      "url": "URL",
+      "userAgent": "Navegador",
+      "createdAt": "Enviado el {date}",
+      "movedAt": "En esta columna desde el {date}",
+      "close": "Cerrar"
+    },
+    "comment": {
+      "label": "Comentario del equipo",
+      "placeholder": "Nota visible para todos los testers…",
+      "save": "Guardar",
+      "clear": "Vaciar",
+      "counter": "{count} / {max}"
+    },
+    "errors": {
+      "moveFailed": "No se pudo mover la tarjeta; volvió a su columna.",
+      "forbidden": "Tu cuenta ya no tiene permisos de gestión; la tarjeta volvió a su columna.",
+      "commentFailed": "No se pudo guardar el comentario; se restauró el anterior.",
+      "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión."
     }
   }
 }

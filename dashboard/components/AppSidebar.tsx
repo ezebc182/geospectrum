@@ -10,6 +10,7 @@ import {
   Gauge,
   Globe2,
   LineChart,
+  MessageSquare,
   RadioTower,
   UserCheck,
 } from 'lucide-react';
@@ -58,6 +59,9 @@ export function AppSidebar() {
     { href: '/stations', label: t('stations'), icon: Antenna },
     { href: '/globe', label: t('globe'), icon: Globe2, tourId: 'nav-globe' },
     { href: '/analytics', label: t('analytics'), icon: LineChart },
+    // Tablero de feedback: para TODOS los autenticados (lo que cambia por rol
+    // es la interactividad, no la visibilidad) — por eso NO va en adminRoutes.
+    { href: '/feedback', label: t('feedback'), icon: MessageSquare },
   ];
 
   // Rutas de administración: sólo visibles para admin+. El gate real de
