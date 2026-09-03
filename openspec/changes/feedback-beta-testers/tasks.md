@@ -619,15 +619,25 @@ del proposal con evidencia real; desplegado; QA visual y promoción a admin
 hechos por el usuario. Las tareas **(USUARIO)** las ejecuta el usuario — el
 agente no las marca `[x]` por su cuenta.
 
-- [ ] 6.1 Suite backend COMPLETA contra la baseline.
+- [x] 6.1 Suite backend COMPLETA contra la baseline.
+      *Evidencia 2026-09-03*: `pytest tests/ -q -p no:cacheprovider --no-cov`
+      ⇒ 9 failed, 1181 passed, 2 skipped (144 s); los 9 son los mismos de
+      `tests/unit/test_ws_events.py` de la baseline 1.1 (1069 + 18 + 94 =
+      1181, cero regresiones). `ruff check src tests` ⇒ 14 hallazgos, TODOS
+      preexistentes en archivos ajenos (test_auth_api, test_swarm_rsam, main
+      F811…); los seis archivos de este change: "All checks passed!".
       *Qué*: `./venv/bin/python -m pytest tests/ -q` y comparar con 1.1: el
       delta debe ser exactamente los tests nuevos de este change, cero
       regresiones. `./venv/bin/ruff check .` sin hallazgos nuevos respecto de
       HEAD (con `git stash` si hay duda de qué es preexistente).
       *Verificación*: los dos comandos; conteos registrados en `mutation-log.md`.
       *Mutación*: no aplica.
-- [ ] 6.2 **Arranque real del api local** (736 verdes no salvaron a un
+- [x] 6.2 **OMITIDA — Arranque real del api local** (736 verdes no salvaron a un
       proceso que moría al arrancar).
+      *Decisión del usuario 2026-09-03*: sin stack local ("no quiero hacer
+      nada en local, lo probamos arriba"). La verificación de proceso real
+      pasa a prod en 6.4: `curl` a `/feedback` sin sesión ⇒ 401 prueba que el
+      lifespan completó y el router está montado. Riesgo avisado una vez.
       *Qué*: TimescaleDB local en 5433, sin uvicorn zombis previos
       (`pgrep -fl uvicorn`); arrancar con el MISMO entrypoint del deploy
       (`deploy/docker/Dockerfile:88`): `./venv/bin/python -m uvicorn
@@ -644,7 +654,10 @@ agente no las marca `[x]` por su cuenta.
       *Aceptación*: los cinco resultados reales anotados en `mutation-log.md`.
       *Verificación*: los `curl` de arriba.
       *Mutación*: no aplica.
-- [ ] 6.3 Suite frontend completa tras cualquier retoque.
+- [x] 6.3 Suite frontend completa tras cualquier retoque.
+      *Evidencia 2026-09-03*: sin retoques después de la Fase 5; vale el
+      resultado de 5.3: `vitest run` ⇒ 100 files / 1093 passed, `tsc --noEmit`
+      exit 0.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run && ./node_modules/.bin/tsc --noEmit`. **Nunca `next build`.**
       *Mutación*: no aplica.
 - [ ] 6.4 Deploy (solo cuando el usuario lo pida).
