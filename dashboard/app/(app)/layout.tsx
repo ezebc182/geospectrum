@@ -1,5 +1,6 @@
 import { AppSidebar } from '@/components/AppSidebar';
 import { AreaHeader } from '@/components/AreaHeader';
+import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
 import { StationQuickSearch } from '@/components/StationQuickSearch';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { LocaleSync } from '@/components/LocaleSync';
@@ -50,6 +51,9 @@ export default function AppShellLayout({
             /auth/me trae onboarding_completed_at null. Vive en el layout
             porque las anclas del tour (sidebar, header) también viven acá. */}
         <OnboardingGate />
+        {/* Botón flotante de feedback de beta testers: único punto de montaje,
+            visible en toda vista de (app) sin integración página por página. */}
+        <FeedbackWidget />
       </SidebarInset>
     </SidebarProvider>
     </LiveEventsProvider>

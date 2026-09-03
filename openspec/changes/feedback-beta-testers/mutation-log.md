@@ -67,8 +67,8 @@ Comando de tests: `./venv/bin/python -m pytest <archivos> -q -p no:cacheprovider
 | M11 | `src/models/feedback.py` | `body … max_length=2000` → `2001` | `33: body: str = Field(min_length=1, max_length=2001)` | unit `test_create_rechaza_body_invalido[2001]`: `DID NOT RAISE`; integración `test_post_payload_invalido_da_422_sin_fila[body-2001]`: `CheckViolationError "feedback_reports_body_check"` | revertido: sí |
 | M12 | `src/models/feedback.py` + `src/services/feedback_service.py` | campo `status: str = "new"` agregado a `FeedbackReportCreate` + INSERT con columna `status` y `$7 = payload.status` | `33: status: str = "new"`; `57: INSERT INTO feedback_reports (…, user_agent, status)` `58: VALUES ($1, …, $6, $7)` | unit `test_create_no_expone_user_id_created_at_ni_status`: `AssertionError: status` (hasattr); integración `test_post_status_inyectado_en_el_body_se_ignora` (test AGREGADO en 2.9 para que la mutación sea observable por SELECT): `assert 'done' == 'new'` | revertido: sí (ambos archivos) |
 | M13 | `src/models/feedback.py` + `src/api/routers/feedback.py` | campo `user_id: Optional[UUID] = None` en `FeedbackReportCreate` + `create(payload.user_id, payload)` | `33: user_id: Optional[UUID] = None`; `44: row = await feedback_service.create(payload.user_id, payload)` | unit `test_create_no_expone_…`: `AssertionError: user_id`; integración `test_post_user_id_inyectado_en_el_body_se_ignora`: `assert UUID('67ec85ea…') == UUID('601f9736…')` (la fila quedó con el user_id de B); `test_post_viewer_crea_y_recibe_ack_minimo`: `NotNullViolationError` en `user_id` | revertido: sí (ambos archivos) |
-| M14 | | | | | |
-| M15 | | | | | |
+| M14 | `dashboard/components/feedback/FeedbackWidget.tsx` | (a) `route: pathname.slice(0, MAX_ROUTE),` → `route: pathname,`; (b) `url: window.location.href.slice(0, MAX_URL),` → `url: window.location.href,`; (c) `user_agent: navigator.userAgent.slice(0, MAX_USER_AGENT),` → `user_agent: navigator.userAgent,` — tres corridas separadas | `106: route: pathname,` / `107: url: window.location.href,` / `108: user_agent: navigator.userAgent,` | `trunca route a 300, url a 2000 y user_agent a 400 exactos; el body viaja completo`: (a) `expected '/rrr…' to have a length of 300 but got 301`; (b) `expected 'http://localhost:3000/x?q=uuu…' to have a length of 2000 but got 2126`; (c) `expected 'aaa…' to have a length of 400 but got 401` — 1 failed / 12 passed en cada corrida | revertido: sí (×3, `cmp` idéntico al snapshot) |
+| M15 | `dashboard/components/feedback/FeedbackWidget.tsx` | `if (isBlank \|\| isTooLong) return;` → `if (isBlank) return;` **y** `body,` → `body: body.slice(0, MAX_BODY),` en el payload (las dos a la vez: el guard solo no alcanza para que un slice sea observable) | `95: if (isBlank) return;` y `105: body: body.slice(0, MAX_BODY),` | `un body de 2001 NO llega a submitFeedback y NO se recorta`: `expected "spy" to not be called at all, but actually been called 1 times` — 1 failed / 12 passed | revertido: sí (ambas sustituciones, `cmp` idéntico) |
 | M16 | | | | | |
 | M17 | | | | | |
 | M18 | | | | | |
@@ -84,6 +84,30 @@ de la baseline; 1181 = 1069 (baseline) + 18 (Fase 1) + 94 (Fase 2: 33 unit + 61 
 regresiones. Ojo: `-p no:logging` deshabilita `caplog` y hace ERROR a
 `test_events_ingestor_heartbeat.py::…::test_sin_redis_client…` — es el flag, no el código
 (5/5 con los flags de la baseline).
+
+### Baseline frontend (tarea 3.1) — 2026-09-03 12:50 UTC, antes de tocar `dashboard/`
+
+`node -v` ⇒ v22.16.0 (PATH de nvm exportado); `node_modules/` presente (`npm ci` previo).
+
+- `./node_modules/.bin/vitest run` ⇒ **Test Files 95 passed (95), Tests 1026 passed (1026)** en 46,82 s. Cero fallos preexistentes.
+- `./node_modules/.bin/tsc --noEmit` ⇒ exit **0**, sin salida.
+
+### Widget M14–M15 — tarea 3.8, 2026-09-03 12:59 UTC
+
+Runner: `scratchpad/mutate-ts.sh` (fuera del repo), misma mecánica del backend adaptada a
+vitest: `str.replace` exacto que falla si el patrón no está, snapshot previo, `git diff --stat`
+ANTES de los tests, `rg -U -F` del texto mutado, vitest, reversión por replace inverso y `cmp`
+contra el snapshot. Ojo: `FeedbackWidget.tsx` es un archivo NUEVO, así que `git diff --stat`
+solo muestra "227 insertions" (con `git add -N`) antes y después — no distingue la mutación;
+la prueba de que el archivo cambió es el `rg` del texto mutado, y la de la reversión es el
+`cmp`. Las cuatro corridas (M14a/b/c, M15) pusieron rojo EXACTAMENTE el test previsto y
+ningún otro.
+
+### Gate de Fase 3 (tarea 3.8) — 2026-09-03 13:00 UTC
+
+- `vitest run lib/feedback.test.ts components/feedback/FeedbackWidget.test.tsx messages/parity.test.ts` ⇒ **3 files, 33 passed** (16 + 13 + 4).
+- `tsc --noEmit` ⇒ exit **0**.
+- Suite completa del dashboard ⇒ **Test Files 97 passed (97), Tests 1055 passed (1055)** = 1026 (baseline) + 16 (helper) + 13 (widget). Cero regresiones; los tests nuevos no emiten stderr.
 
 ### Desvíos del design registrados en Fase 2
 

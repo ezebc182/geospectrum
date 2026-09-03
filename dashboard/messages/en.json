@@ -41,7 +41,8 @@
       "moderador": "Moderator",
       "viewer": "Viewer"
     },
-    "stations": "Stations"
+    "stations": "Stations",
+    "feedback": "Feedback"
   },
   "auth": {
     "badge": "Invitation-only access",
@@ -976,6 +977,30 @@
       "noResults": "No matches in the catalog",
       "live": "Recent data",
       "fullSearch": "Full station search…"
+    }
+  },
+  "feedback": {
+    "widget": {
+      "button": "Send feedback",
+      "title": "Tell us what you found",
+      "typeLabel": "Report type",
+      "types": {
+        "bug": "Bug",
+        "suggestion": "Suggestion"
+      },
+      "placeholder": "What happened, what you expected, or what you would improve…",
+      "counter": "{count} / {max}",
+      "contextNotice": "The current page context is attached automatically: route, full URL and browser.",
+      "visibilityNotice": "Your report, along with your email, will be visible to the other beta testers on the feedback board.",
+      "submit": "Send",
+      "sending": "Sending…",
+      "sent": "Thanks! Your report was sent.",
+      "viewBoard": "View on the board",
+      "close": "Close",
+      "error": "We could not send the report. Your text is still here: try again in a moment.",
+      "sessionExpired": "Your session expired. Sign in again; your text is still here.",
+      "retry": "Retry",
+      "tooLong": "The report exceeds 2000 characters."
     }
   }
 }

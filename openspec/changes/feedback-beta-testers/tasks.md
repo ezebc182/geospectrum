@@ -320,7 +320,8 @@ en cliente; el tablero todavía no existe.
 > `useTranslations`: por eso cada superficie agrega sus strings es/en en su
 > propia fase (3.5, 4.2) y la Fase 5 cierra con la paridad y la auditoría.
 
-- [ ] 3.1 Preparar el entorno del dashboard.
+- [x] 3.1 Preparar el entorno del dashboard.
+      *Evidencia 2026-09-03 12:50 UTC*: `node -v` ⇒ v22.16.0; `node_modules/` ya presente (`npm ci` previo). Baseline en `mutation-log.md`: `vitest run` ⇒ **95 files / 1026 passed**, `tsc --noEmit` ⇒ exit 0.
       *Qué*: exportar el PATH del Node v22 de nvm, `cd dashboard && npm ci`
       (lockfile: `@dnd-kit/core 6.3.1`, `swr 2.3.6`), y registrar la baseline
       frontend en `mutation-log.md`: `./node_modules/.bin/vitest run` y
@@ -328,7 +329,8 @@ en cliente; el tablero todavía no existe.
       *Aceptación*: `node -v` ⇒ v22; `vitest` y `tsc` corren; conteos anotados.
       *Verificación*: `cd dashboard && node -v && ./node_modules/.bin/vitest run 2>&1 | tail -5`.
       *Mutación*: no aplica.
-- [ ] 3.2 (RED) Test del helper ANTES del helper.
+- [x] 3.2 (RED) Test del helper ANTES del helper.
+      *Evidencia 2026-09-03*: 16 casos escritos; `vitest run lib/feedback.test.ts` ⇒ `Error: Failed to resolve import "./feedback"` (1 file failed — rojo por módulo inexistente).
       *Archivos*: crea `dashboard/lib/feedback.test.ts` (molde
       `dashboard/lib/walls.test.ts`, `mockFetch`).
       *Qué*: `submitFeedback` hace `POST /feedback` con el payload
@@ -343,7 +345,8 @@ en cliente; el tablero todavía no existe.
       *Aceptación*: rojo por módulo inexistente.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/feedback.test.ts`.
       *Mutación*: no aplica (es el test).
-- [ ] 3.3 (GREEN) Crear el helper.
+- [x] 3.3 (GREEN) Crear el helper.
+      *Evidencia 2026-09-03*: `dashboard/lib/feedback.ts` con tipos (`FeedbackReport.status_changed_at: string | null`), `FLOW_STATUSES`, `FEEDBACK_SWR_KEY` y las cuatro funciones; mismo comando de 3.2 ⇒ **16 passed**.
       *Archivos*: crea `dashboard/lib/feedback.ts`.
       *Qué*: el contrato TS del design con `status_changed_at: string | null`
       (reconciliación 3) y `admin_comment_updated_at: string | null`;
@@ -354,7 +357,8 @@ en cliente; el tablero todavía no existe.
       *Verificación*: mismo comando de 3.2.
       *Mutación*: NO — tests de contrato con fetch mockeado (molde
       `walls.test.ts`); la lógica de decisión de producción vive en el backend.
-- [ ] 3.4 (RED) Test del widget ANTES del componente.
+- [x] 3.4 (RED) Test del widget ANTES del componente.
+      *Evidencia 2026-09-03*: 13 casos (botón/dialog/contador, contexto + type literal, truncado 300/2000/400 con body de 1500 intacto, body 2001 no enviado ni recortado + `aria-invalid`, vacío y solo espacios, doble click, 201 + link + `mutate('/feedback')` + reabrir vacío, rechazo→reintento, 401⇒`null`⇒error de sesión). `vitest run components/feedback/FeedbackWidget.test.tsx` ⇒ `Failed to resolve import "./FeedbackWidget"` (rojo por componente inexistente). Mocks estables vía `vi.hoisted` (`pathnameState` mutado, no re-mockeado); UA con `Object.defineProperty(navigator, 'userAgent')`; href con `history.replaceState`. El "outcome como dato" no es observable desde el DOM: se verifica por lectura del código (`type Outcome = { kind: … }`).
       *Archivos*: crea `dashboard/components/feedback/FeedbackWidget.test.tsx`.
       *Qué*: Testing Library + `NextIntlClientProvider` con `es.json`
       (molde `WallManager.test.tsx`); mocks con referencias ESTABLES de
@@ -378,7 +382,8 @@ en cliente; el tablero todavía no existe.
       *Aceptación*: rojo por componente inexistente.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/feedback/FeedbackWidget.test.tsx`.
       *Mutación*: no aplica (es el test).
-- [ ] 3.5 Strings i18n del widget y del sidebar.
+- [x] 3.5 Strings i18n del widget y del sidebar.
+      *Evidencia 2026-09-03*: `feedback.widget.*` (18 claves: button, title, typeLabel, types.bug/suggestion, placeholder, counter, contextNotice, visibilityNotice, submit, sending, sent, viewBoard, close, error, sessionExpired, retry, tooLong) + `nav.feedback` en ambos JSON; `git diff --stat` ⇒ +27/-1 por archivo (solo adiciones); `vitest run messages/parity.test.ts` ⇒ **4 passed**.
       *Archivos*: modifica `dashboard/messages/es.json`, `dashboard/messages/en.json`.
       *Qué*: namespace `feedback.widget.*` (botón, título, tipos, placeholder,
       contador, leyenda de contexto, aviso de transparencia, enviando /
@@ -387,7 +392,8 @@ en cliente; el tablero todavía no existe.
       *Aceptación*: `parity.test.ts` verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`.
       *Mutación*: NO — los protege `parity.test.ts`.
-- [ ] 3.6 (GREEN) Crear el widget.
+- [x] 3.6 (GREEN) Crear el widget.
+      *Evidencia 2026-09-03*: componente con botón `fixed right-6 bottom-6 z-[1050]`, `ui/dialog.tsx`, `role="radiogroup"` con dos `role="radio"`, `<textarea maxLength={2000}>` con clases de `ui/input.tsx`, captura/truncado en el submit, body sin truncar (guard `isTooLong` + `aria-invalid`), `Outcome` como dato (`failed` con status | `sessionExpired`), `useRef` contra el doble click, `mutate(FEEDBACK_SWR_KEY)` tras el 201 y `<Link href="/feedback">`. Mismo comando de 3.4 ⇒ **13 passed**.
       *Archivos*: crea `dashboard/components/feedback/FeedbackWidget.tsx`.
       *Qué*: `'use client'`; botón `fixed bottom-6 right-6 z-[1050]` (entre
       Leaflet `z-[1000]` y los overlays `z-[1100]`); `ui/dialog.tsx`; dos
@@ -400,7 +406,8 @@ en cliente; el tablero todavía no existe.
       *Aceptación*: 3.4 verde.
       *Verificación*: mismo comando de 3.4.
       *Mutación*: las lleva 3.8 (M14, M15).
-- [ ] 3.7 Montar el widget en el layout.
+- [x] 3.7 Montar el widget en el layout.
+      *Evidencia 2026-09-03*: import + `<FeedbackWidget />` bajo `<OnboardingGate />` dentro de `SidebarInset`; `rg -n "FeedbackWidget" "dashboard/app/(app)/layout.tsx"` ⇒ líneas 3 y 56; `rg -l "FeedbackWidget" dashboard/app | wc -l` ⇒ **1**. `tsc --noEmit` ⇒ exit 0.
       *Archivos*: modifica `dashboard/app/(app)/layout.tsx`.
       *Qué*: una línea `<FeedbackWidget />` junto a `<OnboardingGate />`
       (l.52) dentro de `SidebarInset`. Único punto de montaje.
@@ -409,7 +416,8 @@ en cliente; el tablero todavía no existe.
       garantizado por construcción y se confirma en 6.7.
       *Verificación*: `rg -n "FeedbackWidget" "dashboard/app/(app)/layout.tsx"`.
       *Mutación*: NO — una línea de montaje verificada por `rg`.
-- [ ] 3.8 **Mutaciones críticas del widget M14–M15** + gate de fase.
+- [x] 3.8 **Mutaciones críticas del widget M14–M15** + gate de fase.
+      *Evidencia 2026-09-03 12:59–13:00 UTC*: M14 en tres corridas (route/url/UA) y M15 (guard + `.slice` en el body, las dos a la vez) — las cuatro rojas con la aserción exacta en `mutation-log.md`, reversión verificada por `cmp` contra snapshot. Gate: los tres archivos ⇒ **33 passed**; `tsc --noEmit` exit 0; suite completa ⇒ **97 files / 1055 passed** (1026 + 16 + 13).
       *Archivos*: `dashboard/components/feedback/FeedbackWidget.tsx` (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |
       |---|---|---|

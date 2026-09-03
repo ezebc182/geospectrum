@@ -41,7 +41,8 @@
       "moderador": "Moderador",
       "viewer": "Viewer"
     },
-    "stations": "Estaciones"
+    "stations": "Estaciones",
+    "feedback": "Feedback"
   },
   "auth": {
     "badge": "Acceso por invitación",
@@ -976,6 +977,30 @@
       "noResults": "Sin coincidencias en el catálogo",
       "live": "Con datos recientes",
       "fullSearch": "Búsqueda completa de estaciones…"
+    }
+  },
+  "feedback": {
+    "widget": {
+      "button": "Enviar feedback",
+      "title": "Contanos qué encontraste",
+      "typeLabel": "Tipo de reporte",
+      "types": {
+        "bug": "Falla",
+        "suggestion": "Sugerencia"
+      },
+      "placeholder": "Qué pasó, qué esperabas que pasara, o qué mejorarías…",
+      "counter": "{count} / {max}",
+      "contextNotice": "Se adjunta automáticamente el contexto de la página actual: ruta, URL completa y navegador.",
+      "visibilityNotice": "Tu reporte, junto con tu email, será visible para los demás beta testers en el tablero de feedback.",
+      "submit": "Enviar",
+      "sending": "Enviando…",
+      "sent": "¡Gracias! Tu reporte fue enviado.",
+      "viewBoard": "Ver en el tablero",
+      "close": "Cerrar",
+      "error": "No pudimos enviar el reporte. Tu texto sigue acá: reintentá en un momento.",
+      "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión; tu texto sigue acá.",
+      "retry": "Reintentar",
+      "tooLong": "El reporte supera los 2000 caracteres."
     }
   }
 }
