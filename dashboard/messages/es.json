@@ -1001,6 +1001,48 @@
       "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión; tu texto sigue acá.",
       "retry": "Reintentar",
       "tooLong": "El reporte supera los 2000 caracteres."
+    },
+    "status": {
+      "new": "Nuevo",
+      "in_analysis": "En análisis",
+      "in_progress": "En progreso",
+      "done": "Hecho",
+      "discarded": "Descartado"
+    },
+    "board": {
+      "title": "Tablero de feedback",
+      "subtitle": "Reportes de todos los beta testers, con su email, ordenados del más nuevo al más viejo.",
+      "refresh": "Actualizar",
+      "refreshing": "Actualizando…",
+      "loading": "Cargando reportes…",
+      "loadError": "No pudimos cargar el tablero. Reintentá en un momento.",
+      "empty": "Sin reportes",
+      "count": "{count, plural, =1 {1 reporte} other {# reportes}}",
+      "flowGroup": "Flujo de trabajo",
+      "moveTo": "Mover a…",
+      "dragHandle": "Arrastrar tarjeta",
+      "openDetail": "Ver detalle",
+      "detailTitle": "Detalle del reporte",
+      "technicalContext": "Contexto técnico",
+      "route": "Ruta",
+      "url": "URL",
+      "userAgent": "Navegador",
+      "createdAt": "Enviado el {date}",
+      "movedAt": "En esta columna desde el {date}",
+      "close": "Cerrar"
+    },
+    "comment": {
+      "label": "Comentario del equipo",
+      "placeholder": "Nota visible para todos los testers…",
+      "save": "Guardar",
+      "clear": "Vaciar",
+      "counter": "{count} / {max}"
+    },
+    "errors": {
+      "moveFailed": "No se pudo mover la tarjeta; volvió a su columna.",
+      "forbidden": "Tu cuenta ya no tiene permisos de gestión; la tarjeta volvió a su columna.",
+      "commentFailed": "No se pudo guardar el comentario; se restauró el anterior.",
+      "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión."
     }
   }
 }

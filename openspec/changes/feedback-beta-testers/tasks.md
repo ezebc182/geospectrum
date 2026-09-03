@@ -436,7 +436,8 @@ en cliente; el tablero todavía no existe.
 columnas; el admin mueve por drag & drop y por "Mover a…", comenta, y un
 rechazo del backend revierte la tarjeta.
 
-- [ ] 4.1 (RED) Tests del tablero ANTES de los componentes.
+- [x] 4.1 (RED) Tests del tablero ANTES de los componentes.
+      *Evidencia 2026-09-03*: 19 casos (estructura de columnas, lectura sin controles, XSS inerte, gestión con "Mover a…", detalle, editor, y `resolveDrop` como función pura para la decisión del `onDragEnd` — el drag con puntero no es confiable en jsdom). `vitest run components/feedback/FeedbackBoard.test.tsx` ⇒ `Failed to resolve import "./FeedbackBoard"` (rojo por componente inexistente). Render con `IntlTestProvider` (config REAL: es.json + timeZone); dos ajustes del harness durante GREEN: el `ToastProvider` del provider monta un `region` propio (se filtra por `data-status`) y el body también vive en el dialog del detalle (se busca la copia dentro de un `article`).
       *Archivos*: crea `dashboard/components/feedback/FeedbackBoard.test.tsx`.
       *Qué*: render con `NextIntlClientProvider` + `es.json`. Con `reports`
       en los cinco estados y `canManage=false`: cinco columnas; las cuatro
@@ -459,7 +460,8 @@ rechazo del backend revierte la tarjeta.
       *Aceptación*: rojo por componentes inexistentes.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/feedback/FeedbackBoard.test.tsx`.
       *Mutación*: no aplica (es el test).
-- [ ] 4.2 Strings i18n del tablero.
+- [x] 4.2 Strings i18n del tablero.
+      *Evidencia 2026-09-03*: `feedback.status.*` (5), `feedback.board.*` (20: title, subtitle, refresh, refreshing, loading, loadError, empty, count (plural ICU), flowGroup, moveTo, dragHandle, openDetail, detailTitle, technicalContext, route, url, userAgent, createdAt, movedAt, close), `feedback.comment.*` (5) y `feedback.errors.*` (4) en ambos JSON; `git diff --stat` ⇒ +42 por archivo, solo adiciones; `vitest run messages/parity.test.ts` ⇒ **4 passed**. Las etiquetas de tipo reutilizan `feedback.widget.types.*`.
       *Archivos*: modifica `dashboard/messages/es.json`, `dashboard/messages/en.json`.
       *Qué*: `feedback.status.{new,in_analysis,in_progress,done,discarded}`
       (Nuevo/En análisis/En progreso/Hecho/Descartado — New/In analysis/In
@@ -472,7 +474,8 @@ rechazo del backend revierte la tarjeta.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`.
       *Mutación*: NO — los protege `parity.test.ts`; la distinción
       Descartado/Hecho la protege M18.
-- [ ] 4.3 (GREEN) Columna y tarjeta.
+- [x] 4.3 (GREEN) Columna y tarjeta.
+      *Evidencia 2026-09-03*: `FeedbackColumn` (`<section aria-label>` por estado, `useDroppable({id: status, disabled: !canManage})`, variante `discarded` con borde punteado, contador plural, mensaje de vacío) y `FeedbackCard` (`useDraggable` con `data.status`; **asa de arrastre propia** con `setActivatorNodeRef` + `attributes`/`listeners` para que el drag no compita con "Ver detalle" ni con el menú; badge de tipo, `line-clamp-3` del body como texto plano, autor, fecha `useFormatter`, `admin_comment` en bloque `data-slot="admin-comment"`; con `canManage`, Radix "Mover a…" con los CINCO estados y el actual `disabled` ⇒ `aria-disabled="true"`). Los casos de columna/tarjeta de 4.1 pasan (ver 4.5).
       *Archivos*: crea `dashboard/components/feedback/FeedbackColumn.tsx`,
       `dashboard/components/feedback/FeedbackCard.tsx`.
       *Qué*: `FeedbackColumn` con `useDroppable({ id: status })`, encabezado
@@ -486,7 +489,8 @@ rechazo del backend revierte la tarjeta.
       *Aceptación*: los casos de tarjeta/columna de 4.1 pasan.
       *Verificación*: mismo comando de 4.1.
       *Mutación*: las lleva 4.9 (M16, M18).
-- [ ] 4.4 (GREEN) Detalle.
+- [x] 4.4 (GREEN) Detalle.
+      *Evidencia 2026-09-03*: `ui/dialog.tsx` con body `whitespace-pre-wrap`, `dl` de contexto (route texto, url `<a target="_blank" rel="noopener noreferrer">`, user agent), `status_changed_at` solo si no es null; con `canManage`, `CommentEditor` (textarea `maxLength=2000` + contador, "Guardar" manda el texto `trim`, "Vaciar" manda `null`) montado con `key={admin_comment}` para que un rollback reinicie el borrador al valor vigente. Los casos de detalle/comentario de 4.1 pasan (ver 4.5).
       *Archivos*: crea `dashboard/components/feedback/FeedbackCardDetail.tsx`.
       *Qué*: `ui/dialog.tsx` con body completo (`whitespace-pre-wrap`, texto
       plano), `route`, `url` como link `target="_blank" rel="noopener
@@ -497,7 +501,8 @@ rechazo del backend revierte la tarjeta.
       *Verificación*: mismo comando de 4.1.
       *Mutación*: NO — la lógica que protege (guardar/vaciar) se prueba por
       llamadas a `onComment` en 4.1; no hay decisión de producción propia.
-- [ ] 4.5 (GREEN) Tablero.
+- [x] 4.5 (GREEN) Tablero.
+      *Evidencia 2026-09-03*: `FeedbackBoard` agrupa por `status` y ordena cada columna por `created_at` DESC; cuatro columnas del flujo dentro de `role="group"` "Flujo de trabajo", `Separator` vertical y `discarded` aparte con variante propia; con `canManage` envuelve en `ManagedBoard` (`DndContext` + `PointerSensor {distance: 5}` + `KeyboardSensor`, `pointerWithin`); sin `canManage` no monta nada de dnd-kit. `resolveDrop` exportada: sin `over`, misma columna o id que no es estado ⇒ `null`. `vitest run components/feedback/FeedbackBoard.test.tsx` ⇒ **19 passed**; `rg -c "dangerouslySetInnerHTML" dashboard/components/feedback/ "dashboard/app/(app)/feedback/"` ⇒ sin matches (un comentario que mencionaba la palabra se reescribió para que el gate sea limpio). `FEEDBACK_STATUSES` e `isFeedbackStatus` agregados a `lib/feedback.ts` (aditivo).
       *Archivos*: crea `dashboard/components/feedback/FeedbackBoard.tsx`.
       *Qué*: props `reports`, `canManage`, `onMove(id, status)`,
       `onComment(id, text)`; agrupa por `status` (`reduce`) en
@@ -512,7 +517,8 @@ rechazo del backend revierte la tarjeta.
       dashboard/components/feedback/ "dashboard/app/(app)/feedback/"` ⇒ cero.
       *Verificación*: mismo comando de 4.1 + el `rg`.
       *Mutación*: las lleva 4.9 (M16).
-- [ ] 4.6 (RED) Test de la página ANTES de crearla.
+- [x] 4.6 (RED) Test de la página ANTES de crearla.
+      *Evidencia 2026-09-03*: 14 casos (viewer/moderador lectura, admin/superadmin gestión, GET una vez, "Actualizar" ⇒ segundo GET, error de carga, vacío, mover con éxito sin refetch, 403/401/red revierten con su aviso, comentario 422 vuelve a "v1", éxito y vaciar). `vitest run "app/(app)/feedback/page.test.tsx"` ⇒ `Failed to resolve import "./page"` (rojo por página inexistente). **Desvío deliberado**: SWR es el REAL (`SWRConfig` con caché nueva por test) y se mockean `@/hooks/use-auth` (misma referencia, mutada) y `@/lib/feedback`: con SWR mockeado la reversión probaría el mock y M17 no podría morir.
       *Archivos*: crea `dashboard/app/(app)/feedback/page.test.tsx`.
       *Qué*: mocks estables de `@/hooks/use-auth`, `@/lib/feedback` y `swr`.
       Con `user.role='viewer'` ⇒ `FeedbackBoard` recibe `canManage=false`;
@@ -529,7 +535,8 @@ rechazo del backend revierte la tarjeta.
       *Aceptación*: rojo por página inexistente.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run "app/(app)/feedback/page.test.tsx"`.
       *Mutación*: no aplica (es el test).
-- [ ] 4.7 (GREEN) Página del tablero.
+- [x] 4.7 (GREEN) Página del tablero.
+      *Evidencia 2026-09-03*: `ADMIN_ROLES` local + `canManage = user !== null && ADMIN_ROLES.includes(user.role)`; `useSWR(FEEDBACK_SWR_KEY, listFeedbackReports)`; `onMove`/`onComment` con el `mutate` EXACTO del design (promesa que resuelve `replaceById(reports, item)`, `optimisticData` como función, `rollbackOnError: true`, `populateCache: true`, `revalidate: false`) — el `null` del helper (401) se convierte en `SessionExpiredError` para que SWR revierta; `outcome` como dato (`kind` + status) traducido al renderizar (403 ⇒ `errors.forbidden`); "Actualizar" ⇒ `mutate()`. Mismo comando de 4.6 ⇒ **14 passed**. `tsc` obligó a volver al `mutate` del design: la firma de SWR tipa `data` como `Promise<Data>` (la variante `populateCache` como función no compila).
       *Archivos*: crea `dashboard/app/(app)/feedback/page.tsx`.
       *Qué*: `'use client'`; `const { user } = useAuth()`; `const ADMIN_ROLES
       = ['admin', 'superadmin']` local (mismo patrón que `AppSidebar.tsx:41`;
@@ -543,7 +550,8 @@ rechazo del backend revierte la tarjeta.
       *Aceptación*: 4.6 verde.
       *Verificación*: mismo comando de 4.6.
       *Mutación*: las lleva 4.9 (M17).
-- [ ] 4.8 Entrada de navegación.
+- [x] 4.8 Entrada de navegación.
+      *Evidencia 2026-09-03*: no existía test del sidebar; se creó `components/AppSidebar.test.tsx` (mocks estables de `next/navigation`, `use-auth`, `use-live-events`, `use-mobile` — jsdom no trae `matchMedia` — bajo `TooltipProvider` + `SidebarProvider`). RED: `Unable to find … role "link" and name "Feedback"` (3 failed); tras agregar `{ href: '/feedback', label: t('feedback'), icon: MessageSquare }` en `routes` ⇒ **3 passed** (viewer y moderador ven Feedback y no Accesos; admin ve ambas y Feedback NO está en el grupo Administración). `rg -n "'/feedback'" dashboard/components/AppSidebar.tsx` ⇒ l.64, dentro de `routes`.
       *Archivos*: modifica `dashboard/components/AppSidebar.tsx` (+ test del
       sidebar existente o caso nuevo según el molde).
       *Qué*: `{ href: '/feedback', label: t('feedback'), icon: MessageSquare }`
@@ -555,7 +563,8 @@ rechazo del backend revierte la tarjeta.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/AppSidebar`.
       *Mutación*: NO — el test positivo con viewer ya falla si la entrada
       cae en `adminRoutes`; es la misma aserción que una mutación daría.
-- [ ] 4.9 **Mutaciones críticas del tablero M16–M18** + gate de fase.
+- [x] 4.9 **Mutaciones críticas del tablero M16–M18** + gate de fase.
+      *Evidencia 2026-09-03 13:15–13:22 UTC*: M16 roja (3 tests: lectura del tablero + viewer/moderador de la página), M18 roja (3 tests del tablero), reversión por `cmp`. **M17 tal como está escrita es INERTE**: 14/14 verdes con la línea quitada porque `swr 2.3.6` revierte por defecto (`rollbackOnErrorOption !== false`, verificado en `node_modules`); se registró y se agregó **M17'** (`true → false`), roja en exactamente los 3 tests de reversión (403/401/red). Total en `mutation-log.md`: 20 filas (M1–M18 + M10' + M17'). Gate: 6 archivos del change ⇒ **69 passed**; `tsc --noEmit` exit 0; suite completa ⇒ **100 files / 1091 passed** (1055 + 19 + 14 + 3), cero regresiones, sin stderr nuevo.
       *Archivos*: `FeedbackCard.tsx`, `feedback/page.tsx`, `FeedbackColumn.tsx`
       (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |

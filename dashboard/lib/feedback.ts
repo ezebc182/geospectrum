@@ -19,6 +19,15 @@ export type FeedbackStatus = 'new' | 'in_analysis' | 'in_progress' | 'done' | 'd
  * "otro Hecho"). */
 export const FLOW_STATUSES: readonly FeedbackStatus[] = ['new', 'in_analysis', 'in_progress', 'done'];
 
+/** Los cinco estados en el orden del menú "Mover a…": el flujo y, al final,
+ * `discarded` (siempre visible y distinguible de `done`). */
+export const FEEDBACK_STATUSES: readonly FeedbackStatus[] = [...FLOW_STATUSES, 'discarded'];
+
+/** Guard para ids que llegan sin tipar (p. ej. el `over.id` de dnd-kit). */
+export function isFeedbackStatus(value: unknown): value is FeedbackStatus {
+  return typeof value === 'string' && (FEEDBACK_STATUSES as readonly string[]).includes(value);
+}
+
 /** Key de SWR del tablero: el widget la revalida tras un 201 para que la
  * tarjeta nueva aparezca en Nuevo si el tablero está montado. */
 export const FEEDBACK_SWR_KEY = '/feedback';

@@ -69,9 +69,10 @@ Comando de tests: `./venv/bin/python -m pytest <archivos> -q -p no:cacheprovider
 | M13 | `src/models/feedback.py` + `src/api/routers/feedback.py` | campo `user_id: Optional[UUID] = None` en `FeedbackReportCreate` + `create(payload.user_id, payload)` | `33: user_id: Optional[UUID] = None`; `44: row = await feedback_service.create(payload.user_id, payload)` | unit `test_create_no_expone_…`: `AssertionError: user_id`; integración `test_post_user_id_inyectado_en_el_body_se_ignora`: `assert UUID('67ec85ea…') == UUID('601f9736…')` (la fila quedó con el user_id de B); `test_post_viewer_crea_y_recibe_ack_minimo`: `NotNullViolationError` en `user_id` | revertido: sí (ambos archivos) |
 | M14 | `dashboard/components/feedback/FeedbackWidget.tsx` | (a) `route: pathname.slice(0, MAX_ROUTE),` → `route: pathname,`; (b) `url: window.location.href.slice(0, MAX_URL),` → `url: window.location.href,`; (c) `user_agent: navigator.userAgent.slice(0, MAX_USER_AGENT),` → `user_agent: navigator.userAgent,` — tres corridas separadas | `106: route: pathname,` / `107: url: window.location.href,` / `108: user_agent: navigator.userAgent,` | `trunca route a 300, url a 2000 y user_agent a 400 exactos; el body viaja completo`: (a) `expected '/rrr…' to have a length of 300 but got 301`; (b) `expected 'http://localhost:3000/x?q=uuu…' to have a length of 2000 but got 2126`; (c) `expected 'aaa…' to have a length of 400 but got 401` — 1 failed / 12 passed en cada corrida | revertido: sí (×3, `cmp` idéntico al snapshot) |
 | M15 | `dashboard/components/feedback/FeedbackWidget.tsx` | `if (isBlank \|\| isTooLong) return;` → `if (isBlank) return;` **y** `body,` → `body: body.slice(0, MAX_BODY),` en el payload (las dos a la vez: el guard solo no alcanza para que un slice sea observable) | `95: if (isBlank) return;` y `105: body: body.slice(0, MAX_BODY),` | `un body de 2001 NO llega a submitFeedback y NO se recorta`: `expected "spy" to not be called at all, but actually been called 1 times` — 1 failed / 12 passed | revertido: sí (ambas sustituciones, `cmp` idéntico) |
-| M16 | | | | | |
-| M17 | | | | | |
-| M18 | | | | | |
+| M16 | `dashboard/components/feedback/FeedbackCard.tsx` | `{canManage && (` (gate del bloque "Mover a…" + asa de arrastre) → `{true && (` | `81: {true && (` sobre `<DropdownMenu>` | `FeedbackBoard.test.tsx > no renderiza "Mover a…" ni asas de arrastre ni DndContext` (l.219 `queryByRole('button', {name: 'Mover a…'})` no es null) **y** `page.test.tsx > viewer: … modo lectura` + `moderador: también modo lectura` (l.140/147) — 3 failed / 30 passed | revertido: sí (`cmp` idéntico al snapshot) |
+| M17 | `dashboard/app/(app)/feedback/page.tsx` | eliminada la línea `rollbackOnError: true,` del `mutate` de `onMove` (tal como la define el design) | `96: optimisticData: …moveLocally…` seguida directo de `populateCache` | **NINGUNO: 14 passed con el archivo mutado.** La mutación es INERTE: en `swr 2.3.6` el default es revertir (`node_modules/swr/dist/_internal/config-context-client-*.mjs:238`: `rollbackOnErrorOption !== false`), así que quitar la línea no cambia el comportamiento. No es un test ciego — es una mutación que no muta (lección documentada). Se reemplaza por M17' | revertido: sí |
+| M17' | `dashboard/app/(app)/feedback/page.tsx` | `rollbackOnError: true,` → `rollbackOnError: false,` en `onMove` (la única forma de desactivar el rollback en SWR 2) | `97: rollbackOnError: false,` | `page.test.tsx > 403: la tarjeta vuelve a su columna…` (l.210 `within(column('Nuevo')).getByText('Tercera falla (T3)')` no la encuentra: quedó en Hecho), `401 (helper resuelve null): revierte…` (l.221), `fallo de red: revierte…` (l.232) — 3 failed / 11 passed | revertido: sí (`cmp` idéntico) |
+| M18 | `dashboard/components/feedback/FeedbackColumn.tsx` | `aria-label={label}` → `aria-label={t(status === 'discarded' ? 'status.done' : \`status.${status}\`)}` (Descartado con el aria-label de Hecho) | `38: aria-label={t(status === 'discarded' ? 'status.done' : …)}` | `FeedbackBoard.test.tsx > Descartado no es Hecho: aria-label y etiqueta distintos`, `renderiza cinco columnas…` y `cada tarjeta cae en la columna de su status…` (`getByRole('region', {name: 'Descartado'})` no existe / dos regiones "Hecho") — 3 failed / 16 passed | revertido: sí (`cmp` idéntico) |
 
 Fase 1 no lleva mutaciones (1.3 y 1.4 son SQL declarativo verificado por ejecución real
 doble y por `CHECK` probados con SQL directo; ver justificación en `tasks.md`).
@@ -124,3 +125,49 @@ ningún otro.
 - Los tests de integración van en `tests/integration/test_feedback_api.py` con
   `TestClient(app)` SIN `with` (no dispara el lifespan; la suite completa no suma ningún
   "Event loop is closed" nuevo).
+
+### Tablero M16–M18 — tarea 4.9, 2026-09-03 13:15 UTC
+
+Mismo runner `scratchpad/mutate-ts.sh` de la Fase 3 (replace exacto que falla si el patrón
+no está, snapshot, `rg -F` del texto mutado, vitest, reversión por replace inverso, `cmp`).
+Los cuatro archivos mutados son NUEVOS (untracked), así que `git diff --stat` sale vacío
+antes y después: la prueba del cambio es el `rg` y la de la reversión es el `cmp`.
+
+- **M16** rojo en 3 tests (tablero en lectura + página con viewer y moderador), ningún otro.
+- **M17 tal como la define el design es inerte** (14/14 verdes con la línea quitada): SWR
+  2.3.6 revierte por defecto. Se registró así y se agregó **M17'** (`true → false`), que mata
+  exactamente los 3 tests de reversión (403, 401, red) y ningún otro. El comentario 422 no
+  muere con M17' porque la mutación fue solo sobre `onMove`; el `mutate` de `onComment`
+  tiene el mismo flag y lo cubre `page.test.tsx > 422 al guardar`.
+- **M18** rojo en 3 tests del tablero (la columna "Descartado" desaparece como región y hay
+  dos "Hecho").
+
+### Gate de Fase 4 (tarea 4.9) — 2026-09-03 13:22 UTC
+
+- `vitest run FeedbackBoard.test.tsx page.test.tsx AppSidebar.test.tsx parity.test.ts
+  feedback.test.ts FeedbackWidget.test.tsx` ⇒ **6 files, 69 passed** (19 + 14 + 3 + 4 + 16 + 13),
+  sin stderr en los archivos nuevos.
+- `tsc --noEmit` ⇒ exit **0** (dos errores intermedios corregidos antes del gate: `Intl.DateTimeFormatOptions`
+  no es asignable al `DateTimeFormatOptions` de use-intl ⇒ objeto `as const`; el `mutate` de SWR tipa
+  `data` como `Promise<Data>`, así que se volvió al `mutate` EXACTO del design — promesa que resuelve la
+  lista completa + `populateCache: true` — en vez de `populateCache` como función).
+- Suite completa del dashboard ⇒ **Test Files 100 passed (100), Tests 1091 passed (1091)** en 62 s
+  = 1055 (gate Fase 3) + 19 (tablero) + 14 (página) + 3 (sidebar). Cero regresiones.
+- `rg -c "dangerouslySetInnerHTML" dashboard/components/feedback/ "dashboard/app/(app)/feedback/"` ⇒ sin matches (exit 1).
+
+### Desvíos del design registrados en Fase 4
+
+- **Asa de arrastre propia** en la tarjeta (botón con `setActivatorNodeRef` + `attributes`/`listeners`)
+  en vez de spreadear los atributos de `useDraggable` sobre toda la tarjeta: así el click en
+  "Ver detalle" y el menú "Mover a…" no compiten con el drag, y en modo lectura la tarjeta no lleva
+  NINGÚN atributo de dnd-kit (`aria-roledescription`), que es lo que el test de lectura afirma.
+- **Orden dentro de la columna se recalcula en el tablero** (`created_at` DESC por `localeCompare`)
+  además de confiar en el orden de la API: el escenario "Orden dentro de una columna" pasa con la
+  lista en cualquier orden.
+- **Etiquetas de tipo** (Falla/Sugerencia) reutilizan `feedback.widget.types.*` en tarjeta y detalle
+  en vez de duplicar las claves bajo `feedback.board`.
+- **`FEEDBACK_STATUSES` e `isFeedbackStatus`** agregados a `lib/feedback.ts` (aditivo; el design los
+  listaba en "File Changes" pero la Fase 3 solo había creado `FLOW_STATUSES`).
+- **Test de la página con SWR REAL** (`SWRConfig` con caché nueva por test, patrón `UsersPanel.test`)
+  en vez de mockear `swr` como decía la tarea 4.6: con SWR mockeado, "la tarjeta vuelve a su columna"
+  probaría el mock y M17' no podría morir.
