@@ -52,13 +52,13 @@ atribuible a este change.
 
 | # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
 |---|---|---|---|---|---|
-| M1 | `src/api/routers/feedback.py` | pendiente (Fase 2) | — | — | — |
-| M2 | `src/api/routers/feedback.py` | pendiente (Fase 2) | — | — | — |
-| M3 | `src/models/feedback.py` | pendiente (Fase 2) | — | — | — |
-| M4 | `src/services/feedback_service.py` | pendiente (Fase 2) | — | — | — |
-| M5 | `src/api/routers/feedback.py` | pendiente (Fase 2) | — | — | — |
-| M6 | `src/api/routers/feedback.py` | pendiente (Fase 2) | — | — | — |
-| M7 | `src/services/feedback_service.py` | pendiente (Fase 2) | — | — | — |
+| M1 | `src/api/routers/feedback.py` | quitar `Depends(get_current_user)` de `create_upload_url` | `56:async def create_upload_url(\n57:    storage: ScreenshotStorageService = ...` (sin `current_user`) | `test_upload_url_sin_sesion_da_401`: `201 == 401` (esperaba 401, dio 201) | revertido: sí |
+| M2 | `src/api/routers/feedback.py` | quitar `if not storage.enabled: raise HTTPException(503, ...)` | bloque ausente, `create_upload_url()` se llama directo tras el docstring | `test_upload_url_r2_sin_configurar_da_503`: `AttributeError: 'NoneType' object has no attribute 'generate_presigned_url'` (500, no 503) | revertido: sí |
+| M3 | `src/models/feedback.py` | `_SCREENSHOT_KEY_PATTERN = re.compile(r".*")` (vacía el regex real) | `32:_SCREENSHOT_KEY_PATTERN = re.compile(r".*")` | `test_create_con_key_invalida_422_cero_filas` (3 casos: path-traversal, bucket-ajeno, uuid-invalido) — los 3 pasaron a 201 en vez de 422 | revertido: sí |
+| M4 | `src/services/screenshot_storage.py` | `ExpiresIn=300` → `expires_in: int = 999999` en `create_upload_url` | `56:    def create_upload_url(self, *, expires_in: int = 999999)` | `test_upload_url_firma_con_expires_in_300`: `X-Amz-Expires` en la URL firmada pasó a `999999`, no `300` | revertido: sí |
+| M5 | `src/api/routers/feedback.py` | `create_report` (POST /feedback) chequea `storage.enabled` antes de insertar | `47-48: feedback_service = Depends(...)\n    storage: ScreenshotStorageService = Depends(...)` + `if not storage.enabled: raise 503` en el handler | `test_create_sin_screenshot_key_sigue_201_con_r2_deshabilitado`: `503 == 201` (esperaba 201, dio 503) | revertido: sí |
+| M6 | `src/api/routers/feedback.py` | quitar `if screenshot_key is None: raise HTTPException(404, ...)` en `get_screenshot_url` | bloque ausente, `storage.create_download_url(screenshot_key)` se llama directo con `screenshot_key=None` | `test_screenshot_url_reporte_sin_key_da_404`: excepción al intentar firmar con key `None` (no 404 limpio) | revertido: sí |
+| M7 | `src/services/feedback_service.py` | `_ITEM_COLUMNS`: `r.screenshot_key` → `NULL AS screenshot_key` (SELECT literal, no la columna real) | `25:    NULL AS screenshot_key, u.email AS author_email` | **Gap detectado**: la mutación NO rompió ningún test existente (79 tests, todos verdes) — ningún test afirmaba el VALOR de `screenshot_key` en `GET /feedback`/`PUT status`/`PUT comment`, solo su presencia como clave. Se agregaron 3 tests nuevos (`test_get_list_expone_el_valor_real_de_screenshot_key`, `test_put_status_expone_el_valor_real_de_screenshot_key`, `test_put_comment_expone_el_valor_real_de_screenshot_key`) que siembran un reporte CON key y afirman el valor exacto en la respuesta; confirmados rojo (`screenshot_key` llegaba `None` en vez del UUID sembrado) con la mutación activa | revertido: sí |
 | M8 | `dashboard/lib/screenshot.ts` | pendiente (Fase 3) | — | — | — |
 | M9 | `dashboard/lib/screenshot.ts` | pendiente (Fase 3) | — | — | — |
 | M10 | `dashboard/lib/screenshot.ts` | pendiente (Fase 3) | — | — | — |
@@ -98,3 +98,73 @@ se arregla el test — nunca se anota como "pasada".
 Estado al cerrar: baseline registrada; `feedback_reports` tiene la columna
 `screenshot_key` en la base del testcontainer; idempotencia probada por
 doble ejecución real del aplicador. Listo para Fase 2.
+
+## Fase 2 — Backend: modelos, ScreenshotStorageService, router (CERRADA, 2026-09-03)
+
+- **2.1**: `boto3==1.43.88` (+ `botocore`, `jmespath`, `s3transfer`)
+  instalado en el venv y pineado en `requirements.txt`.
+- **2.2 (RED) → 2.3 (GREEN)**: `tests/unit/test_screenshot_storage.py` (8
+  tests) creado antes de `src/services/screenshot_storage.py`; rojo por
+  módulo inexistente, verde tras crear el servicio: `8 passed in 0.88s`.
+- **2.4**: 4 variables `Optional[str] = None` en `src/config/settings.py`
+  (`s3_endpoint_url`, `s3_bucket`, `s3_access_key_id`,
+  `s3_secret_access_key`).
+- **2.5 (RED) → 2.6 (GREEN)**: casos nuevos en
+  `tests/unit/test_feedback_models.py` (regex, `ScreenshotUploadUrl`,
+  `ScreenshotDownloadUrl`); rojo por `ImportError`, verde tras extender
+  `src/models/feedback.py`: `51 passed in 2.07s`.
+- **2.7**: `FeedbackService` extendido (`_ITEM_COLUMNS`, `create()`,
+  `get_screenshot_key()`); importa sin error.
+- **2.8–2.10 (RED) → 2.11 (GREEN)**: `tests/integration/test_feedback_screenshot_api.py`
+  (18 tests) creado antes del router; `8 failed, 10 passed` con el router
+  ausente (los 4 `upload_url` por 404 genérico; 2 `screenshot_url` se
+  fortalecieron con `detail != "Not Found"` porque el 404 genérico de
+  FastAPI coincidía "por accidente" con el esperado). Tras crear los dos
+  endpoints nuevos y wirear `app.state.screenshot_storage` en `src/main.py`:
+  `18 passed in 13.95s`. `tests/integration/test_feedback_api.py` necesitó
+  agregar `screenshot_key` a `ITEM_KEYS` (extensión legítima del contrato
+  existente, no una regresión): `61 passed`.
+- **2.12**: M1–M7 ejecutadas y verificadas (tabla arriba). M7 encontró un
+  gap real de cobertura (ver tabla) — corregido antes de registrar la
+  mutación.
+- **Fix colateral fuera de tasks.md pero atribuible a este change**:
+  `tests/integration/test_feedback_migration.py::test_la_tabla_existe_con_las_doce_columnas_del_design`
+  rompió en la corrida de suite completa (`EXPECTED_COLUMNS` no incluía
+  `screenshot_key` — la migración 020 vive en el mismo directorio que la
+  019 y el fixture `_migrated` aplica el glob completo, así que ese test
+  ahora ve la columna nueva). Se agregó `screenshot_key` a
+  `EXPECTED_COLUMNS` con comentario explicativo; `18 passed` en el archivo
+  tras el fix.
+- **2.13 (gate de fase)**: `./venv/bin/ruff format` + `./venv/bin/ruff
+  check` limpios sobre los 9 archivos tocados/nuevos (`src/services/
+  screenshot_storage.py`, `src/models/feedback.py`, `src/api/routers/
+  feedback.py`, `src/config/settings.py`, `src/services/feedback_service.py`,
+  `tests/unit/test_screenshot_storage.py`, `tests/unit/test_feedback_models.py`,
+  `tests/integration/test_feedback_screenshot_api.py`,
+  `tests/integration/test_feedback_api.py`,
+  `tests/integration/test_feedback_migration.py`) — el único hallazgo de
+  `ruff check` (F811 en `src/main.py:2718`, `search_stations` redefinido) es
+  PREEXISTENTE en HEAD antes de este change (confirmado con `git stash` +
+  `ruff check src/main.py`), no introducido acá.
+  Suite del change (`test_screenshot_storage.py` + `test_feedback_models.py`
+  + `test_feedback_screenshot_migration.py` + `test_feedback_screenshot_api.py`
+  + `test_feedback_api.py`): `145 passed in 27.96s`.
+  Suite COMPLETA (`./venv/bin/python -m pytest tests/ -q -p no:cacheprovider
+  --no-cov`), tras el fix de `test_feedback_migration.py`:
+  ```
+  9 failed, 1232 passed, 2 skipped, 8 warnings in 431.83s (0:07:11)
+  ```
+  Los 9 fallos son EXACTAMENTE los mismos 9 de la baseline de 1.1 (mismos
+  nombres, todos en `tests/unit/test_ws_events.py`) — cero regresiones
+  nuevas. El delta contra la baseline (1181 passed → 1232 passed) es +51,
+  los tests nuevos de esta Fase 2 (8 de `test_screenshot_storage.py` + 4 de
+  `test_feedback_screenshot_migration.py`, ya contados en Fase 1, + los
+  nuevos de `test_feedback_models.py`, `test_feedback_screenshot_api.py` y
+  los 3 agregados a `test_feedback_api.py`/`test_feedback_migration.py` por
+  el fix de M7 y el gap de `EXPECTED_COLUMNS`).
+
+Estado al cerrar Fase 2: los tres endpoints existentes exponen
+`screenshot_key`; los dos endpoints nuevos responden la matriz de auth
+completa; R2 sin configurar degrada a 503 solo en presign sin afectar
+create/list/put; 7 mutaciones críticas verificadas con RED real y reversión
+byte-limpia. Listo para Fase 3 (frontend).

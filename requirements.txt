@@ -21,6 +21,12 @@ python-json-logger==2.0.7
 psycopg2-binary==2.9.9
 asyncpg==0.29.0
 
+# Object storage (feedback-screenshot-attachment) — cliente S3-compatible
+# síncrono para firmar URLs prefirmadas hacia Cloudflare R2 (presign es
+# cómputo local, sin I/O de red: ver design.md Decision 1, no se justifica
+# aioboto3). Versión resuelta al instalar en este venv el 2026-09-03.
+boto3==1.43.88
+
 # Auth (multi-user-auth)
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.0

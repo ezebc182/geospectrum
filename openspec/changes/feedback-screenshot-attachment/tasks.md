@@ -149,7 +149,7 @@ responden con la matriz de auth completa; R2 sin configurar degrada a 503
 solo en presign sin afectar create/list; mutaciones registradas. Usable por
 `curl` contra un testcontainer.
 
-- [ ] 2.1 `boto3` como dependencia nueva.
+- [x] 2.1 `boto3` como dependencia nueva.
       *Archivos*: modifica `requirements.txt`.
       *Qué*: agregar `boto3` (pineada a la versión resuelta por
       `./venv/bin/pip install boto3` en este venv) — no está en el repo hoy,
@@ -157,7 +157,11 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: `./venv/bin/python -c "import boto3"` no lanza.
       *Verificación*: `./venv/bin/pip show boto3 && ./venv/bin/python -c "import boto3; print('ok')"`.
       *Mutación*: no aplica (es instalación de dependencia).
-- [ ] 2.2 (RED) Tests unitarios de `ScreenshotStorageService`.
+      *Evidencia (2026-09-03)*: `./venv/bin/pip install boto3` ⇒ instaló
+      `boto3-1.43.88` (+ `botocore-1.43.88`, `jmespath-1.1.0`,
+      `s3transfer-0.19.2`); pineado en `requirements.txt` con comentario de
+      cabecera. `./venv/bin/python -c "import boto3; print('ok')"` ⇒ `ok`.
+- [x] 2.2 (RED) Tests unitarios de `ScreenshotStorageService`.
       *Archivos*: crea `tests/unit/test_screenshot_storage.py`.
       *Qué*: las 4 variables presentes ⇒ `enabled is True` sin abrir ningún
       socket (no requiere R2 real: `boto3.client(...)` no valida
@@ -171,7 +175,11 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: falla por módulo inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_screenshot_storage.py -q`.
       *Mutación*: no aplica (es el test; sus mutaciones van en 2.9).
-- [ ] 2.3 (GREEN) Crear `ScreenshotStorageService`.
+      *Evidencia (2026-09-03)*: `tests/unit/test_screenshot_storage.py`
+      creado; `ImportError: cannot import name 'ScreenshotStorageService'`
+      (módulo `src.services.screenshot_storage` no existe) — colección con 1
+      error, razón correcta.
+- [x] 2.3 (GREEN) Crear `ScreenshotStorageService`.
       *Archivos*: crea `src/services/screenshot_storage.py`.
       *Qué*: firmas EXACTAS del design (`__init__` con las 4
       `Optional[str]`, cliente `boto3` perezoso construido solo si las 4 no
@@ -185,7 +193,10 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: 2.2 verde.
       *Verificación*: mismo comando de 2.2.
       *Mutación*: las lleva 2.11 (ver tabla).
-- [ ] 2.4 Config en `settings.py`.
+      *Evidencia (2026-09-03)*: `src/services/screenshot_storage.py` creado
+      con las firmas exactas del design. `./venv/bin/python -m pytest
+      tests/unit/test_screenshot_storage.py -q` ⇒ `8 passed in 0.88s`.
+- [x] 2.4 Config en `settings.py`.
       *Archivos*: modifica `src/config/settings.py`.
       *Qué*: 4 variables `Optional[str] = None` (`s3_endpoint_url`,
       `s3_bucket`, `s3_access_key_id`, `s3_secret_access_key`), comentario en
@@ -194,7 +205,9 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: `./venv/bin/python -c "from src.config.settings import settings; print(settings.s3_bucket)"` ⇒ `None` sin configurar env vars.
       *Verificación*: el comando de arriba.
       *Mutación*: NO — es declaración de config sin lógica; la protege 2.9/2.10 (degradación observada end-to-end).
-- [ ] 2.5 (RED) Tests unitarios de los modelos Pydantic nuevos/extendidos.
+      *Evidencia (2026-09-03)*: 4 variables agregadas a
+      `src/config/settings.py`. Comando de verificación ⇒ `None`.
+- [x] 2.5 (RED) Tests unitarios de los modelos Pydantic nuevos/extendidos.
       *Archivos*: modifica `tests/unit/test_feedback_models.py`.
       *Qué*: `FeedbackReportCreate.screenshot_key`: `None` ⇒ OK; formato
       exacto `feedback-screenshots/{uuid4}.png` ⇒ OK; `"../../etc/passwd"`,
@@ -207,7 +220,11 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: falla por atributo/clase inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_feedback_models.py -q`.
       *Mutación*: no aplica (es el test; sus mutaciones van en 2.11).
-- [ ] 2.6 (GREEN) Extender `src/models/feedback.py`.
+      *Evidencia (2026-09-03)*: casos nuevos agregados a
+      `tests/unit/test_feedback_models.py`; `ImportError: cannot import name
+      'ScreenshotDownloadUrl' from 'src.models.feedback'` — colección con 1
+      error, razón correcta.
+- [x] 2.6 (GREEN) Extender `src/models/feedback.py`.
       *Archivos*: modifica `src/models/feedback.py`.
       *Qué*: `_SCREENSHOT_KEY_PATTERN` (regex EXACTO del design) y
       `field_validator` en `FeedbackReportCreate.screenshot_key: Optional[str]
@@ -218,7 +235,12 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: 2.5 verde.
       *Verificación*: mismo comando de 2.5.
       *Mutación*: las lleva 2.11 (M3).
-- [ ] 2.7 Extender `FeedbackService` para leer/escribir `screenshot_key`.
+      *Evidencia (2026-09-03)*: `_SCREENSHOT_KEY_PATTERN`, el `field_validator`
+      en `FeedbackReportCreate`, el campo en `FeedbackReportItem`, y
+      `ScreenshotUploadUrl`/`ScreenshotDownloadUrl` agregados a
+      `src/models/feedback.py`. `./venv/bin/python -m pytest
+      tests/unit/test_feedback_models.py -q` ⇒ `51 passed in 2.07s`.
+- [x] 2.7 Extender `FeedbackService` para leer/escribir `screenshot_key`.
       *Archivos*: modifica `src/services/feedback_service.py`.
       *Qué*: `create()` inserta `screenshot_key` (o `NULL` si no vino);
       `_ITEM_COLUMNS`/el SELECT de `_row_to_item()` incluye la columna en las
@@ -233,7 +255,11 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       2.8–2.10 (verificar contra la base, no con mocks).
       *Verificación*: `./venv/bin/python -c "import src.services.feedback_service"`.
       *Mutación*: las lleva 2.11 (M4).
-- [ ] 2.8 (RED) Integración — `POST /feedback/upload-url`.
+      *Evidencia (2026-09-03)*: `_ITEM_COLUMNS`/`_row_to_item` incluyen
+      `screenshot_key`; `create()` inserta la columna; `get_screenshot_key()`
+      agregado. `./venv/bin/python -c "import
+      src.services.feedback_service"` ⇒ sin error.
+- [x] 2.8 (RED) Integración — `POST /feedback/upload-url`.
       *Archivos*: crea `tests/integration/test_feedback_screenshot_api.py`
       (molde `test_feedback_api.py`: `TestClient`, `_login_as`,
       `_auth_service_mock`). Fixture que instancia `app.state.
@@ -252,7 +278,11 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: rojo por router inexistente (404).
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_feedback_screenshot_api.py -q -k upload_url`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.9 (RED) Integración — degradación con R2 sin configurar.
+      *Evidencia (2026-09-03)*: `tests/integration/test_feedback_screenshot_api.py`
+      creado (18 tests de la Fase 2 completa); `8 failed, 10 passed` al
+      correr el archivo completo antes del router — los 4 tests de
+      `upload_url` fallaron por 404 genérico de FastAPI (ruta inexistente).
+- [x] 2.9 (RED) Integración — degradación con R2 sin configurar.
       *Archivos*: mismo archivo de 2.8.
       *Qué*: fixture alternativa con `app.state.screenshot_storage =
       ScreenshotStorageService(None, None, None, None)` (`enabled=False`):
@@ -268,7 +298,11 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: rojo por router inexistente.
       *Verificación*: `... -k degrad`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.10 (RED) Integración — create con/sin key y lectura de screenshot-url.
+      *Evidencia (2026-09-03)*: casos de degradación (`test_upload_url_r2_sin_configurar_da_503`
+      y matriz de `create`/`GET`/`PUT` con R2 deshabilitado) incluidos en el
+      mismo archivo de 2.8; `test_upload_url_r2_sin_configurar_da_503` rojo
+      por router inexistente en la corrida conjunta de 2.8.
+- [x] 2.10 (RED) Integración — create con/sin key y lectura de screenshot-url.
       *Archivos*: mismo archivo de 2.8.
       *Qué*: `POST /feedback` sin `screenshot_key` ⇒ 201, SELECT confirma
       `screenshot_key IS NULL`; con key de formato válido ⇒ 201, SELECT la
@@ -282,7 +316,18 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: rojo por router inexistente.
       *Verificación*: `... -k "create or screenshot_url"`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.11 (GREEN) Router: `POST /feedback/upload-url`, `GET
+      *Evidencia (2026-09-03)*: `test_screenshot_url_reporte_con_key_devuelve_200`
+      y `test_screenshot_url_sin_sesion_da_401` rojo por 404 genérico de
+      router ausente. Nota: `test_screenshot_url_reporte_sin_key_da_404` y
+      `test_screenshot_url_uuid_inexistente_da_404` pasaban "por accidente"
+      (FastAPI ya responde 404 genérico para una ruta sin registrar, que
+      coincide con el código esperado) — se fortalecieron con
+      `resp.json()["detail"] != "Not Found"` (mismo criterio que
+      `test_feedback_api.py::test_status_uuid_inexistente_da_404`) para que
+      SÍ estuvieran rojas por la razón correcta antes del GREEN; confirmado
+      rojo tras el fix. Los tests de `create con/sin key` (2.6/2.7 ya GREEN)
+      pasaban de antes — correcto, no son parte del gap de router.
+- [x] 2.11 (GREEN) Router: `POST /feedback/upload-url`, `GET
       /feedback/{id}/screenshot-url`, extender `POST /feedback` existente.
       *Archivos*: modifica `src/api/routers/feedback.py`; modifica
       `src/main.py`.
@@ -302,7 +347,17 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       *Aceptación*: 2.8, 2.9 y 2.10 verdes completos.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_feedback_screenshot_api.py -q`.
       *Mutación*: la lleva 2.12.
-- [ ] 2.12 **Mutaciones críticas del backend** (registrar cada una en
+      *Evidencia (2026-09-03)*: `POST /upload-url`, `GET
+      /{report_id}/screenshot-url` y `_get_screenshot_storage` agregados a
+      `src/api/routers/feedback.py`; `app.state.screenshot_storage` wireado
+      en `src/main.py` (mismo patrón que `feedback_service`).
+      `./venv/bin/python -m pytest
+      tests/integration/test_feedback_screenshot_api.py -q` ⇒ `18 passed in
+      13.95s`. También se agregó `screenshot_key` a `ITEM_KEYS` en
+      `tests/integration/test_feedback_api.py` (la extensión legítima de
+      `FeedbackReportItem` rompía el `set(item) == ITEM_KEYS` de 3 tests
+      preexistentes); tras el fix, `61 passed`.
+- [x] 2.12 **Mutaciones críticas del backend** (registrar cada una en
       `mutation-log.md` con la mecánica del encabezado).
       *Archivos*: `src/api/routers/feedback.py`,
       `src/services/screenshot_storage.py`, `src/models/feedback.py`
@@ -320,12 +375,37 @@ solo en presign sin afectar create/list; mutaciones registradas. Usable por
       muestra el cambio, el test rojo con la aserción exacta, la reversión
       verificada por `cmp` contra snapshot, y el verde posterior.
       *Verificación*: `rg -c "revertido: sí" openspec/changes/feedback-screenshot-attachment/mutation-log.md` ⇒ ≥ 7.
-- [ ] 2.13 Gate de fase.
+      *Evidencia (2026-09-03)*: M1–M7 ejecutadas una a la vez con `Edit`
+      (`sd -s` con patrón multilínea no matcheaba — gotcha ya conocido),
+      cada una confirmada con `rg` antes del test, rojo con la razón exacta,
+      revertida por `cmp` byte-a-byte (exit 0) contra el snapshot tomado
+      ANTES de mutar, y verde posterior. M7 detectó un HUECO real de
+      cobertura: ningún test afirmaba el VALOR de `screenshot_key` devuelto
+      por `GET /feedback`/`PUT status`/`PUT comment` (solo su presencia como
+      clave) — la mutación (reemplazar la columna real por `NULL AS
+      screenshot_key` en `_ITEM_COLUMNS`) pasó 79 tests sin romper ninguno.
+      Se fortaleció el test (3 casos nuevos que siembran `screenshot_key` y
+      afirman el valor exacto en las 3 respuestas) ANTES de registrar la
+      mutación como pasada — confirmados rojo con la mutación activa, luego
+      verdes tras revertir. Detalle completo en `mutation-log.md`.
+- [x] 2.13 Gate de fase.
       *Qué*: suite del change (migración 020 + modelos + storage + API)
       verde; `ruff format` + `ruff check` limpios sobre los archivos nuevos
       y tocados, sin hallazgos nuevos respecto de HEAD.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_screenshot_storage.py tests/unit/test_feedback_models.py tests/integration/test_feedback_screenshot_migration.py tests/integration/test_feedback_screenshot_api.py tests/integration/test_feedback_api.py -q && ./venv/bin/ruff check src/services/screenshot_storage.py src/models/feedback.py src/api/routers/feedback.py src/main.py src/config/settings.py tests/unit/test_screenshot_storage.py tests/integration/test_feedback_screenshot_api.py tests/integration/test_feedback_screenshot_migration.py`.
       *Mutación*: no aplica.
+      *Evidencia (2026-09-03)*: suite del change: `145 passed in 27.96s`.
+      `ruff format` + `ruff check` limpios sobre los 9 archivos
+      tocados/nuevos de esta fase; el único hallazgo de `ruff check .` en
+      todo el repo (F811 en `src/main.py:2718`, `search_stations`
+      redefinido) es PREEXISTENTE en HEAD (confirmado con `git stash` +
+      `ruff check src/main.py` antes de esta fase). Suite COMPLETA
+      (`./venv/bin/python -m pytest tests/ -q -p no:cacheprovider --no-cov`):
+      `9 failed, 1232 passed, 2 skipped, 8 warnings in 431.83s` — los 9
+      fallos son EXACTAMENTE los mismos de la baseline de 1.1 (mismos
+      nombres, todos `tests/unit/test_ws_events.py`), cero regresiones
+      nuevas; delta neto +51 sobre la baseline de 1181. Detalle completo en
+      `mutation-log.md`.
 
 ---
 

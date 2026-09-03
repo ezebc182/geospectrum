@@ -19,18 +19,25 @@ from src.models.feedback import (
     FeedbackReportCreated,
     FeedbackReportItem,
     FeedbackStatusUpdate,
+    ScreenshotDownloadUrl,
+    ScreenshotUploadUrl,
 )
 from src.models.user import CurrentUser, UserRole
 from src.services.feedback_service import (
     FeedbackReportNotFoundError,
     FeedbackService,
 )
+from src.services.screenshot_storage import ScreenshotStorageService
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
 
 def _get_feedback_service(request: Request) -> FeedbackService:
     return request.app.state.feedback_service
+
+
+def _get_screenshot_storage(request: Request) -> ScreenshotStorageService:
+    return request.app.state.screenshot_storage
 
 
 @router.post("", response_model=FeedbackReportCreated, status_code=201)
@@ -43,6 +50,43 @@ async def create_report(
     # Pydantic lo descarta. Ack mínimo; `status = new` es contrato.
     row = await feedback_service.create(current_user.id, payload)
     return FeedbackReportCreated(id=row["id"], created_at=row["created_at"])
+
+
+@router.post("/upload-url", response_model=ScreenshotUploadUrl, status_code=201)
+async def create_upload_url(
+    current_user: CurrentUser = Depends(get_current_user),
+    storage: ScreenshotStorageService = Depends(_get_screenshot_storage),
+) -> ScreenshotUploadUrl:
+    """Presign de subida directa a R2 (feedback-screenshot-attachment).
+
+    Sin body: el Content-Type image/png lo fija el cliente en el PUT a R2, no
+    acá. 503 si R2 no está configurado — degrada sin romper el resto del
+    router (design.md Decision 3).
+    """
+    if not storage.enabled:
+        raise HTTPException(status_code=503, detail="screenshot storage not configured")
+    key, upload_url, expires_at = storage.create_upload_url()
+    return ScreenshotUploadUrl(key=key, upload_url=upload_url, expires_at=expires_at)
+
+
+@router.get("/{report_id}/screenshot-url", response_model=ScreenshotDownloadUrl)
+async def get_screenshot_url(
+    report_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    feedback_service: FeedbackService = Depends(_get_feedback_service),
+    storage: ScreenshotStorageService = Depends(_get_screenshot_storage),
+) -> ScreenshotDownloadUrl:
+    """Presign de lectura (feedback-screenshot-attachment). 404 tanto si el
+    reporte no existe como si existe pero screenshot_key es NULL — mismo
+    código, sin distinguir el caso al cliente (design.md Decision 4)."""
+    try:
+        screenshot_key = await feedback_service.get_screenshot_key(report_id)
+    except FeedbackReportNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if screenshot_key is None:
+        raise HTTPException(status_code=404, detail="report has no screenshot")
+    url, expires_at = storage.create_download_url(screenshot_key)
+    return ScreenshotDownloadUrl(url=url, expires_at=expires_at)
 
 
 @router.get("")

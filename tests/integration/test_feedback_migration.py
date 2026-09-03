@@ -40,6 +40,11 @@ EXPECTED_COLUMNS = {
     "status_changed_at",
     "admin_comment",
     "admin_comment_updated_at",
+    # feedback-screenshot-attachment (migración 020, aplicada por el mismo
+    # glob que la 019 — el fixture `_migrated` no las separa): columna nueva,
+    # nullable, sin default. Ver test_feedback_screenshot_migration.py para
+    # la cobertura dedicada de la 020.
+    "screenshot_key",
 }
 
 VALID_STATUSES = ("new", "in_analysis", "in_progress", "done", "discarded")
