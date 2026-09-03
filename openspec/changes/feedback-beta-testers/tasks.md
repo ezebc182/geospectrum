@@ -144,7 +144,8 @@ reconciliado; la idempotencia probada por doble ejecución REAL del aplicador.
 permisos completa contra testcontainer; idempotencia probada comparando
 timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
 
-- [ ] 2.1 (RED) Tests unitarios de los modelos Pydantic.
+- [x] 2.1 (RED) Tests unitarios de los modelos Pydantic.
+      *Evidencia 2026-09-03*: `./venv/bin/python -m pytest tests/unit/test_feedback_models.py -q` ⇒ `ModuleNotFoundError: No module named 'src.models.feedback'` (1 error en colección — rojo por la razón correcta). 33 casos escritos.
       *Archivos*: crea `tests/unit/test_feedback_models.py` (molde
       `tests/unit/test_locale_models.py`: `pytest.raises(ValidationError)`).
       *Qué*:
@@ -164,7 +165,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: la suite falla por módulo inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_feedback_models.py -q`.
       *Mutación*: no aplica (es el test; sus mutaciones van en 2.9).
-- [ ] 2.2 (GREEN) Crear los modelos.
+- [x] 2.2 (GREEN) Crear los modelos.
+      *Evidencia 2026-09-03*: `src/models/feedback.py` con `user_agent: str = Field(max_length=400)` sin default, `status_changed_at: Optional[datetime] = None`, `field_validator("body")` que rechaza el vacío sin alterar el texto; mismo comando de 2.1 ⇒ **33 passed in 0.15s**.
       *Archivos*: crea `src/models/feedback.py`.
       *Qué*: el contrato de "Interfaces / Contracts" del design con DOS
       correcciones reconciliadas: `user_agent: str = Field(max_length=400)`
@@ -175,7 +177,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: 2.1 verde.
       *Verificación*: mismo comando de 2.1.
       *Mutación*: las lleva 2.9 (M8, M9, M10, M11).
-- [ ] 2.3 Crear el service.
+- [x] 2.3 Crear el service.
+      *Evidencia 2026-09-03*: `./venv/bin/python -c "import src.services.feedback_service"` ⇒ `import ok`. **Desvío registrado**: el SQL del comentario lleva `$2::text` (asyncpg: `AmbiguousParameterError: could not determine data type of parameter $2` con el `WHEN $2 IS NULL` pelado del design); semántica idéntica, protegida por M6/M7.
       *Archivos*: crea `src/services/feedback_service.py`.
       *Qué*: `FeedbackService` con pool prestado (molde
       `src/services/window_comments.py`): `create(user_id, payload)` (INSERT
@@ -191,7 +194,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       (verificar contra la base, no con mocks — sin tests unitarios propios).
       *Verificación*: `./venv/bin/python -c "import src.services.feedback_service"`.
       *Mutación*: las lleva 2.9 (M5, M6, M7, M12, M13).
-- [ ] 2.4 (RED) Integración — bloque `POST /feedback`.
+- [x] 2.4 (RED) Integración — bloque `POST /feedback`.
+      *Evidencia 2026-09-03*: los cuatro bloques (2.4–2.7) se escribieron en un solo archivo y se corrieron juntos antes del router: **58 failed, 2 passed** — `assert 404 == 201` (×5), `404 == 401` (×2), `404 == 422` (×12), `404 == 200`… Los 2 que pasaban eran los de "UUID inexistente ⇒ 404" (el 404 de FastAPI por ruta ausente): se endurecieron con `detail != "Not Found"` para que también mueran sin router. Helper propio `_insert_user(dsn, email, role)`.
       *Archivos*: crea `tests/integration/test_feedback_api.py`.
       *Qué*: molde `test_window_comments_api.py` (`TestClient`, `_login_as`,
       `_auth_service_mock` que deriva el rol del `CurrentUser`). OJO: el
@@ -212,7 +216,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: rojo por router inexistente (404), no por setup.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_feedback_api.py -q -k post`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.5 (RED) Integración — bloque `GET /feedback`.
+- [x] 2.5 (RED) Integración — bloque `GET /feedback`.
+      *Evidencia 2026-09-03*: ver 2.4 (misma corrida roja por 404). Cubre 401 sin sesión con `"TEXTO-QUE-NO-DEBE-FILTRARSE" not in resp.text`, desactivado 401, 200 para los cuatro roles, orden C/B/A por `created_at DESC`, `author_email`, par comentario/timestamp solo en B, `set(item) == ITEM_KEYS` (sin `user_id`), viewer == admin campo a campo, `{"reports": []}`.
       *Archivos*: `tests/integration/test_feedback_api.py`.
       *Qué*: matriz completa: sin sesión 401 (body sin datos de reportes);
       desactivado 401; **`viewer` 200**, `moderador` 200, `admin` 200,
@@ -226,7 +231,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: rojo por 404.
       *Verificación*: `... -k get`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.6 (RED) Integración — bloque `PUT /feedback/{report_id}/status`.
+- [x] 2.6 (RED) Integración — bloque `PUT /feedback/{report_id}/status`.
+      *Evidencia 2026-09-03*: ver 2.4 (misma corrida roja). Idempotencia comparando `status_changed_at` leído por psycopg2 (`== t1` exacto; hacia atrás `t2 > t1`), terminales reversibles, 422 ×3 con fila intacta, 404/422 por id, matriz `none/viewer/moderador/admin/superadmin` ⇒ 401/403/403/200/200 con SELECT, mover no toca comentario/body/type, `DELETE` ⇒ 404/405.
       *Archivos*: `tests/integration/test_feedback_api.py`.
       *Qué*: `admin` mueve `new → in_progress` ⇒ 200 con item completo,
       SELECT `status_changed_at` no nulo (T1); **repetir `in_progress` ⇒ 200
@@ -241,7 +247,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: rojo por 404/405.
       *Verificación*: `... -k status`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.7 (RED) Integración — bloque `PUT /feedback/{report_id}/comment`.
+- [x] 2.7 (RED) Integración — bloque `PUT /feedback/{report_id}/comment`.
+      *Evidencia 2026-09-03*: ver 2.4 (misma corrida roja). C1 intacto al repetir `"hola"` y `"  hola  "`, C2 > C1 al editar y `'"v1"' not in board.text`, vaciar con `null`/`""`/`"   "` ⇒ par NULL, vaciar un null ⇒ 200, 2001 ⇒ 422 con `("previo", c1)` intactos, 2000 exactos OK, comentar no mueve (`status_changed_at == t1` sembrado), matriz 401/403/403/200/200 con SELECT.
       *Archivos*: `tests/integration/test_feedback_api.py`.
       *Qué*: `{"comment": "hola"}` ⇒ 200, `admin_comment="hola"`,
       `admin_comment_updated_at = C1`; **repetir `"hola"` ⇒ C1 intacto**;
@@ -256,7 +263,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: rojo por 404/405.
       *Verificación*: `... -k comment`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.8 (GREEN) Router + registro en `main.py`.
+- [x] 2.8 (GREEN) Router + registro en `main.py`.
+      *Evidencia 2026-09-03*: router creado con las cuatro firmas del design; `main.py` +6 líneas aditivas (dos imports, `app.state.feedback_service = FeedbackService(db_pool)` junto a `window_comment_service`, `include_router`) — `git diff --stat` ⇒ `1 file changed, 6 insertions(+)`. Dos ajustes del TEST en el camino (psycopg2 devuelve `uuid` como `str` y no adapta `uuid.UUID`) y el desvío `$2::text` de 2.3. `./venv/bin/python -m pytest tests/integration/test_feedback_api.py -q` ⇒ **61 passed in 11.11s** (60 + el test de `status` inyectado agregado en 2.9).
       *Archivos*: crea `src/api/routers/feedback.py`; modifica `src/main.py`.
       *Qué*: `APIRouter(prefix="/feedback", tags=["feedback"])` con las cuatro
       firmas del design (`_get_feedback_service(request)` leyendo
@@ -269,8 +277,9 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: 2.4, 2.5, 2.6 y 2.7 verdes completos.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_feedback_api.py -q`.
       *Mutación*: las lleva 2.9 (M1–M4).
-- [ ] 2.9 **Mutaciones críticas del backend M1–M13** (registrar cada una en
+- [x] 2.9 **Mutaciones críticas del backend M1–M13** (registrar cada una en
       `mutation-log.md` con la mecánica del encabezado).
+      *Evidencia 2026-09-03*: 14 filas en `mutation-log.md` (M1–M13 + M10', con M10 en tres corridas a/b/c), TODAS rojas con la aserción exacta anotada y reversión verificada por `cmp` contra snapshot; `rg -c "revertido: sí"` ⇒ 14. Dos lecciones nuevas registradas en el log: **`sd 1.0.0 -s` no matchea literales con `\n`** (M1/M2/M4 dieron "verde" con el archivo sin mutar hasta que se cambió a un replace exacto que falla si el patrón no está) y el snapshot por `basename` colisionó entre los dos `feedback.py` (se re-keyó por path). Se agregó `test_post_status_inyectado_en_el_body_se_ignora` para que M12 muera por SELECT.
       *Archivos*: `src/api/routers/feedback.py`, `src/services/feedback_service.py`,
       `src/models/feedback.py` (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |
@@ -291,7 +300,8 @@ timestamps; 13 mutaciones registradas. El backend es usable por `curl`.
       *Aceptación*: 14 filas en `mutation-log.md` (M1–M13 + M10'), cada una
       con `rg` que muestra el cambio, el test rojo, la reversión y el verde.
       *Verificación*: `rg -c "revertido: sí" openspec/changes/feedback-beta-testers/mutation-log.md` ⇒ ≥ 14.
-- [ ] 2.10 Gate de fase.
+- [x] 2.10 Gate de fase.
+      *Evidencia 2026-09-03*: suite del change ⇒ **112 passed in 15.90s** (33 unit + 18 migración + 61 API). `ruff format` + `ruff check` limpios en los 6 archivos nuevos; `src/main.py` NO se reformateó (ruff quería tocar 17 líneas preexistentes — se restauró de HEAD y se reaplicaron solo las 6 líneas aditivas) y su único hallazgo (`F811 search_stations` l.2706) es preexistente en HEAD. Suite COMPLETA (`./venv/bin/python -m pytest tests/ -q -p no:cacheprovider --no-cov`) ⇒ **9 failed, 1181 passed, 2 skipped**: los 9 fallos son los mismos de `test_ws_events.py` de la baseline; 1181 = 1069 + 18 + 94, cero regresiones. (Una corrida con `-p no:logging` mostró 1 error espurio por `fixture 'caplog' not found`: es el flag, no el código — el archivo pasa 5/5 con los flags de la baseline.)
       *Qué*: suite de este change verde y `ruff` limpio sobre los archivos
       nuevos/tocados (sin hallazgos nuevos respecto de HEAD).
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_feedback_models.py tests/integration/test_feedback_migration.py tests/integration/test_feedback_api.py -q && ./venv/bin/ruff check src/models/feedback.py src/services/feedback_service.py src/api/routers/feedback.py src/main.py tests/unit/test_feedback_models.py tests/integration/test_feedback_api.py tests/integration/test_feedback_migration.py`.
