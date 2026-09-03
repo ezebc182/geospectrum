@@ -46,6 +46,7 @@ function buildReport(overrides: Partial<FeedbackReport> = {}): FeedbackReport {
     status_changed_at: null,
     admin_comment: null,
     admin_comment_updated_at: null,
+    screenshot_key: null,
     ...overrides,
   };
 }

@@ -1000,7 +1000,8 @@
       "error": "We could not send the report. Your text is still here: try again in a moment.",
       "sessionExpired": "Your session expired. Sign in again; your text is still here.",
       "retry": "Retry",
-      "tooLong": "The report exceeds 2000 characters."
+      "tooLong": "The report exceeds 2000 characters.",
+      "webglNotice": "This view has 3D content: the automatic capture may not include it."
     },
     "status": {
       "new": "New",

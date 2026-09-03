@@ -21,6 +21,15 @@
  * - Tras el 201 revalida la key del tablero (`mutate(FEEDBACK_SWR_KEY)`): si
  *   `/feedback` está montado la tarjeta aparece en Nuevo; si no, es un no-op.
  *   El widget NO navega solo: ofrece un link y el tester decide.
+ * - Captura de pantalla opcional (change feedback-screenshot-attachment,
+ *   design Decision 3): al ABRIR el dialog se dispara `captureScreenshot` +
+ *   `uploadScreenshot` en paralelo, en background, SIN bloquear el render
+ *   del formulario ni el submit. Si termina a tiempo, `screenshotKey` queda
+ *   en el estado y viaja en el payload; si no, o si falló en cualquier
+ *   punto de la cadena, el submit sigue igual sin ese campo — nunca hay un
+ *   error visible por la captura. El aviso de WebGL (`detectWebglCanvas`,
+ *   detectado al abrir) es puramente informativo: nunca deshabilita ni
+ *   retrasa el botón de enviar.
  */
 
 import * as React from 'react';
@@ -40,6 +49,7 @@ import {
 } from '@/components/ui/dialog';
 import { ApiStatusError } from '@/lib/auth';
 import { FEEDBACK_SWR_KEY, submitFeedback, type FeedbackType } from '@/lib/feedback';
+import { captureScreenshot, detectWebglCanvas, uploadScreenshot } from '@/lib/screenshot';
 import { cn } from '@/lib/utils';
 
 /** Límites espejo de los CHECK de la migración 019 y de los Field de Pydantic. */
@@ -82,6 +92,12 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
   // en el próximo render, el ref se aplica YA.
   const inFlightRef = React.useRef(false);
 
+  // Captura de pantalla: `null` mientras no hay key subida (no capturó
+  // todavía, falló, o R2 no está configurado). `showWebglNotice` es
+  // puramente informativo, nunca gatea el submit.
+  const [screenshotKey, setScreenshotKey] = React.useState<string | null>(null);
+  const [showWebglNotice, setShowWebglNotice] = React.useState(false);
+
   const isOpen = phase !== 'idle';
   const isSending = phase === 'sending';
   const isBlank = body.trim().length === 0;
@@ -101,9 +117,39 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
   };
 
   // openProp es la fuente de verdad de apertura cuando el caller la controla
-  // (AppSidebar): NO hay useEffect espejando estado en estado (trampa
-  // documentada, useEffect+ref/estado como dependencia). En vez de eso, el
-  // Dialog recibe directamente `openProp ?? isOpen` — un solo lugar decide.
+  // (AppSidebar): NO hay useEffect espejando estado EN estado (trampa
+  // documentada, useEffect+ref/estado como dependencia — ver
+  // watchdog-formato-canal-sin-location-no-matchea / react-effect-ref-
+  // dependency-trap en memoria). En vez de eso, el Dialog recibe
+  // directamente `openProp ?? isOpen` — un solo lugar decide.
+  const dialogOpen = openProp ?? isOpen;
+
+  // Captura de pantalla: dispara UNA vez por apertura (design Decision 3),
+  // no en `handleOpenChange` — cuando el caller controla `openProp`
+  // (AppSidebar) el trigger real vive AFUERA de este componente y nunca
+  // pasa por `handleOpenChange`, solo cambia `openProp` directamente. Este
+  // efecto observa el booleano derivado `dialogOpen` (no un ref, no un
+  // estado espejado) y usa un ref SOLO para no repetir la captura en
+  // re-renders mientras sigue abierto — se resetea al cerrar.
+  const capturedForThisOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!dialogOpen) {
+      capturedForThisOpenRef.current = false;
+      return;
+    }
+    if (capturedForThisOpenRef.current) return;
+    capturedForThisOpenRef.current = true;
+
+    setScreenshotKey(null);
+    setShowWebglNotice(detectWebglCanvas());
+    // En background: cualquier fallo en la cadena ya se atrapa dentro de
+    // captureScreenshot/uploadScreenshot y resuelve `null` — nunca hay nada
+    // que propagar ni que bloquee el formulario.
+    void captureScreenshot().then((blob) => {
+      if (blob === null) return null;
+      return uploadScreenshot(blob).then(setScreenshotKey);
+    });
+  }, [dialogOpen]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -117,13 +163,17 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
     setOutcome(null);
 
     // Captura del contexto EN EL SUBMIT, no al abrir: la URL de una vista de
-    // análisis cambia con cada ajuste de ventana.
+    // análisis cambia con cada ajuste de ventana. `screenshot_key` es la
+    // excepción: esa sí se disparó al abrir (Decision 3) — el submit solo
+    // lee lo que ya haya resuelto, SIN esperar (`screenshotKey` puede seguir
+    // en `null` si la subida no terminó a tiempo, y el envío procede igual).
     const payload = {
       type,
       body,
       route: pathname.slice(0, MAX_ROUTE),
       url: window.location.href.slice(0, MAX_URL),
       user_agent: navigator.userAgent.slice(0, MAX_USER_AGENT),
+      ...(screenshotKey !== null ? { screenshot_key: screenshotKey } : {}),
     };
 
     try {
@@ -147,11 +197,6 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
   };
 
   const submitLabel = isSending ? t('sending') : phase === 'error' ? t('retry') : t('submit');
-
-  // Sin trigger propio: `openProp` (controlado por AppSidebar) manda cuando
-  // está presente; si el caller no lo pasa, el diálogo no tiene forma de
-  // abrirse (no hay caso de uso hoy sin AppSidebar montado).
-  const dialogOpen = openProp ?? isOpen;
 
   return (
     <Dialog open={dialogOpen} onOpenChange={handleOpenChange}>
@@ -215,6 +260,10 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
 
               {/* Aviso de transparencia: dicho ANTES de enviar (riesgo del proposal). */}
               <p className="text-xs text-muted-foreground">{t('visibilityNotice')}</p>
+
+              {/* Puramente informativo: NUNCA deshabilita ni retrasa el
+                  submit (design Decision 3, M12 en mutation-log.md). */}
+              {showWebglNotice && <p className="text-xs text-muted-foreground">{t('webglNotice')}</p>}
 
               {phase === 'error' && outcome && (
                 <p className="text-sm text-destructive" role="alert">

@@ -11,10 +11,20 @@ const W = es.feedback.widget;
 // Referencias ESTABLES: un mock de router/pathname que devuelve un objeto
 // nuevo por render cuelga tests (lección documentada). El pathname se cambia
 // mutando `pathnameState.value`, nunca re-mockeando el módulo.
-const { pathnameState, submitFeedbackMock, mutateMock } = vi.hoisted(() => ({
+const {
+  pathnameState,
+  submitFeedbackMock,
+  mutateMock,
+  captureScreenshotMock,
+  detectWebglCanvasMock,
+  uploadScreenshotMock,
+} = vi.hoisted(() => ({
   pathnameState: { value: '/analytics' },
   submitFeedbackMock: vi.fn(),
   mutateMock: vi.fn(),
+  captureScreenshotMock: vi.fn(),
+  detectWebglCanvasMock: vi.fn(),
+  uploadScreenshotMock: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -25,6 +35,12 @@ vi.mock('@/lib/feedback', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/feedback')>();
   return { ...actual, submitFeedback: submitFeedbackMock };
 });
+
+vi.mock('@/lib/screenshot', () => ({
+  captureScreenshot: captureScreenshotMock,
+  detectWebglCanvas: detectWebglCanvasMock,
+  uploadScreenshot: uploadScreenshotMock,
+}));
 
 const swrConfig = { mutate: mutateMock };
 vi.mock('swr', () => ({
@@ -89,6 +105,11 @@ beforeEach(() => {
   pathnameState.value = '/analytics';
   window.history.replaceState({}, '', '/analytics?channel=AK.FIRE..BHZ&start=2026-09-01T00:00:00Z&end=2026-09-02T00:00:00Z');
   setUserAgent(UA);
+  // Defaults neutros: sin captura, sin WebGL. Cada test que necesite otro
+  // comportamiento lo pisa explícitamente.
+  captureScreenshotMock.mockResolvedValue(null);
+  detectWebglCanvasMock.mockReturnValue(false);
+  uploadScreenshotMock.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -288,5 +309,82 @@ describe('FeedbackWidget — estados del envío', () => {
     expect(screen.queryByText(W.sent)).not.toBeInTheDocument();
     expect(screen.getByRole('textbox')).toHaveValue('texto');
     expect(mutateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('FeedbackWidget — captura de pantalla automática al abrir', () => {
+  it('al abrir dispara captureScreenshot sin bloquear el render del formulario', async () => {
+    let resolveCapture: (v: Blob | null) => void = () => {};
+    captureScreenshotMock.mockImplementation(() => new Promise((resolve) => { resolveCapture = resolve; }));
+    renderWidget();
+    openDialog();
+
+    await waitFor(() => expect(captureScreenshotMock).toHaveBeenCalledTimes(1));
+    // El tester puede tipear ANTES de que la captura resuelva.
+    typeBody('ya puedo escribir');
+    expect(screen.getByRole('textbox')).toHaveValue('ya puedo escribir');
+
+    resolveCapture(new Blob(['x'], { type: 'image/png' }));
+  });
+
+  it('detectWebglCanvas true ⇒ muestra el aviso; false ⇒ no lo muestra', async () => {
+    detectWebglCanvasMock.mockReturnValue(true);
+    renderWidget();
+    const dialog = openDialog();
+    expect(dialog).toHaveTextContent(W.webglNotice);
+  });
+
+  it('sin WebGL detectado, el aviso no aparece', () => {
+    detectWebglCanvasMock.mockReturnValue(false);
+    renderWidget();
+    const dialog = openDialog();
+    expect(dialog).not.toHaveTextContent(W.webglNotice);
+  });
+
+  it('el aviso WebGL nunca deshabilita ni retrasa el botón de enviar', () => {
+    detectWebglCanvasMock.mockReturnValue(true);
+    renderWidget();
+    openDialog();
+    typeBody('reporte con globo 3D');
+    expect(screen.getByRole('button', { name: W.submit })).not.toBeDisabled();
+  });
+
+  it('si uploadScreenshot resuelve una key ANTES del submit, el payload la incluye', async () => {
+    captureScreenshotMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    uploadScreenshotMock.mockResolvedValue('feedback-screenshots/abc.png');
+    submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
+
+    renderWidget();
+    openDialog();
+    await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
+    typeBody('con captura');
+    clickSubmit();
+
+    await waitFor(() => expect(submitFeedbackMock).toHaveBeenCalledTimes(1));
+    expect(submitFeedbackMock.mock.calls[0][0].screenshot_key).toBe('feedback-screenshots/abc.png');
+  });
+
+  it('si uploadScreenshot resuelve null (o no terminó a tiempo), el submit va sin screenshot_key y completa igual', async () => {
+    let resolveUpload: (v: string | null) => void = () => {};
+    captureScreenshotMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    uploadScreenshotMock.mockImplementation(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
+
+    renderWidget();
+    openDialog();
+    typeBody('sin captura a tiempo');
+    clickSubmit();
+
+    await waitFor(() => expect(submitFeedbackMock).toHaveBeenCalledTimes(1));
+    expect(submitFeedbackMock.mock.calls[0][0].screenshot_key).toBeUndefined();
+    await screen.findByText(W.sent);
+    // Sin ningún mensaje de error de captura visible.
+    expect(screen.queryByText(W.error)).not.toBeInTheDocument();
+
+    // Resolver la subida pendiente DENTRO del test (envuelta en act vía
+    // waitFor) para no dejar una actualización de estado colgando tras el
+    // cleanup — la key llega tarde, pero el widget ya cerró/confirmó antes.
+    resolveUpload(null);
+    await waitFor(() => expect(uploadScreenshotMock).toHaveResolved());
   });
 });

@@ -416,7 +416,7 @@ dispara captura + presign + subida en paralelo sin bloquear el tipeo; una
 vista con WebGL muestra el aviso; el submit incluye `screenshot_key` si la
 subida terminó a tiempo, y funciona igual si no.
 
-- [ ] 3.1 Instalar `modern-screenshot` y registrar baseline frontend.
+- [x] 3.1 Instalar `modern-screenshot` y registrar baseline frontend.
       *Archivos*: modifica `dashboard/package.json` (y lockfile).
       *Qué*: exportar el PATH de Node v22 de nvm; `cd dashboard && npm
       install modern-screenshot` (dependencia NUEVA, no asumir presente);
@@ -428,7 +428,11 @@ subida terminó a tiempo, y funciona igual si no.
       match; baseline anotada.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run 2>&1 | tail -5`.
       *Mutación*: no aplica.
-- [ ] 3.2 (RED) Test del helper de screenshot ANTES de crearlo.
+      *Evidencia (2026-09-03)*: `npm install modern-screenshot` ⇒
+      `modern-screenshot@4.7.0` agregado a `dependencies`. Baseline fresca:
+      `100 files / 1094 tests passed`; `tsc --noEmit` ⇒ exit 0. Registrado en
+      `mutation-log.md`.
+- [x] 3.2 (RED) Test del helper de screenshot ANTES de crearlo.
       *Archivos*: crea `dashboard/lib/screenshot.test.ts` (molde
       `dashboard/lib/walls.test.ts`, `mockFetch`).
       *Qué*: `detectWebglCanvas()`: con `document.querySelectorAll('canvas')`
@@ -447,7 +451,21 @@ subida terminó a tiempo, y funciona igual si no.
       *Aceptación*: falla por módulo inexistente.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/screenshot.test.ts`.
       *Mutación*: no aplica (es el test; sus mutaciones van en 3.6).
-- [ ] 3.3 (GREEN) Crear `dashboard/lib/screenshot.ts`.
+      *Evidencia (2026-09-03)*: `dashboard/lib/screenshot.test.ts` creado (11
+      tests: 4 de `detectWebglCanvas`, 4 de `uploadScreenshot`, 3 de
+      `captureScreenshot`); jsdom no soporta WebGL real (`getContext('webgl')`
+      es `null` por default), así que `detectWebglCanvas` se testea mockeando
+      `document.querySelectorAll` con canvases stub cuyo `getContext` propio
+      se spyea por id (patrón nuevo para este archivo, no existía un molde de
+      WebGL en el repo — sí existía el molde de `getContext('2d')` con
+      `vi.spyOn(HTMLCanvasElement.prototype, 'getContext')` en
+      `HelicorderCanvas.test.tsx`, pero acá conviene un canvas por escenario
+      en vez de un prototype-spy global). `modern-screenshot` se mockea con
+      `vi.mock` + `vi.hoisted` (referencia estable, mismo criterio que los
+      mocks de router). `./node_modules/.bin/vitest run lib/screenshot.test.ts`
+      ⇒ rojo por `Failed to resolve import "./screenshot"` — razón correcta
+      (módulo inexistente).
+- [x] 3.3 (GREEN) Crear `dashboard/lib/screenshot.ts`.
       *Archivos*: crea `dashboard/lib/screenshot.ts`.
       *Qué*: las tres funciones con las firmas EXACTAS del design
       (`captureScreenshot(): Promise<Blob | null>`,
@@ -463,7 +481,12 @@ subida terminó a tiempo, y funciona igual si no.
       *Aceptación*: 3.2 verde.
       *Verificación*: mismo comando de 3.2.
       *Mutación*: las lleva 3.6 (M9, M10).
-- [ ] 3.4 (RED→GREEN) Extender `dashboard/lib/feedback.ts`.
+      *Evidencia (2026-09-03)*: `dashboard/lib/screenshot.ts` creado con las
+      tres firmas exactas del design (`captureScreenshot`,
+      `detectWebglCanvas`, `uploadScreenshot`), `MAX_SIDE_PX=1920` y
+      `MAX_BYTES=2MB` como constantes del módulo.
+      `./node_modules/.bin/vitest run lib/screenshot.test.ts` ⇒ `11 passed`.
+- [x] 3.4 (RED→GREEN) Extender `dashboard/lib/feedback.ts`.
       *Archivos*: modifica `dashboard/lib/feedback.ts`; modifica
       `dashboard/lib/feedback.test.ts`.
       *Qué (RED primero)*: agregar al test existente: `FeedbackPayload`
@@ -481,7 +504,24 @@ subida terminó a tiempo, y funciona igual si no.
       *Mutación*: NO — tests de contrato con fetch mockeado (molde
       `walls.test.ts`); la lógica de decisión vive en el backend y en
       `screenshot.ts` (mutaciones de 3.6).
-- [ ] 3.5 (RED→GREEN) Aviso WebGL, captura al abrir, wiring del submit en
+      *Evidencia (2026-09-03)*: 6 casos nuevos agregados a
+      `dashboard/lib/feedback.test.ts` (3 de `requestScreenshotUploadUrl`, 3
+      de `getScreenshotDownloadUrl`); también se agregó `screenshot_key:
+      null` al fixture `REPORT` del mismo archivo (necesario para que el tipo
+      siga siendo un `FeedbackReport` válido tras extender la interfaz).
+      Rojo inicial: `6 failed` por `getScreenshotDownloadUrl is not a
+      function`/import inexistente. Tras extender `feedback.ts`
+      (`FeedbackPayload.screenshot_key?`, `FeedbackReport.screenshot_key`,
+      `ScreenshotUploadUrl`, `ScreenshotDownloadUrl`,
+      `requestScreenshotUploadUrl()`, `getScreenshotDownloadUrl()`):
+      `./node_modules/.bin/vitest run lib/feedback.test.ts` ⇒ `22 passed`.
+      Efecto colateral esperado: `screenshot_key: string | null` en
+      `FeedbackReport` rompió `tsc` en dos fixtures `buildReport()`
+      preexistentes (`app/(app)/feedback/page.test.tsx`,
+      `components/feedback/FeedbackBoard.test.tsx`) que no incluían el campo
+      nuevo — se les agregó `screenshot_key: null` al default del builder,
+      mismo patrón ya usado ahí para `admin_comment_updated_at`.
+- [x] 3.5 (RED→GREEN) Aviso WebGL, captura al abrir, wiring del submit en
       `FeedbackWidget.tsx`.
       *Archivos*: modifica `dashboard/components/feedback/FeedbackWidget.tsx`;
       modifica `dashboard/components/feedback/FeedbackWidget.test.tsx`.
@@ -504,7 +544,33 @@ subida terminó a tiempo, y funciona igual si no.
       completo.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/feedback/FeedbackWidget.test.tsx`.
       *Mutación*: las lleva 3.6 (M11, M12).
-- [ ] 3.6 Strings i18n del aviso WebGL y estado de captura + mutaciones
+      *Evidencia (2026-09-03)*: 6 casos nuevos agregados a
+      `FeedbackWidget.test.tsx` con `vi.mock('@/lib/screenshot', ...)`
+      (referencias estables vía `vi.hoisted`, mismo patrón que
+      `submitFeedbackMock`). Rojo inicial: 3 de los 6 fallaron
+      (`captureScreenshotMock`/`uploadScreenshotMock` nunca llamados; el
+      aviso WebGL no aparecía) — razón correcta, el wiring no existía.
+      **Desviación real encontrada durante la implementación**: la primera
+      versión disparaba la captura dentro de `handleOpenChange`, pero el
+      harness de test (y `AppSidebar` en producción) controla `open` como
+      prop externa y NUNCA llama a `handleOpenChange` para abrir — solo lo
+      hace para cerrar (`Dialog.onOpenChange`). Con la captura en
+      `handleOpenChange`, `captureScreenshotMock` quedaba en 0 llamadas
+      siempre que el caller controlara `openProp` (el caso real de
+      producción). Se movió la lógica a un `useEffect` sobre el booleano
+      derivado `dialogOpen` (`openProp ?? isOpen`), con un `ref` que
+      SOLAMENTE evita repetir la captura en re-renders mientras el dialog
+      sigue abierto (se resetea a `false` al cerrar) — no es el patrón de
+      "efecto que lee un ref/estado como dependencia" de la lección de
+      memoria: la dependencia del efecto es el booleano derivado, el ref es
+      un guard interno de una sola dirección. Tras el fix:
+      `./node_modules/.bin/vitest run components/feedback/FeedbackWidget.test.tsx`
+      ⇒ `19 passed` (13 preexistentes + 6 nuevos). Un test tuvo `act()`
+      warning por una promesa resuelta después del assert final
+      (`resolveUpload(null)` sin esperar su efecto) — corregido agregando
+      `await waitFor(() => expect(uploadScreenshotMock).toHaveResolved())`
+      al final del test; sin warnings tras el fix.
+- [x] 3.6 Strings i18n del aviso WebGL y estado de captura + mutaciones
       críticas del frontend (subida/degradación) + gate de fase.
       *Archivos*: modifica `dashboard/messages/es.json`,
       `dashboard/messages/en.json`; `dashboard/lib/screenshot.ts`,
@@ -526,6 +592,25 @@ subida terminó a tiempo, y funciona igual si no.
       `FeedbackWidget.test.tsx`, `parity.test.ts` verdes y `tsc --noEmit`
       exit 0.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/screenshot.test.ts lib/feedback.test.ts components/feedback/FeedbackWidget.test.tsx messages/parity.test.ts && ./node_modules/.bin/tsc --noEmit`.
+      *Evidencia (2026-09-03)*: `feedback.widget.webglNotice` agregado a
+      `messages/es.json` y `messages/en.json`.
+      `./node_modules/.bin/vitest run messages/parity.test.ts` ⇒ `4 passed`.
+      M8–M12 ejecutadas una a la vez con `Edit`, cada una confirmada con `rg`
+      antes del test, RED con la razón exacta (test que el propio tasks.md
+      predijo), revertida por `cmp` byte-a-byte (exit 0, `cmp: byte-identical`)
+      contra un snapshot tomado ANTES de mutar, y verde posterior. Detalle
+      completo (mutación exacta, salida de `rg`, test que murió) en
+      `mutation-log.md`.
+      Suite del change tras revertir todas las mutaciones:
+      `./node_modules/.bin/vitest run lib/screenshot.test.ts lib/feedback.test.ts
+      components/feedback/FeedbackWidget.test.tsx messages/parity.test.ts` ⇒
+      `56 passed`. `tsc --noEmit` ⇒ exit 0.
+      **Gate de fase completo**: `./node_modules/.bin/vitest run` (suite
+      COMPLETA del dashboard) ⇒ `101 files / 1117 tests passed` (baseline de
+      3.1 era 100/1094 — delta +1 archivo, +23 tests, exactamente los tests
+      nuevos de esta fase: 11 de `screenshot.test.ts`, 6 de
+      `feedback.test.ts`, 6 de `FeedbackWidget.test.tsx`). Cero regresiones.
+      `tsc --noEmit` ⇒ exit 0.
 
 ---
 

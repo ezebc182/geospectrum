@@ -59,11 +59,11 @@ atribuible a este change.
 | M5 | `src/api/routers/feedback.py` | `create_report` (POST /feedback) chequea `storage.enabled` antes de insertar | `47-48: feedback_service = Depends(...)\n    storage: ScreenshotStorageService = Depends(...)` + `if not storage.enabled: raise 503` en el handler | `test_create_sin_screenshot_key_sigue_201_con_r2_deshabilitado`: `503 == 201` (esperaba 201, dio 503) | revertido: sí |
 | M6 | `src/api/routers/feedback.py` | quitar `if screenshot_key is None: raise HTTPException(404, ...)` en `get_screenshot_url` | bloque ausente, `storage.create_download_url(screenshot_key)` se llama directo con `screenshot_key=None` | `test_screenshot_url_reporte_sin_key_da_404`: excepción al intentar firmar con key `None` (no 404 limpio) | revertido: sí |
 | M7 | `src/services/feedback_service.py` | `_ITEM_COLUMNS`: `r.screenshot_key` → `NULL AS screenshot_key` (SELECT literal, no la columna real) | `25:    NULL AS screenshot_key, u.email AS author_email` | **Gap detectado**: la mutación NO rompió ningún test existente (79 tests, todos verdes) — ningún test afirmaba el VALOR de `screenshot_key` en `GET /feedback`/`PUT status`/`PUT comment`, solo su presencia como clave. Se agregaron 3 tests nuevos (`test_get_list_expone_el_valor_real_de_screenshot_key`, `test_put_status_expone_el_valor_real_de_screenshot_key`, `test_put_comment_expone_el_valor_real_de_screenshot_key`) que siembran un reporte CON key y afirman el valor exacto en la respuesta; confirmados rojo (`screenshot_key` llegaba `None` en vez del UUID sembrado) con la mutación activa | revertido: sí |
-| M8 | `dashboard/lib/screenshot.ts` | pendiente (Fase 3) | — | — | — |
-| M9 | `dashboard/lib/screenshot.ts` | pendiente (Fase 3) | — | — | — |
-| M10 | `dashboard/lib/screenshot.ts` | pendiente (Fase 3) | — | — | — |
-| M11 | `dashboard/components/feedback/FeedbackWidget.tsx` | pendiente (Fase 3) | — | — | — |
-| M12 | `dashboard/components/feedback/FeedbackWidget.tsx` | pendiente (Fase 3) | — | — | — |
+| M8 | `dashboard/lib/screenshot.ts` | En `detectWebglCanvas`, acumular en `result` e invertir (`return !result`) | `39:  return !result;` | `lib/screenshot.test.ts`: 4 tests de `detectWebglCanvas` — 2 rojos por esperado invertido (`getContext devuelve null para webgl y webgl2… ⇒ false` recibió `true`; `sin ningún canvas… ⇒ false` recibió `true`) | revertido: sí |
+| M9 | `dashboard/lib/screenshot.ts` | En `uploadScreenshot`, quitar el `try/catch` que atrapa el fallo del PUT | función sin `try`/`catch`, `await` directo | `lib/screenshot.test.ts`: `presign 201 pero el PUT a upload_url rechaza (!ok)…` — la promesa RECHAZÓ (`TypeError: network error` propagado) en vez de resolver `null`; `presign 201 pero el PUT rechaza por network error…` — mismo síntoma | revertido: sí |
+| M10 | `dashboard/lib/screenshot.ts` | En `captureScreenshot`, quitar el chequeo `if (blob.size > MAX_BYTES) return null` | `return blob;` sin el chequeo previo | `lib/screenshot.test.ts`: `un blob mayor a 2MB tras "comprimir"… ⇒ null` — recibió el objeto de 2097153 bytes en vez de `null` | revertido: sí |
+| M11 | `dashboard/components/feedback/FeedbackWidget.tsx` | En `handleSubmit`, agregar `await uploadInFlightRef.current` (ref nueva que referencia la promesa de captura+subida) ANTES de armar el payload | `176:    await uploadInFlightRef.current;` | `FeedbackWidget.test.tsx`: `si uploadScreenshot resuelve null (o no terminó a tiempo)…` — `submitFeedbackMock` nunca se llamó (el submit quedó bloqueado esperando una promesa que el mock no resuelve en ese test) | revertido: sí |
+| M12 | `dashboard/components/feedback/FeedbackWidget.tsx` | Agregar `showWebglNotice` a la condición `disabled` del botón de submit | `disabled={isSending \|\| isBlank \|\| showWebglNotice}` | `FeedbackWidget.test.tsx`: `el aviso WebGL nunca deshabilita ni retrasa el botón de enviar` — el botón quedó `disabled` con el aviso visible | revertido: sí |
 | M13 | `dashboard/components/feedback/FeedbackCard.tsx` | pendiente (Fase 4) | — | — | — |
 | M14 | `dashboard/components/feedback/FeedbackCardDetail.tsx` | pendiente (Fase 4) | — | — | — |
 
@@ -168,3 +168,94 @@ Estado al cerrar Fase 2: los tres endpoints existentes exponen
 completa; R2 sin configurar degrada a 503 solo en presign sin afectar
 create/list/put; 7 mutaciones críticas verificadas con RED real y reversión
 byte-limpia. Listo para Fase 3 (frontend).
+
+## Fase 3 — Frontend: captura, presign, subida, aviso WebGL (EN CURSO, 2026-09-03)
+
+### Baseline frontend (ANTES de tocar `dashboard/`)
+
+Comando: `cd dashboard && ./node_modules/.bin/vitest run` (con
+`export PATH="$HOME/.nvm/versions/node/v22.16.0/bin:$PATH"` primero).
+
+Resultado real de HOY:
+
+```
+Test Files  100 passed (100)
+     Tests  1094 passed (1094)
+```
+
+`./node_modules/.bin/tsc --noEmit` ⇒ exit 0.
+
+Backend Phase 2 no toca `dashboard/`, así que el número coincide con el
+`1093 passed`/`100 files` mencionado en tasks.md como referencia vieja del
+change base — pero medido fresco HOY en esta rama, no asumido (1094, no
+1093: la diferencia es un test agregado en un commit posterior al change
+base, `3456b04` "mover el disparador del widget al sidebar").
+
+### 3.1 Instalación de `modern-screenshot`
+
+`npm install modern-screenshot` ⇒ 1 paquete agregado. `rg
+'"modern-screenshot"' dashboard/package.json` ⇒ match en
+`dependencies`. `package-lock.json` actualizado (cambios esperados).
+
+### 3.2–3.5 (RED→GREEN): `lib/screenshot.ts`, `lib/feedback.ts`, wiring del widget
+
+Ver `tasks.md` para el detalle de cada RED/GREEN. Resumen:
+
+- `dashboard/lib/screenshot.test.ts` (11 tests, creado antes del módulo) ⇒
+  rojo por módulo inexistente, verde tras crear `dashboard/lib/screenshot.ts`
+  (`captureScreenshot`, `detectWebglCanvas`, `uploadScreenshot`).
+- `dashboard/lib/feedback.test.ts` (+6 tests) ⇒ rojo por funciones
+  inexistentes, verde tras extender `dashboard/lib/feedback.ts`
+  (`requestScreenshotUploadUrl`, `getScreenshotDownloadUrl`,
+  `screenshot_key` en `FeedbackPayload`/`FeedbackReport`,
+  `ScreenshotUploadUrl`/`ScreenshotDownloadUrl`). Efecto colateral: dos
+  fixtures `buildReport()` preexistentes (`app/(app)/feedback/page.test.tsx`,
+  `FeedbackBoard.test.tsx`) necesitaron `screenshot_key: null` en su default
+  para seguir tipando como `FeedbackReport` — mismo patrón ya usado ahí para
+  `admin_comment_updated_at`.
+- `dashboard/components/feedback/FeedbackWidget.test.tsx` (+6 tests) ⇒ rojo
+  por wiring inexistente (3 de 6 fallaron: mocks nunca llamados, aviso
+  ausente). **Hallazgo real**: la primera implementación disparaba la
+  captura en `handleOpenChange`, pero ese handler NUNCA se ejecuta cuando el
+  caller controla `open` como prop externa (el caso de producción real,
+  desde que `AppSidebar` mueve el trigger fuera del widget) — solo se
+  ejecuta al CERRAR. Se movió a un `useEffect([dialogOpen])` con un ref-guard
+  de una sola dirección (evita repetir la captura en re-renders mientras
+  sigue abierto, se resetea al cerrar) — no es la trampa de "efecto que lee
+  un ref/estado como dependencia" documentada en memoria, porque la
+  dependencia declarada es el booleano derivado `dialogOpen`, no el ref.
+  Verde tras el fix: `19 passed`. Un `act()` warning por una promesa
+  resuelta post-assert se corrigió esperando su resolución con `waitFor`
+  antes de terminar el test.
+
+### 3.6 Mutaciones M8–M12 y gate de fase (CERRADA, 2026-09-03)
+
+M8–M12 ejecutadas y verificadas (tabla arriba, con `rg`/RED/`cmp`/verde cada
+una). Ninguna mutación falló en ir a rojo — las 5 pusieron rojo el/los
+test(s) predichos por el design (M1–M7 en Fase 2) sin necesidad de
+fortalecer ningún test.
+
+`parity.test.ts` ⇒ `4 passed` (con `feedback.widget.webglNotice` agregado a
+ambos idiomas).
+
+**Gate de fase completo** — suite COMPLETA del dashboard tras revertir todas
+las mutaciones:
+
+```
+Test Files  101 passed (101)
+     Tests  1117 passed (1117)
+```
+
+`tsc --noEmit` ⇒ exit 0. Delta contra la baseline de 3.1 (100 files / 1094
+tests): +1 archivo, +23 tests — exactamente los tests nuevos de esta fase
+(11 de `screenshot.test.ts` + 6 de `feedback.test.ts` + 6 de
+`FeedbackWidget.test.tsx`). Cero regresiones.
+
+Estado al cerrar Fase 3: `modern-screenshot` instalado; abrir el widget
+dispara captura + presign + subida en paralelo sin bloquear el tipeo; una
+vista con WebGL (mockeado en tests, real en `SeismicGlobe.tsx` queda para QA
+del usuario en Fase 6) muestra el aviso, puramente informativo; el submit
+incluye `screenshot_key` si la subida terminó a tiempo, y funciona igual si
+no — verificado con RED real, nunca asumido. 5 mutaciones críticas (M8–M12)
+verificadas con reversión byte-limpia. Listo para Fase 4 (thumbnail y
+lightbox en el tablero admin).
