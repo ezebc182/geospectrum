@@ -766,7 +766,7 @@ lectura degrada a un estado roto de imagen, no a un crash.
 **Estado al cerrar la fase**: ningún literal hardcodeado nuevo, paridad
 es/en verde incluyendo las claves de esta fase.
 
-- [ ] 5.1 Paridad es/en de las claves nuevas.
+- [x] 5.1 Paridad es/en de las claves nuevas.
       *Archivos*: `dashboard/messages/es.json`, `dashboard/messages/en.json`
       (solo si falta algo tras 3.6/4.4).
       *Qué*: correr `parity.test.ts`; confirmar con `rg` que
@@ -775,7 +775,12 @@ es/en verde incluyendo las claves de esta fase.
       *Aceptación*: paridad verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`.
       *Mutación*: NO — `parity.test.ts` es el guardián.
-- [ ] 5.2 Auditoría: sin literales hardcodeados en los archivos nuevos/tocados.
+      *Evidencia (2026-09-03)*: `./node_modules/.bin/vitest run
+      messages/parity.test.ts` ⇒ `4 passed`. `rg -c` confirma
+      `webglNotice`, `screenshotThumbnailAlt`, `screenshotUnavailable` y
+      `screenshotLightboxTitle` presentes 4 veces en `es.json` y 4 en
+      `en.json` (una por clave, ambos idiomas parejos).
+- [x] 5.2 Auditoría: sin literales hardcodeados en los archivos nuevos/tocados.
       *Archivos*: `dashboard/lib/screenshot.ts`,
       `dashboard/components/feedback/FeedbackWidget.tsx`,
       `dashboard/components/feedback/FeedbackCard.tsx`,
@@ -786,11 +791,18 @@ es/en verde incluyendo las claves de esta fase.
       *Aceptación*: sin matches que sean texto de usuario.
       *Verificación*: `rg -n ">[A-Za-zÁ-ú][^<{]*<" dashboard/components/feedback`.
       *Mutación*: no aplica (auditoría estática).
-- [ ] 5.3 Tipos.
+      *Evidencia (2026-09-03)*: `rg -n ">[A-Za-zÁ-ú][^<{]*<" lib/screenshot.ts
+      components/feedback/FeedbackWidget.tsx
+      components/feedback/FeedbackCard.tsx
+      components/feedback/FeedbackCardDetail.tsx` ⇒ sin matches, cero
+      literales de usuario fuera de `t(...)`.
+- [x] 5.3 Tipos.
       *Qué*: `tsc --noEmit` exit 0 sobre el dashboard completo. Nunca
       `next build`.
       *Verificación*: `cd dashboard && ./node_modules/.bin/tsc --noEmit; echo $?`.
       *Mutación*: no aplica.
+      *Evidencia (2026-09-03)*: `./node_modules/.bin/tsc --noEmit` ⇒ `exit
+      0`, sin salida.
 
 ---
 
