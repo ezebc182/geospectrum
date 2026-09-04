@@ -60,9 +60,10 @@ function GlobeView() {
   // arranca apuntando a ese sismo en vez de al ciclo automático.
   const initialEventId = searchParams.get(EVENT_PARAM);
 
-  // Pantalla completa por default: /globe ES la transmisión. La X la achica
-  // al layout de la app sin cambiar de página.
-  const [fullscreen, setFullscreen] = useState(true);
+  // Embebido por default (decisión 2026-09-04, revierte la anterior): el
+  // usuario puede pasar a pantalla completa con el botón del overlay cuando
+  // quiera dedicarle toda la pantalla.
+  const [fullscreen, setFullscreen] = useState(false);
 
   // Embebido el HUD necesita alto en px (el globo no acepta %). Se descuenta
   // el chrome del layout (navbar + padding del <main>) del viewport.

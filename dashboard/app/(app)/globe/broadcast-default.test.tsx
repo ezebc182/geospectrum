@@ -1,6 +1,8 @@
 /**
  * /globe es siempre modo transmisión: no queda un "globo pelado" al que
- * volver. El overlay es el único estado de la página, con o sin ?event=.
+ * volver. El overlay es el único estado de la página, con o sin ?event=,
+ * embebido por default (decisión 2026-09-04) o en pantalla completa tras
+ * expandir — nunca desaparece del árbol para volver a un componente distinto.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -20,8 +22,14 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => searchParamsMock.current,
 }));
 
+// El mock recibe las props reales: un mock que ignora `fullscreen` no
+// distinguiría el default embebido del default fullscreen (lo que pasó acá
+// hasta el cambio de 2026-09-04 — los tres tests de abajo pasaban igual con
+// cualquiera de los dos).
 vi.mock('@/components/GlobeBroadcastOverlay', () => ({
-  GlobeBroadcastOverlay: () => <div data-testid="broadcast-overlay" />,
+  GlobeBroadcastOverlay: ({ fullscreen }: { fullscreen: boolean }) => (
+    <div data-testid="broadcast-overlay" data-fullscreen={fullscreen} />
+  ),
 }));
 
 function renderPage() {
@@ -38,9 +46,15 @@ afterEach(() => {
 });
 
 describe('GlobePage', () => {
-  it('el overlay es el unico estado de la pagina', () => {
+  it('el overlay es el unico estado de la pagina', async () => {
     renderPage();
-    expect(screen.getByTestId('broadcast-overlay')).toBeTruthy();
+    expect(await screen.findByTestId('broadcast-overlay')).toBeTruthy();
+  });
+
+  it('arranca embebido (fullscreen=false), no en pantalla completa', async () => {
+    renderPage();
+    const overlay = await screen.findByTestId('broadcast-overlay');
+    expect(overlay).toHaveAttribute('data-fullscreen', 'false');
   });
 
   it('tambien con ?event= en la URL', () => {
