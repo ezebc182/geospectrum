@@ -1030,7 +1030,10 @@
       "userAgent": "Browser",
       "createdAt": "Sent on {date}",
       "movedAt": "In this column since {date}",
-      "close": "Close"
+      "close": "Close",
+      "screenshotThumbnailAlt": "View the screenshot attached to the report",
+      "screenshotUnavailable": "The screenshot is not available",
+      "screenshotLightboxTitle": "Report screenshot"
     },
     "comment": {
       "label": "Team comment",

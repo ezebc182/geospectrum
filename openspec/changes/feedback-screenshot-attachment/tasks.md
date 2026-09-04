@@ -621,7 +621,7 @@ thumbnail y abre un lightbox con la imagen completa; sin `screenshot_key`,
 el layout es idéntico al de antes de este change; un fallo de la URL de
 lectura degrada a un estado roto de imagen, no a un crash.
 
-- [ ] 4.1 (RED) Tests de thumbnail y lightbox ANTES de implementarlos.
+- [x] 4.1 (RED) Tests de thumbnail y lightbox ANTES de implementarlos.
       *Archivos*: modifica `dashboard/components/feedback/FeedbackCard.test.tsx`
       si existe como archivo propio, o los casos correspondientes dentro de
       `FeedbackBoard.test.tsx` (verificar cuál de los dos monta
@@ -646,7 +646,26 @@ lectura degrada a un estado roto de imagen, no a un crash.
       *Aceptación*: rojo por comportamiento/elemento inexistente.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/feedback/FeedbackCard.test.tsx components/feedback/FeedbackBoard.test.tsx` (ajustar rutas según dónde queden los casos).
       *Mutación*: no aplica (es el test).
-- [ ] 4.2 (GREEN) Thumbnail condicional en `FeedbackCard.tsx`.
+      *Evidencia (2026-09-03)*: confirmado que NO existía `FeedbackCard.test.tsx`
+      (solo `FeedbackBoard.test.tsx` monta `FeedbackCard` indirectamente) ni
+      `FeedbackCardDetail.test.tsx`. Casos de thumbnail agregados a
+      `FeedbackBoard.test.tsx` (mock `vi.hoisted` de
+      `getScreenshotDownloadUrl` sobre `@/lib/feedback`, mismo patrón que
+      `FeedbackWidget.test.tsx`): thumbnail con `screenshot_key`, cero
+      elementos de imagen sin `screenshot_key`, click/Enter abre lightbox,
+      lightbox re-pide la URL (segunda llamada distinta a la del thumbnail),
+      Escape cierra y devuelve foco, fallo de `getScreenshotDownloadUrl`
+      degrada a `screenshotUnavailable` sin crashear el resto de la tarjeta.
+      Creado `FeedbackCardDetail.test.tsx` (sin cobertura propia hasta
+      ahora): mismos casos aislados sobre el detalle, más el caso "sin
+      `screenshot_key` no hay ningún control de imagen". `vitest run
+      components/feedback/FeedbackBoard.test.tsx
+      components/feedback/FeedbackCardDetail.test.tsx` ⇒ 9 tests rojos por
+      elemento/rol inexistente (`getByRole('button', {name:
+      screenshotThumbnailAlt})` no encontrado), 24 verdes (los preexistentes
+      + los 2 casos "sin key" que pasan trivialmente porque hoy no se
+      renderiza nada) — razón correcta, no error de setup.
+- [x] 4.2 (GREEN) Thumbnail condicional en `FeedbackCard.tsx`.
       *Archivos*: modifica `dashboard/components/feedback/FeedbackCard.tsx`.
       *Qué*: cuando `report.screenshot_key` no es `null`/`undefined`,
       renderizar un elemento clickeable/operable por teclado que, al
@@ -658,7 +677,14 @@ lectura degrada a un estado roto de imagen, no a un crash.
       *Aceptación*: los casos de thumbnail de 4.1 pasan.
       *Verificación*: mismo comando de 4.1.
       *Mutación*: las lleva 4.5 (M13).
-- [ ] 4.3 (GREEN) Lightbox en `FeedbackCardDetail.tsx`.
+      *Evidencia (2026-09-03)*: `ScreenshotThumbnail` (definido en
+      `FeedbackCardDetail.tsx`, exportado, importado en `FeedbackCard.tsx`)
+      renderizado condicional en `FeedbackCard.tsx` solo cuando
+      `report.screenshot_key !== null`. Pide `getScreenshotDownloadUrl` en un
+      `useEffect` al montarse; sin `screenshot_key` el componente ni se monta
+      (guard en el caller). `vitest run
+      components/feedback/FeedbackBoard.test.tsx` ⇒ verde tras el fix.
+- [x] 4.3 (GREEN) Lightbox en `FeedbackCardDetail.tsx`.
       *Archivos*: modifica `dashboard/components/feedback/FeedbackCardDetail.tsx`.
       *Qué*: reusar `ui/dialog.tsx` (no existe primitivo de imagen/carousel
       en `dashboard/components/ui/` — verificado, decisión de esta fase
@@ -673,7 +699,26 @@ lectura degrada a un estado roto de imagen, no a un crash.
       *Aceptación*: los casos de lightbox y detalle de 4.1 pasan.
       *Verificación*: mismo comando de 4.1.
       *Mutación*: las lleva 4.5 (M14).
-- [ ] 4.4 Manejo de fallo de la URL de lectura.
+      *Evidencia (2026-09-03)*: `ScreenshotLightbox` (privado a
+      `FeedbackCardDetail.tsx`) reusa `ui/dialog.tsx`; re-pide
+      `getScreenshotDownloadUrl(reportId)` en un `useEffect` sobre `open`
+      (verificado por test: segunda llamada con el mismo `reportId`,
+      distinta invocación que la del thumbnail — nunca reusa el `url` del
+      estado del thumbnail). Se agregó `screenshot_key !== null &&
+      <ScreenshotThumbnail .../>` en `FeedbackCardDetail.tsx` también (el
+      propio detalle muestra su thumbnail que abre el mismo lightbox).
+      **Desviación real encontrada**: Radix `Dialog` sin `DialogTrigger
+      asChild` no conoce el elemento que "abrió" el diálogo (el thumbnail se
+      abre por estado propio, no por composición), así que el foco por
+      default al cerrar volvía a `<body>`, no al thumbnail — verificado con
+      un test aislado (`console.log(document.activeElement)`) antes de
+      corregir. Fix: `onCloseAutoFocus` en `DialogContent` con
+      `event.preventDefault()` + `triggerRef.current?.focus()`, pasando el
+      `buttonRef` del thumbnail como `triggerRef` al lightbox. También hizo
+      falta un `onKeyDown` explícito (Enter/Space) en el botón del
+      thumbnail: `fireEvent.keyDown` de jsdom no dispara la acción-por-default
+      de un `<button>` nativo como sí hace un browser real.
+- [x] 4.4 Manejo de fallo de la URL de lectura.
       *Archivos*: mismos de 4.2/4.3 si el manejo de error no quedó ya
       cubierto ahí.
       *Qué*: si `getScreenshotDownloadUrl` rechaza o devuelve `null` (401),
@@ -687,7 +732,13 @@ lectura degrada a un estado roto de imagen, no a un crash.
       *Mutación*: NO — el propio test de 4.1 ya es la aserción de "no
       lanza"; una mutación que rompiera esto haría fallar ese test sin
       necesidad de mutar explícitamente (documentado, no repetido).
-- [ ] 4.5 **Mutaciones críticas del tablero** + gate de fase.
+      *Evidencia (2026-09-03)*: manejado ya en `ScreenshotThumbnail` (estado
+      `failed`, seteado tanto si `getScreenshotDownloadUrl` devuelve `null`
+      como si la promesa rechaza — `.catch()`) y en `ScreenshotLightbox`
+      (mismo criterio, degrada a `screenshotUnavailable` en vez de romper el
+      diálogo). Cubierto por los tests de 4.1 en ambos archivos; sin código
+      adicional más allá del ya escrito en 4.2/4.3.
+- [x] 4.5 **Mutaciones críticas del tablero** + gate de fase.
       *Archivos*: `FeedbackCard.tsx`, `FeedbackCardDetail.tsx` (mutar y
       REVERTIR).
       | # | Mutación | Test que DEBE morir |
@@ -698,6 +749,15 @@ lectura degrada a un estado roto de imagen, no a un crash.
       `FeedbackCard.test.tsx`/`FeedbackBoard.test.tsx` y `tsc --noEmit`
       exit 0.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run && ./node_modules/.bin/tsc --noEmit`.
+      *Evidencia (2026-09-03)*: M13 (quitar el guard en `FeedbackCard.tsx`) y
+      M14 (lightbox cachea `cachedThumbnailUrl` en vez de re-llamar
+      `getScreenshotDownloadUrl`) ejecutadas una a la vez, snapshot antes de
+      mutar, `rg` confirma el cambio, RED con la razón exacta predicha,
+      revertidas por `cmp` byte-a-byte (exit 0), verde posterior. Detalle
+      completo en `mutation-log.md`. **Gate de fase**: suite COMPLETA del
+      dashboard ⇒ `102 files / 1129 tests passed` (baseline de cierre de
+      Fase 3: 101/1117 — delta +1 archivo, +12 tests, exactamente los
+      nuevos de esta fase). `tsc --noEmit` ⇒ exit 0. Cero regresiones.
 
 ---
 

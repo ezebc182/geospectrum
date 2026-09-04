@@ -1030,7 +1030,10 @@
       "userAgent": "Navegador",
       "createdAt": "Enviado el {date}",
       "movedAt": "En esta columna desde el {date}",
-      "close": "Cerrar"
+      "close": "Cerrar",
+      "screenshotThumbnailAlt": "Ver la captura de pantalla adjunta al reporte",
+      "screenshotUnavailable": "La captura de pantalla no está disponible",
+      "screenshotLightboxTitle": "Captura de pantalla del reporte"
     },
     "comment": {
       "label": "Comentario del equipo",

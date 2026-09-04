@@ -64,8 +64,8 @@ atribuible a este change.
 | M10 | `dashboard/lib/screenshot.ts` | En `captureScreenshot`, quitar el chequeo `if (blob.size > MAX_BYTES) return null` | `return blob;` sin el chequeo previo | `lib/screenshot.test.ts`: `un blob mayor a 2MB tras "comprimir"… ⇒ null` — recibió el objeto de 2097153 bytes en vez de `null` | revertido: sí |
 | M11 | `dashboard/components/feedback/FeedbackWidget.tsx` | En `handleSubmit`, agregar `await uploadInFlightRef.current` (ref nueva que referencia la promesa de captura+subida) ANTES de armar el payload | `176:    await uploadInFlightRef.current;` | `FeedbackWidget.test.tsx`: `si uploadScreenshot resuelve null (o no terminó a tiempo)…` — `submitFeedbackMock` nunca se llamó (el submit quedó bloqueado esperando una promesa que el mock no resuelve en ese test) | revertido: sí |
 | M12 | `dashboard/components/feedback/FeedbackWidget.tsx` | Agregar `showWebglNotice` a la condición `disabled` del botón de submit | `disabled={isSending \|\| isBlank \|\| showWebglNotice}` | `FeedbackWidget.test.tsx`: `el aviso WebGL nunca deshabilita ni retrasa el botón de enviar` — el botón quedó `disabled` con el aviso visible | revertido: sí |
-| M13 | `dashboard/components/feedback/FeedbackCard.tsx` | pendiente (Fase 4) | — | — | — |
-| M14 | `dashboard/components/feedback/FeedbackCardDetail.tsx` | pendiente (Fase 4) | — | — | — |
+| M13 | `dashboard/components/feedback/FeedbackCard.tsx` | quitar el guard `report.screenshot_key !== null &&` antes de `<ScreenshotThumbnail />` (mostrarlo siempre) | `125:      <ScreenshotThumbnail reportId={report.id} />` (sin condición) | `FeedbackBoard.test.tsx`: `tarjeta sin screenshot_key: cero elementos de imagen…` — `getScreenshotDownloadUrlMock` pasó de "no llamado" a llamado 1 vez con `"noshot1"` | revertido: sí |
+| M14 | `dashboard/components/feedback/FeedbackCardDetail.tsx` | en `ScreenshotLightbox`, reemplazar el `useEffect` que llama `getScreenshotDownloadUrl(reportId)` al abrir por uno que solo copia una URL `cachedThumbnailUrl` recibida por prop (la del thumbnail, pasada desde `ScreenshotThumbnail`) | `81:    setUrl(cachedThumbnailUrl);` (sin invocar `getScreenshotDownloadUrl` en el efecto del lightbox) | `FeedbackBoard.test.tsx` y `FeedbackCardDetail.test.tsx`: `...re-pide la URL (no reusa la del thumbnail)` — ambos timeout esperando la SEGUNDA invocación de `getScreenshotDownloadUrlMock` (`toHaveBeenCalledTimes(2)`), que nunca llegó | revertido: sí |
 
 Mecánica (idéntica a `feedback-beta-testers`): `sd -s` en modo LITERAL (sin
 `-s` los paréntesis se leen como regex y la mutación no muta), `rm -rf
@@ -259,3 +259,76 @@ incluye `screenshot_key` si la subida terminó a tiempo, y funciona igual si
 no — verificado con RED real, nunca asumido. 5 mutaciones críticas (M8–M12)
 verificadas con reversión byte-limpia. Listo para Fase 4 (thumbnail y
 lightbox en el tablero admin).
+
+### Fase 4: thumbnail y lightbox en el tablero admin (CERRADA, 2026-09-03)
+
+**4.1 (RED)**: confirmado que NO existía `FeedbackCard.test.tsx` (solo
+`FeedbackBoard.test.tsx` monta `FeedbackCard` indirectamente) ni
+`FeedbackCardDetail.test.tsx`. Casos de thumbnail/lightbox agregados a
+`FeedbackBoard.test.tsx` (7 tests nuevos, con mock `vi.hoisted` de
+`getScreenshotDownloadUrl` sobre `@/lib/feedback`) y `FeedbackCardDetail.test.tsx`
+creado desde cero (5 tests). Rojo inicial: 9 tests fallaron por
+elemento/rol inexistente; 24 pasaron trivialmente (nada se renderizaba
+todavía, así que los guards negativos ya cumplían).
+
+**4.2/4.3/4.4 (GREEN)**: `ScreenshotThumbnail` (nuevo, exportado desde
+`FeedbackCardDetail.tsx`) y `ScreenshotLightbox` (privado, mismo archivo)
+implementados; `ScreenshotThumbnail` importado y usado en `FeedbackCard.tsx`
+y en `FeedbackCardDetail.tsx`, ambos condicionados a
+`report.screenshot_key !== null`. El lightbox reusa `ui/dialog.tsx`.
+
+**Desviaciones reales encontradas durante el GREEN** (no estaban en el
+design, documentadas acá):
+
+1. Radix `Dialog` sin `DialogTrigger asChild` no conoce el elemento que
+   "abrió" el diálogo — el thumbnail abre el lightbox por estado propio, no
+   por composición Radix — así que el foco por default al cerrar volvía a
+   `<body>`, no al thumbnail (confirmado con un test descartable que logueaba
+   `document.activeElement`). Fix: `onCloseAutoFocus` en `DialogContent` con
+   `event.preventDefault()` + `triggerRef.current?.focus()`.
+2. `fireEvent.keyDown(button, {key:'Enter'})` en jsdom NO dispara la
+   acción-por-default de un `<button>` nativo (sí lo hace un browser real).
+   Fix: `onKeyDown` explícito (Enter/Space) en el thumbnail.
+3. Varios `getByRole` corridos justo después de un `waitFor` sobre el
+   CONTADOR de llamadas al mock (no sobre el DOM) leían el árbol antes de
+   que React flushara el nuevo render — cambiados a `findByRole` (async) en
+   los tests.
+
+Tras los tres fixes: `vitest run components/feedback/FeedbackBoard.test.tsx
+components/feedback/FeedbackCardDetail.test.tsx` ⇒ `33 passed` (28 + 5).
+`tsc --noEmit` ⇒ exit 0.
+
+**4.5 mutaciones M13–M14** (tabla arriba): ejecutadas una a la vez con
+`Edit`, cada una confirmada con `rg` antes del test, snapshot tomado ANTES
+de mutar (`/tmp/mutation-snapshots/*.snapshot`), RED con la razón exacta
+predicha por tasks.md, revertida por `cmp` byte-a-byte (exit 0,
+byte-identical) contra el snapshot, y verde posterior. Ninguna mutación
+necesitó fortalecer un test para ir a rojo — ambas rompieron el test
+predicho tal cual estaba escrito desde 4.1.
+
+**Gate de fase completo** — suite COMPLETA del dashboard:
+
+```
+Test Files  102 passed (102)
+     Tests  1129 passed (1129)
+```
+
+`tsc --noEmit` ⇒ exit 0. Delta contra la baseline de cierre de Fase 3 (101
+files / 1117 tests): +1 archivo (`FeedbackCardDetail.test.tsx`), +12 tests
+(7 de thumbnail/lightbox en `FeedbackBoard.test.tsx` + 5 de
+`FeedbackCardDetail.test.tsx`) — exactamente los tests nuevos de esta fase.
+Cero regresiones.
+
+Estado al cerrar Fase 4: una tarjeta con `screenshot_key` muestra thumbnail
+(en `FeedbackCard.tsx` y en `FeedbackCardDetail.tsx`) y abre un lightbox con
+la imagen completa (click o Enter, operable por teclado); sin
+`screenshot_key`, el layout es idéntico al de antes de este change (cero
+elementos de imagen, cero llamadas a `getScreenshotDownloadUrl`); un fallo
+de la URL de lectura (401/404/500, `null` o excepción) degrada a un estado
+de "no disponible" con texto descriptivo, sin lanzar ni tirar el resto de
+la tarjeta/detalle; el lightbox se cierra con Escape y devuelve el foco al
+thumbnail que lo abrió; el lightbox SIEMPRE re-pide `getScreenshotDownloadUrl`
+al abrirse, nunca reusa la URL del thumbnail (design.md Decision 4,
+verificado por mutación M14). 2 mutaciones críticas (M13–M14) verificadas
+con reversión byte-limpia. Listo para Fase 5 (i18n: paridad y auditoría de
+strings).
