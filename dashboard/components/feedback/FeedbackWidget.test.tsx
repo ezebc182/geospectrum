@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import es from '@/messages/es.json';
@@ -76,8 +76,18 @@ function renderWidget() {
   );
 }
 
-function openDialog() {
-  fireEvent.click(screen.getByRole('button', { name: W.button }));
+// Abrir dispara SIEMPRE trabajo asíncrono real ahora (captureScreenshot al
+// abrir, design Decision 3): envuelve el click en `act()` async y espera un
+// microtask para que la resolución del mock (incluso el default `null` de
+// `beforeEach`) ya haya corrido dentro de `act` antes de que el test
+// aserte — sin este flush, React actualiza estado (`setIsCapturing(false)`)
+// fuera de `act` y todos los tests que abren el diálogo tiran el warning
+// "not wrapped in act", aunque no les importe la captura en absoluto.
+async function openDialog() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: W.button }));
+    await Promise.resolve();
+  });
   return screen.getByRole('dialog');
 }
 
@@ -101,6 +111,10 @@ function sentPayload() {
   };
 }
 
+// jsdom no implementa URL.createObjectURL/revokeObjectURL — mock local, no
+// global (vitest.setup.ts es para infraestructura de TODA la suite, esto es
+// específico del preview de captura de este componente).
+let objectUrlCounter = 0;
 beforeEach(() => {
   pathnameState.value = '/analytics';
   window.history.replaceState({}, '', '/analytics?channel=AK.FIRE..BHZ&start=2026-09-01T00:00:00Z&end=2026-09-02T00:00:00Z');
@@ -110,6 +124,9 @@ beforeEach(() => {
   captureScreenshotMock.mockResolvedValue(null);
   detectWebglCanvasMock.mockReturnValue(false);
   uploadScreenshotMock.mockResolvedValue(null);
+  objectUrlCounter = 0;
+  URL.createObjectURL = vi.fn(() => `blob:mock-${++objectUrlCounter}`);
+  URL.revokeObjectURL = vi.fn();
 });
 
 afterEach(() => {
@@ -124,9 +141,9 @@ describe('FeedbackWidget — botón flotante y dialog', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('al abrir muestra las dos opciones de tipo, el textarea con tope 2000 y contador, y las dos leyendas', () => {
+  it('al abrir muestra las dos opciones de tipo, el textarea con tope 2000 y contador, y las dos leyendas', async () => {
     renderWidget();
-    const dialog = openDialog();
+    const dialog = await openDialog();
     expect(screen.getByRole('radio', { name: W.types.bug })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: W.types.suggestion })).toBeInTheDocument();
     const textarea = screen.getByRole('textbox');
@@ -138,9 +155,9 @@ describe('FeedbackWidget — botón flotante y dialog', () => {
     expect(dialog).toHaveTextContent(W.visibilityNotice);
   });
 
-  it('el contador sigue al texto', () => {
+  it('el contador sigue al texto', async () => {
     renderWidget();
-    const dialog = openDialog();
+    const dialog = await openDialog();
     typeBody('hola');
     expect(dialog).toHaveTextContent('4 / 2000');
   });
@@ -150,7 +167,7 @@ describe('FeedbackWidget — captura de contexto en el submit', () => {
   it('manda route = pathname, url = href con query params, user_agent = navigator.userAgent y el type como literal', async () => {
     submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: '2026-09-03T12:00:00Z' });
     renderWidget();
-    openDialog();
+    await openDialog();
     fireEvent.click(screen.getByRole('radio', { name: W.types.suggestion }));
     typeBody('Estaría bueno ver la hora en el espectrograma');
     clickSubmit();
@@ -168,7 +185,7 @@ describe('FeedbackWidget — captura de contexto en el submit', () => {
   it('el tipo por defecto es bug', async () => {
     submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody('falla');
     clickSubmit();
     await waitFor(() => expect(submitFeedbackMock).toHaveBeenCalledTimes(1));
@@ -184,7 +201,7 @@ describe('FeedbackWidget — captura de contexto en el submit', () => {
     const body = 'b'.repeat(1500);
 
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody(body);
     clickSubmit();
 
@@ -202,7 +219,7 @@ describe('FeedbackWidget — captura de contexto en el submit', () => {
 describe('FeedbackWidget — validación local', () => {
   it('un body de 2001 NO llega a submitFeedback y NO se recorta', async () => {
     renderWidget();
-    const dialog = openDialog();
+    const dialog = await openDialog();
     const tooLong = 'x'.repeat(2001);
     typeBody(tooLong);
     clickSubmit();
@@ -216,7 +233,7 @@ describe('FeedbackWidget — validación local', () => {
 
   it('textarea vacío ⇒ cero llamadas', async () => {
     renderWidget();
-    openDialog();
+    await openDialog();
     clickSubmit();
     await new Promise((r) => setTimeout(r, 20));
     expect(submitFeedbackMock).not.toHaveBeenCalled();
@@ -224,7 +241,7 @@ describe('FeedbackWidget — validación local', () => {
 
   it('solo espacios ⇒ cero llamadas', async () => {
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody('   \n\t  ');
     clickSubmit();
     await new Promise((r) => setTimeout(r, 20));
@@ -239,7 +256,7 @@ describe('FeedbackWidget — estados del envío', () => {
       () => new Promise((resolve) => { resolveSubmit = resolve; }),
     );
     renderWidget();
-    const dialog = openDialog();
+    const dialog = await openDialog();
     typeBody('reporte');
     clickSubmit();
     // Segundo click mientras el request está en vuelo.
@@ -255,7 +272,7 @@ describe('FeedbackWidget — estados del envío', () => {
   it('201 ⇒ confirmación + link al tablero (sin navegar) + mutate(/feedback) + formulario vacío al reabrir', async () => {
     submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
     renderWidget();
-    openDialog();
+    await openDialog();
     fireEvent.click(screen.getByRole('radio', { name: W.types.suggestion }));
     typeBody('todo bien');
     clickSubmit();
@@ -271,7 +288,7 @@ describe('FeedbackWidget — estados del envío', () => {
     // Cerrar y reabrir: el formulario arranca vacío (tipo y texto reseteados).
     fireEvent.click(screen.getByRole('button', { name: W.close }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    openDialog();
+    await openDialog();
     expect(screen.getByRole('textbox')).toHaveValue('');
     expect(screen.getByRole('radio', { name: W.types.bug })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('radio', { name: W.types.suggestion })).toHaveAttribute('aria-checked', 'false');
@@ -281,7 +298,7 @@ describe('FeedbackWidget — estados del envío', () => {
   it('rechazo ⇒ error visible, texto intacto, sin confirmación; el reintento exitoso recién entonces confirma', async () => {
     submitFeedbackMock.mockRejectedValueOnce(new ApiStatusError(500, 'Internal Server Error'));
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody('se rompió el helicorder');
     clickSubmit();
 
@@ -302,7 +319,7 @@ describe('FeedbackWidget — estados del envío', () => {
   it('401 (submitFeedback resuelve null) ⇒ error de sesión, sin confirmación ni mutate', async () => {
     submitFeedbackMock.mockResolvedValue(null);
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody('texto');
     clickSubmit();
     await screen.findByText(W.sessionExpired);
@@ -317,7 +334,7 @@ describe('FeedbackWidget — captura de pantalla automática al abrir', () => {
     let resolveCapture: (v: Blob | null) => void = () => {};
     captureScreenshotMock.mockImplementation(() => new Promise((resolve) => { resolveCapture = resolve; }));
     renderWidget();
-    openDialog();
+    await openDialog();
 
     await waitFor(() => expect(captureScreenshotMock).toHaveBeenCalledTimes(1));
     // El tester puede tipear ANTES de que la captura resuelva.
@@ -325,28 +342,37 @@ describe('FeedbackWidget — captura de pantalla automática al abrir', () => {
     expect(screen.getByRole('textbox')).toHaveValue('ya puedo escribir');
 
     resolveCapture(new Blob(['x'], { type: 'image/png' }));
+    // Resolver dispara setScreenshotPreviewUrl + el .then de uploadScreenshot
+    // (mock default: resuelve null) — esperar su efecto para no dejar una
+    // actualización de estado colgando tras el cleanup.
+    await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(uploadScreenshotMock).toHaveResolved());
   });
 
   it('detectWebglCanvas true ⇒ muestra el aviso; false ⇒ no lo muestra', async () => {
     detectWebglCanvasMock.mockReturnValue(true);
     renderWidget();
-    const dialog = openDialog();
+    const dialog = await openDialog();
     expect(dialog).toHaveTextContent(W.webglNotice);
   });
 
-  it('sin WebGL detectado, el aviso no aparece', () => {
+  it('sin WebGL detectado, el aviso no aparece', async () => {
     detectWebglCanvasMock.mockReturnValue(false);
     renderWidget();
-    const dialog = openDialog();
+    const dialog = await openDialog();
     expect(dialog).not.toHaveTextContent(W.webglNotice);
   });
 
-  it('el aviso WebGL nunca deshabilita ni retrasa el botón de enviar', () => {
+  it('el aviso WebGL nunca deshabilita ni retrasa el botón de enviar', async () => {
     detectWebglCanvasMock.mockReturnValue(true);
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody('reporte con globo 3D');
     expect(screen.getByRole('button', { name: W.submit })).not.toBeDisabled();
+    // captureScreenshot resuelve `null` (default de beforeEach) tras el
+    // assert síncrono: esperar su resolución evita el warning de act() por
+    // el setIsCapturing(false) que dispara después.
+    await waitFor(() => expect(captureScreenshotMock).toHaveResolved());
   });
 
   it('si uploadScreenshot resuelve una key ANTES del submit, el payload la incluye', async () => {
@@ -355,7 +381,7 @@ describe('FeedbackWidget — captura de pantalla automática al abrir', () => {
     submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
 
     renderWidget();
-    openDialog();
+    await openDialog();
     await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
     typeBody('con captura');
     clickSubmit();
@@ -371,7 +397,7 @@ describe('FeedbackWidget — captura de pantalla automática al abrir', () => {
     submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
 
     renderWidget();
-    openDialog();
+    await openDialog();
     typeBody('sin captura a tiempo');
     clickSubmit();
 
@@ -386,5 +412,84 @@ describe('FeedbackWidget — captura de pantalla automática al abrir', () => {
     // cleanup — la key llega tarde, pero el widget ya cerró/confirmó antes.
     resolveUpload(null);
     await waitFor(() => expect(uploadScreenshotMock).toHaveResolved());
+  });
+});
+
+describe('FeedbackWidget — preview y descarte de la captura', () => {
+  it('mientras captureScreenshot está pendiente muestra un indicador de "capturando"', async () => {
+    let resolveCapture: (v: Blob | null) => void = () => {};
+    captureScreenshotMock.mockImplementation(() => new Promise((resolve) => { resolveCapture = resolve; }));
+
+    renderWidget();
+    const dialog = await openDialog();
+    expect(dialog).toHaveTextContent(W.capturing);
+
+    resolveCapture(null);
+    await waitFor(() => expect(captureScreenshotMock).toHaveResolved());
+  });
+
+  it('con captura+subida exitosas muestra un thumbnail y un botón para descartarla', async () => {
+    captureScreenshotMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    uploadScreenshotMock.mockResolvedValue('feedback-screenshots/abc.png');
+
+    renderWidget();
+    const dialog = await openDialog();
+    await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
+
+    expect(dialog).not.toHaveTextContent(W.capturing);
+    expect(screen.getByRole('img', { name: W.screenshotPreviewAlt })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: W.discardScreenshot })).toBeInTheDocument();
+  });
+
+  it('descartar la captura la saca del payload y no vuelve a aparecer sola', async () => {
+    captureScreenshotMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    uploadScreenshotMock.mockResolvedValue('feedback-screenshots/abc.png');
+    submitFeedbackMock.mockResolvedValue({ id: 'r1', created_at: 'x' });
+
+    renderWidget();
+    await openDialog();
+    await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: W.discardScreenshot }));
+    expect(screen.queryByRole('img', { name: W.screenshotPreviewAlt })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: W.discardScreenshot })).not.toBeInTheDocument();
+
+    typeBody('reporte sin captura a propósito');
+    clickSubmit();
+    await waitFor(() => expect(submitFeedbackMock).toHaveBeenCalledTimes(1));
+    expect(submitFeedbackMock.mock.calls[0][0].screenshot_key).toBeUndefined();
+  });
+
+  it('si captureScreenshot resuelve null (falló o excede el tamaño) no muestra preview ni botón de descarte', async () => {
+    captureScreenshotMock.mockResolvedValue(null);
+
+    renderWidget();
+    const dialog = await openDialog();
+    await waitFor(() => expect(captureScreenshotMock).toHaveResolved());
+
+    expect(dialog).not.toHaveTextContent(W.capturing);
+    expect(screen.queryByRole('img', { name: W.screenshotPreviewAlt })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: W.discardScreenshot })).not.toBeInTheDocument();
+  });
+
+  it('al reabrir el diálogo el preview y el estado de descarte se resetean', async () => {
+    captureScreenshotMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+    uploadScreenshotMock.mockResolvedValue('feedback-screenshots/abc.png');
+
+    renderWidget();
+    await openDialog();
+    await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: W.discardScreenshot }));
+    // Cerrar desde el formulario (sin enviar): no hay botón "Cerrar" en este
+    // estado (solo existe en la confirmación post-201) — Escape es el cierre
+    // estándar de Radix Dialog.
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    captureScreenshotMock.mockClear();
+    uploadScreenshotMock.mockClear();
+    await openDialog();
+    await waitFor(() => expect(uploadScreenshotMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('img', { name: W.screenshotPreviewAlt })).toBeInTheDocument();
   });
 });

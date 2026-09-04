@@ -1001,7 +1001,10 @@
       "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión; tu texto sigue acá.",
       "retry": "Reintentar",
       "tooLong": "El reporte supera los 2000 caracteres.",
-      "webglNotice": "Esta vista tiene contenido 3D: la captura automática puede no incluirlo."
+      "webglNotice": "Esta vista tiene contenido 3D: la captura automática puede no incluirlo.",
+      "capturing": "Capturando la pantalla actual…",
+      "screenshotPreviewAlt": "Vista previa de la captura de pantalla adjunta",
+      "discardScreenshot": "Quitar captura"
     },
     "status": {
       "new": "Nuevo",

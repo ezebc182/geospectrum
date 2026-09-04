@@ -97,6 +97,16 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
   // puramente informativo, nunca gatea el submit.
   const [screenshotKey, setScreenshotKey] = React.useState<string | null>(null);
   const [showWebglNotice, setShowWebglNotice] = React.useState(false);
+  // Estado SOLO de UI (nunca gatea el submit): `isCapturing` mientras
+  // captureScreenshot/uploadScreenshot corren; `screenshotPreviewUrl` es el
+  // object URL del blob capturado, revocado al desmontarse o al reemplazar
+  // (evita filtrar memoria); `screenshotDiscarded` lo pone el tester con el
+  // botón "Quitar captura" — descartar NO cancela la subida en curso, solo
+  // hace que el payload no incluya la key cuando resuelva.
+  const [isCapturing, setIsCapturing] = React.useState(false);
+  const [screenshotPreviewUrl, setScreenshotPreviewUrl] = React.useState<string | null>(null);
+  const [screenshotDiscarded, setScreenshotDiscarded] = React.useState(false);
+  const previewUrlRef = React.useRef<string | null>(null);
 
   const isOpen = phase !== 'idle';
   const isSending = phase === 'sending';
@@ -141,15 +151,48 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
     capturedForThisOpenRef.current = true;
 
     setScreenshotKey(null);
+    setScreenshotDiscarded(false);
     setShowWebglNotice(detectWebglCanvas());
+    if (previewUrlRef.current !== null) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setScreenshotPreviewUrl(null);
+    setIsCapturing(true);
+
     // En background: cualquier fallo en la cadena ya se atrapa dentro de
     // captureScreenshot/uploadScreenshot y resuelve `null` — nunca hay nada
     // que propagar ni que bloquee el formulario.
     void captureScreenshot().then((blob) => {
-      if (blob === null) return null;
-      return uploadScreenshot(blob).then(setScreenshotKey);
+      if (blob === null) {
+        setIsCapturing(false);
+        return null;
+      }
+      const url = URL.createObjectURL(blob);
+      previewUrlRef.current = url;
+      setScreenshotPreviewUrl(url);
+      return uploadScreenshot(blob).then((key) => {
+        setIsCapturing(false);
+        setScreenshotKey(key);
+      });
     });
   }, [dialogOpen]);
+
+  // Revocar el último object URL al desmontar el componente (no solo al
+  // reabrir): el effect de arriba solo limpia la URL ANTERIOR al capturar
+  // una nueva, esto cubre el caso "el componente deja de existir con un
+  // preview vivo".
+  React.useEffect(() => {
+    return () => {
+      if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
+
+  const handleDiscardScreenshot = () => {
+    setScreenshotDiscarded(true);
+  };
+
+  const hasUsableScreenshot = screenshotPreviewUrl !== null && !screenshotDiscarded;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -173,7 +216,7 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
       route: pathname.slice(0, MAX_ROUTE),
       url: window.location.href.slice(0, MAX_URL),
       user_agent: navigator.userAgent.slice(0, MAX_USER_AGENT),
-      ...(screenshotKey !== null ? { screenshot_key: screenshotKey } : {}),
+      ...(screenshotKey !== null && !screenshotDiscarded ? { screenshot_key: screenshotKey } : {}),
     };
 
     try {
@@ -257,6 +300,24 @@ export function FeedbackWidget({ open: openProp, onOpenChange: onOpenChangeProp 
                 </p>
                 {isTooLong && <p className="text-xs text-destructive">{t('tooLong')}</p>}
               </div>
+
+              {/* Preview de la captura: puramente informativo, igual que el
+                  aviso WebGL — nunca gatea el submit. "Capturando..." solo
+                  mientras isCapturing; el preview reemplaza al indicador en
+                  cuanto hay un blob, aunque la subida a R2 siga en curso. */}
+              {isCapturing && <p className="text-xs text-muted-foreground">{t('capturing')}</p>}
+              {hasUsableScreenshot && screenshotPreviewUrl !== null && (
+                <div className="flex items-center gap-2">
+                  <img
+                    src={screenshotPreviewUrl}
+                    alt={t('screenshotPreviewAlt')}
+                    className="h-16 w-auto rounded-md border border-border object-cover"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={handleDiscardScreenshot}>
+                    {t('discardScreenshot')}
+                  </Button>
+                </div>
+              )}
 
               {/* Aviso de transparencia: dicho ANTES de enviar (riesgo del proposal). */}
               <p className="text-xs text-muted-foreground">{t('visibilityNotice')}</p>

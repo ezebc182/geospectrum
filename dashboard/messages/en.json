@@ -1001,7 +1001,10 @@
       "sessionExpired": "Your session expired. Sign in again; your text is still here.",
       "retry": "Retry",
       "tooLong": "The report exceeds 2000 characters.",
-      "webglNotice": "This view has 3D content: the automatic capture may not include it."
+      "webglNotice": "This view has 3D content: the automatic capture may not include it.",
+      "capturing": "Capturing the current screen…",
+      "screenshotPreviewAlt": "Preview of the attached screenshot",
+      "discardScreenshot": "Remove screenshot"
     },
     "status": {
       "new": "New",
