@@ -14,6 +14,7 @@ migración 019: la validación de forma ADELANTA el error a un 422 legible, no
 reemplaza a la base (criterio de `window_comment.py`).
 """
 
+import re
 from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
@@ -23,6 +24,14 @@ from pydantic import BaseModel, Field, field_validator
 FeedbackType = Literal["bug", "suggestion"]
 # Mismo orden que las columnas del tablero; `discarded` es terminal aparte de `done`.
 FeedbackStatus = Literal["new", "in_analysis", "in_progress", "done", "discarded"]
+
+# feedback-screenshot-attachment: formato exacto que genera
+# ScreenshotStorageService.create_upload_url() en el servidor
+# (feedback-screenshots/{uuid4}.png). Validación de FORMA únicamente — no se
+# consulta R2 para confirmar que el objeto exista (design.md Decision 3).
+_SCREENSHOT_KEY_PATTERN = re.compile(
+    r"^feedback-screenshots/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$"
+)
 
 
 class FeedbackReportCreate(BaseModel):
@@ -34,6 +43,10 @@ class FeedbackReportCreate(BaseModel):
     route: str = Field(min_length=1, max_length=300)
     url: str = Field(min_length=1, max_length=2000)
     user_agent: str = Field(max_length=400)
+    # feedback-screenshot-attachment: opcional, generado por el servidor en
+    # POST /feedback/upload-url. `None` es el caso sin captura (spec base sin
+    # cambio de comportamiento).
+    screenshot_key: Optional[str] = None
 
     @field_validator("body")
     @classmethod
@@ -43,6 +56,17 @@ class FeedbackReportCreate(BaseModel):
         # el tester escribió (la spec prohíbe tocar el body).
         if not value.strip():
             raise ValueError("body must not be blank")
+        return value
+
+    @field_validator("screenshot_key")
+    @classmethod
+    def _validate_screenshot_key(cls, value: Optional[str]) -> Optional[str]:
+        # Validación de FORMA únicamente — el proposal excluye explícitamente
+        # verificar existencia contra R2 (costaría una llamada de red por
+        # cada creación de reporte, y el objeto puede llegar unos segundos
+        # después por eventual consistency de todos modos).
+        if value is not None and not _SCREENSHOT_KEY_PATTERN.match(value):
+            raise ValueError("screenshot_key must match feedback-screenshots/{uuid}.png")
         return value
 
 
@@ -69,6 +93,10 @@ class FeedbackReportItem(BaseModel):
     status_changed_at: Optional[datetime] = None
     admin_comment: Optional[str] = None
     admin_comment_updated_at: Optional[datetime] = None
+    # feedback-screenshot-attachment: expuesto en los tres endpoints de
+    # lectura/actualización (GET /feedback, PUT .../status, PUT .../comment)
+    # — mismo SELECT, sin excepción (reconciliación 4 de tasks.md).
+    screenshot_key: Optional[str] = None
 
 
 class FeedbackStatusUpdate(BaseModel):
@@ -90,3 +118,22 @@ class FeedbackAdminCommentUpdate(BaseModel):
             stripped = value.strip()
             return stripped or None
         return value
+
+
+class ScreenshotUploadUrl(BaseModel):
+    """Respuesta de POST /feedback/upload-url (feedback-screenshot-attachment).
+
+    Reconciliación 1 de tasks.md: el design gana en shape — 201 con
+    key/upload_url/expires_at, NO screenshot_key."""
+
+    key: str
+    upload_url: str
+    expires_at: datetime
+
+
+class ScreenshotDownloadUrl(BaseModel):
+    """Respuesta de GET /feedback/{id}/screenshot-url
+    (feedback-screenshot-attachment)."""
+
+    url: str
+    expires_at: datetime

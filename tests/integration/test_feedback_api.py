@@ -43,6 +43,9 @@ ITEM_KEYS = {
     "status_changed_at",
     "admin_comment",
     "admin_comment_updated_at",
+    # feedback-screenshot-attachment: expuesto en GET/PUT status/PUT comment
+    # sin excepción (reconciliación 4 de tasks.md).
+    "screenshot_key",
 }
 
 

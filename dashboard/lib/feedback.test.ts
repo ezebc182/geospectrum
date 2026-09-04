@@ -3,7 +3,9 @@ import { ApiStatusError } from './auth';
 import {
   FEEDBACK_SWR_KEY,
   FLOW_STATUSES,
+  getScreenshotDownloadUrl,
   listFeedbackReports,
+  requestScreenshotUploadUrl,
   submitFeedback,
   updateFeedbackComment,
   updateFeedbackStatus,
@@ -30,6 +32,7 @@ const REPORT = {
   status_changed_at: null,
   admin_comment: null,
   admin_comment_updated_at: null,
+  screenshot_key: null,
 };
 
 function mockFetch(status: number, body: unknown = null) {
@@ -174,5 +177,62 @@ describe('updateFeedbackComment', () => {
     expect(error).toBeInstanceOf(ApiStatusError);
     expect(error.status).toBe(422);
     expect(error.message).toContain('2000');
+  });
+});
+
+describe('requestScreenshotUploadUrl', () => {
+  it('hace POST /feedback/upload-url y devuelve {key, upload_url, expires_at}', async () => {
+    const spy = mockFetch(201, {
+      key: 'feedback-screenshots/abc.png',
+      upload_url: 'https://r2.example.com/put',
+      expires_at: '2026-09-03T12:05:00Z',
+    });
+    const result = await requestScreenshotUploadUrl();
+    const [url, init] = lastCall(spy);
+    expect(url).toMatch(/\/feedback\/upload-url$/);
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect(result).toEqual({
+      key: 'feedback-screenshots/abc.png',
+      upload_url: 'https://r2.example.com/put',
+      expires_at: '2026-09-03T12:05:00Z',
+    });
+  });
+
+  it('401 devuelve null', async () => {
+    mockFetch(401);
+    expect(await requestScreenshotUploadUrl()).toBeNull();
+  });
+
+  it('503 (R2 sin configurar) lanza ApiStatusError', async () => {
+    mockFetch(503, { detail: 'screenshot storage not configured' });
+    const error = await requestScreenshotUploadUrl().catch((e) => e);
+    expect(error).toBeInstanceOf(ApiStatusError);
+    expect(error.status).toBe(503);
+    expect(error.message).toContain('not configured');
+  });
+});
+
+describe('getScreenshotDownloadUrl', () => {
+  it('hace GET /feedback/{id}/screenshot-url y devuelve {url, expires_at}', async () => {
+    const spy = mockFetch(200, { url: 'https://r2.example.com/get', expires_at: '2026-09-03T12:05:00Z' });
+    const result = await getScreenshotDownloadUrl('r1');
+    const [url, init] = lastCall(spy);
+    expect(url).toMatch(/\/feedback\/r1\/screenshot-url$/);
+    expect(init.method ?? 'GET').toBe('GET');
+    expect(init.credentials).toBe('include');
+    expect(result).toEqual({ url: 'https://r2.example.com/get', expires_at: '2026-09-03T12:05:00Z' });
+  });
+
+  it('401 devuelve null', async () => {
+    mockFetch(401);
+    expect(await getScreenshotDownloadUrl('r1')).toBeNull();
+  });
+
+  it('404 (sin captura) lanza ApiStatusError', async () => {
+    mockFetch(404, { detail: 'not found' });
+    const error = await getScreenshotDownloadUrl('r1').catch((e) => e);
+    expect(error).toBeInstanceOf(ApiStatusError);
+    expect(error.status).toBe(404);
   });
 });

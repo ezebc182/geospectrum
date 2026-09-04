@@ -17,13 +17,25 @@
  * (`DndDescribedBy-*`, `aria-roledescription="draggable"`).
  */
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import en from '@/messages/en.json';
 import es from '@/messages/es.json';
 import type { FeedbackReport } from '@/lib/feedback';
 import { IntlTestProvider } from '@/lib/test-intl';
+
+// Referencia ESTABLE (vi.hoisted, mismo criterio que FeedbackWidget.test.tsx):
+// el thumbnail y el lightbox de la tarjeta llaman a este mock, nunca al
+// `getScreenshotDownloadUrl` real.
+const { getScreenshotDownloadUrlMock } = vi.hoisted(() => ({
+  getScreenshotDownloadUrlMock: vi.fn(),
+}));
+
+vi.mock('@/lib/feedback', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/feedback')>();
+  return { ...actual, getScreenshotDownloadUrl: getScreenshotDownloadUrlMock };
+});
 
 import { FeedbackBoard, resolveDrop } from './FeedbackBoard';
 
@@ -46,6 +58,7 @@ function buildReport(overrides: Partial<FeedbackReport> = {}): FeedbackReport {
     status_changed_at: null,
     admin_comment: null,
     admin_comment_updated_at: null,
+    screenshot_key: null,
     ...overrides,
   };
 }
@@ -134,6 +147,7 @@ function openDetail(card: HTMLElement) {
 
 afterEach(() => {
   cleanup();
+  getScreenshotDownloadUrlMock.mockReset();
 });
 
 describe('FeedbackBoard — estructura de columnas (modo lectura)', () => {
@@ -367,6 +381,117 @@ describe('FeedbackBoard — con en.json el enum crudo nunca se ve (tarea 5.2)', 
 
     expect(screen.queryByText(RAW_STATUS)).toBeNull();
     expect(document.body.textContent).not.toMatch(RAW_STATUS);
+  });
+});
+
+describe('FeedbackCard (vía FeedbackBoard) — thumbnail de captura (tarea 4.1)', () => {
+  const B = es.feedback.board;
+
+  it('tarjeta con screenshot_key renderiza un thumbnail que pide la URL de lectura', async () => {
+    getScreenshotDownloadUrlMock.mockResolvedValue({ url: 'https://r2.example/thumb.png', expires_at: '2026-09-03T00:05:00Z' });
+    const withShot = buildReport({ id: 'shot1', body: 'Con captura', screenshot_key: 'feedback-screenshots/aaaa.png' });
+    renderBoard([withShot], false);
+
+    const card = cardContaining('Con captura');
+    const thumbButton = await within(card).findByRole('button', { name: B.screenshotThumbnailAlt });
+    await waitFor(() => expect(getScreenshotDownloadUrlMock).toHaveBeenCalledWith('shot1'));
+
+    const img = await within(thumbButton).findByRole('img');
+    expect(img).toHaveAttribute('src', 'https://r2.example/thumb.png');
+  });
+
+  it('tarjeta sin screenshot_key: cero elementos de imagen y el mismo layout que antes del change', () => {
+    getScreenshotDownloadUrlMock.mockResolvedValue({ url: 'https://r2.example/thumb.png', expires_at: '2026-09-03T00:05:00Z' });
+    const noShot = buildReport({ id: 'noshot1', body: 'Sin captura', screenshot_key: null });
+    renderBoard([noShot], false);
+
+    const card = cardContaining('Sin captura');
+    expect(within(card).queryByRole('button', { name: B.screenshotThumbnailAlt })).toBeNull();
+    expect(card.querySelector('img')).toBeNull();
+    expect(getScreenshotDownloadUrlMock).not.toHaveBeenCalled();
+    // Layout idéntico al de una tarjeta sin este change: header, body, footer,
+    // sin ningún wrapper extra de thumbnail.
+    expect(card.querySelector('[data-slot="screenshot-thumbnail"]')).toBeNull();
+  });
+
+  it('click en el thumbnail abre un lightbox con la imagen completa y re-pide la URL (no reusa la del thumbnail)', async () => {
+    getScreenshotDownloadUrlMock
+      .mockResolvedValueOnce({ url: 'https://r2.example/thumb.png', expires_at: '2026-09-03T00:05:00Z' })
+      .mockResolvedValueOnce({ url: 'https://r2.example/full.png', expires_at: '2026-09-03T00:10:00Z' });
+    const withShot = buildReport({ id: 'shot2', body: 'Con captura lightbox', screenshot_key: 'feedback-screenshots/bbbb.png' });
+    renderBoard([withShot], false);
+
+    const card = cardContaining('Con captura lightbox');
+    const thumbButton = await within(card).findByRole('button', { name: B.screenshotThumbnailAlt });
+    await waitFor(() => expect(getScreenshotDownloadUrlMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(thumbButton);
+    await waitFor(() => expect(getScreenshotDownloadUrlMock).toHaveBeenCalledTimes(2));
+    expect(getScreenshotDownloadUrlMock).toHaveBeenNthCalledWith(2, 'shot2');
+
+    const lightbox = screen.getByRole('dialog', { name: B.screenshotLightboxTitle });
+    const fullImg = await within(lightbox).findByRole('img');
+    expect(fullImg).toHaveAttribute('src', 'https://r2.example/full.png');
+  });
+
+  it('Enter en el thumbnail (operable por teclado) también abre el lightbox', async () => {
+    getScreenshotDownloadUrlMock.mockResolvedValue({ url: 'https://r2.example/thumb.png', expires_at: '2026-09-03T00:05:00Z' });
+    const withShot = buildReport({ id: 'shot3', body: 'Con captura teclado', screenshot_key: 'feedback-screenshots/cccc.png' });
+    renderBoard([withShot], false);
+
+    const card = cardContaining('Con captura teclado');
+    const thumbButton = await within(card).findByRole('button', { name: B.screenshotThumbnailAlt });
+    await waitFor(() => expect(getScreenshotDownloadUrlMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(thumbButton, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: B.screenshotLightboxTitle })).not.toBeNull());
+  });
+
+  it('el lightbox es cerrable con Escape y devuelve el foco al thumbnail que lo abrió', async () => {
+    getScreenshotDownloadUrlMock.mockResolvedValue({ url: 'https://r2.example/thumb.png', expires_at: '2026-09-03T00:05:00Z' });
+    const withShot = buildReport({ id: 'shot4', body: 'Con captura foco', screenshot_key: 'feedback-screenshots/dddd.png' });
+    renderBoard([withShot], false);
+
+    const card = cardContaining('Con captura foco');
+    const thumbButton = await within(card).findByRole('button', { name: B.screenshotThumbnailAlt });
+    await waitFor(() => expect(getScreenshotDownloadUrlMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(thumbButton);
+    const lightbox = await screen.findByRole('dialog', { name: B.screenshotLightboxTitle });
+    fireEvent.keyDown(lightbox, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: B.screenshotLightboxTitle })).toBeNull());
+    await waitFor(() => expect(thumbButton).toHaveFocus());
+  });
+
+  it('si getScreenshotDownloadUrl falla (401/500), el thumbnail degrada a imagen rota con alt descriptivo, sin crashear el resto de la tarjeta', async () => {
+    getScreenshotDownloadUrlMock.mockResolvedValue(null);
+    const withShot = buildReport({ id: 'shot5', body: 'Con captura rota', author_email: 'roto@example.com', screenshot_key: 'feedback-screenshots/eeee.png' });
+    renderBoard([withShot], false);
+
+    const card = cardContaining('Con captura rota');
+    await waitFor(() => expect(getScreenshotDownloadUrlMock).toHaveBeenCalledWith('shot5'));
+
+    expect(await within(card).findByText(B.screenshotUnavailable)).toBeInTheDocument();
+    expect(card.querySelector('img')).toBeNull();
+    // El resto de la tarjeta sigue intacto: body, autor.
+    expect(card).toHaveTextContent('Con captura rota');
+    expect(card).toHaveTextContent('roto@example.com');
+  });
+});
+
+describe('FeedbackCardDetail (vía FeedbackBoard) — sin controles de imagen si no hay captura (tarea 4.1)', () => {
+  const B = es.feedback.board;
+
+  it('en el detalle, sin screenshot_key no existe ningún control de imagen ni botón de lightbox', () => {
+    getScreenshotDownloadUrlMock.mockResolvedValue(null);
+    const noShot = buildReport({ id: 'noshot2', body: 'Sin captura detalle', screenshot_key: null });
+    renderBoard([noShot], false);
+
+    const dialog = openDetail(cardContaining('Sin captura detalle'));
+    expect(within(dialog).queryByRole('img')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: B.screenshotThumbnailAlt })).toBeNull();
+    expect(getScreenshotDownloadUrlMock).not.toHaveBeenCalled();
   });
 });
 

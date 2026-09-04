@@ -131,6 +131,7 @@ from src.api.routers import walls as walls_router
 from src.services.signal_picks import SignalPickService
 from src.services.window_comments import WindowCommentService
 from src.services.feedback_service import FeedbackService
+from src.services.screenshot_storage import ScreenshotStorageService
 from src.services.area_service import AreaService
 from src.services.geo_filter import area_to_filter_dict
 from src.services.wall_service import WallService
@@ -391,6 +392,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Feedback de beta testers con tablero Kanban (feedback.py). Mismo patrón.
     app.state.feedback_service = FeedbackService(db_pool)
+
+    # Captura de pantalla del feedback (feedback-screenshot-attachment).
+    # SIEMPRE se instancia (nunca condicional): degrada vía `enabled=False`
+    # si falta alguna de las 4 vars, mismo patrón que EmailService — así el
+    # router lo resuelve con el mismo Depends sin ramas (design.md Decision 2).
+    app.state.screenshot_storage = ScreenshotStorageService(
+        endpoint_url=settings.s3_endpoint_url,
+        bucket=settings.s3_bucket,
+        access_key_id=settings.s3_access_key_id,
+        secret_access_key=settings.s3_secret_access_key,
+    )
 
     # Cache eterno de resultados FDSN (performance FDSN). Mismo patrón de
     # pool prestado; degrada solo (get→None, set→noop) si la base falla.
@@ -668,7 +680,9 @@ async def _fetch_parallel(
     ttl = settings.cache_ttl_seconds
     # Mismo criterio que report_service._fetch_parallel: el piso viaja en la
     # clave (el store del caché es global entre módulos).
-    effective_min_mag = min_magnitude if min_magnitude is not None else settings.source_min_magnitude
+    effective_min_mag = (
+        min_magnitude if min_magnitude is not None else settings.source_min_magnitude
+    )
 
     async def _cached_fetch(source: str, fetcher: Any, window: int, with_min: bool) -> Any:
         key = f"{source}:{window}:{effective_min_mag if with_min else '-'}"
@@ -676,7 +690,9 @@ async def _fetch_parallel(
             hit = cache.get(key)
             if hit is not None:
                 return hit
-        result = await (fetcher(window, min_magnitude=effective_min_mag) if with_min else fetcher(window))
+        result = await (
+            fetcher(window, min_magnitude=effective_min_mag) if with_min else fetcher(window)
+        )
         if ttl > 0:
             cache.set(key, result, ttl)
         return result
@@ -2625,9 +2641,7 @@ async def get_spectrogram_history(
         }
 
     columns = await column_writer.fetch_history(channel, minutes)
-    coverage = (
-        {"from": columns[0]["endtime"], "to": columns[-1]["endtime"]} if columns else None
-    )
+    coverage = {"from": columns[0]["endtime"], "to": columns[-1]["endtime"]} if columns else None
 
     if width is None:
         return {"channel": channel, "columns": columns, "coverage": coverage}
@@ -2640,9 +2654,7 @@ async def get_spectrogram_history(
     # conserva el suyo.
     shared = extract_shared_freqs(columns)
     if shared is not None:
-        columns = [
-            {"endtime": c["endtime"], "power_db": c["power_db"]} for c in columns
-        ]
+        columns = [{"endtime": c["endtime"], "power_db": c["power_db"]} for c in columns]
 
     return {
         "channel": channel,
@@ -2817,9 +2829,7 @@ async def get_station_waveform(
         if end <= start:
             raise HTTPException(status_code=422, detail="end debe ser posterior a start")
         if (end - start) > timedelta(hours=MAX_WAVEFORM_WINDOW_HOURS):
-            raise HTTPException(
-                status_code=422, detail="la ventana no puede superar 24 horas"
-            )
+            raise HTTPException(status_code=422, detail="la ventana no puede superar 24 horas")
 
     # El default de `minutes` se resuelve acá, no en la firma.
     effective_minutes = minutes if minutes is not None else 1440
@@ -3027,13 +3037,9 @@ async def get_station_rsam(
     if end <= start:
         raise HTTPException(status_code=422, detail="end debe ser posterior a start")
     if (end - start) > timedelta(hours=MAX_WAVEFORM_WINDOW_HOURS):
-        raise HTTPException(
-            status_code=422, detail="la ventana no puede superar 24 horas"
-        )
+        raise HTTPException(status_code=422, detail="la ventana no puede superar 24 horas")
 
-    cache_key = (
-        f"rsam:{channel}:{start.isoformat()}~{end.isoformat()}:{period_seconds}"
-    )
+    cache_key = f"rsam:{channel}:{start.isoformat()}~{end.isoformat()}:{period_seconds}"
     ttl = settings.spectrogram_cache_ttl_seconds
     if ttl > 0:
         cached = cache.get(cache_key)

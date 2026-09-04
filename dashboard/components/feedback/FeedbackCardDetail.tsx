@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { FeedbackReport, FeedbackStatus } from '@/lib/feedback';
+import { getScreenshotDownloadUrl, type FeedbackReport, type FeedbackStatus } from '@/lib/feedback';
 import { cn } from '@/lib/utils';
 
 /** Tope espejo del CHECK de `admin_comment` (migración 019). */
@@ -48,6 +48,140 @@ interface FeedbackCardDetailProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComment: (id: string, comment: string | null) => void;
+}
+
+interface ScreenshotLightboxProps {
+  reportId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Elemento al que vuelve el foco al cerrar. El lightbox no se abre desde
+   * un `DialogTrigger asChild` (el thumbnail decide abrir por estado propio,
+   * no por composición de Radix), así que Radix no conoce el trigger real y
+   * el foco por default vuelve al `<body>` — se fuerza acá con
+   * `onCloseAutoFocus`. */
+  triggerRef: React.RefObject<HTMLElement | null>;
+}
+
+/** Lightbox de la captura completa (design.md Decision 4): re-pide SIEMPRE
+ * `getScreenshotDownloadUrl` al abrirse, nunca reusa la URL del thumbnail —
+ * la firmada expira a los 5 min y el thumbnail pudo pedirse hace rato.
+ * Reusa `ui/dialog.tsx` (Escape/click afuera los maneja Radix; la
+ * devolución de foco se fuerza acá, ver `triggerRef`): no hace falta un
+ * primitivo `Lightbox` dedicado para un solo uso. */
+function ScreenshotLightbox({ reportId, open, onOpenChange, triggerRef }: ScreenshotLightboxProps) {
+  const t = useTranslations('feedback.board');
+  const [url, setUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) {
+      setUrl(null);
+      return;
+    }
+    let cancelled = false;
+    getScreenshotDownloadUrl(reportId)
+      .then((result) => {
+        if (!cancelled) setUrl(result?.url ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, reportId]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        aria-label={t('screenshotLightboxTitle')}
+        className="sm:max-w-3xl"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          triggerRef.current?.focus();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{t('screenshotLightboxTitle')}</DialogTitle>
+        </DialogHeader>
+        {url !== null ? (
+          // eslint-disable-next-line @next/next/no-img-element -- URL firmada externa (R2), no un asset de Next.
+          <img src={url} alt={t('screenshotLightboxTitle')} className="max-h-[75vh] w-full rounded-md object-contain" />
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('screenshotUnavailable')}</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ScreenshotThumbnailProps {
+  reportId: string;
+}
+
+/** Thumbnail condicional (design.md Decision 4): pide
+ * `getScreenshotDownloadUrl` al montarse; sin `screenshot_key` en el reporte
+ * este componente NUNCA se monta (el guard vive en el caller), así que acá
+ * adentro no hace falta chequearlo de nuevo. Un fallo (401/404/500, `null` o
+ * excepción) degrada a un estado de "no disponible" con texto descriptivo,
+ * sin lanzar ni tirar el resto de la tarjeta/detalle. */
+export function ScreenshotThumbnail({ reportId }: ScreenshotThumbnailProps) {
+  const t = useTranslations('feedback.board');
+  const [url, setUrl] = React.useState<string | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  const [lightboxOpen, setLightboxOpen] = React.useState(false);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getScreenshotDownloadUrl(reportId)
+      .then((result) => {
+        if (cancelled) return;
+        if (result === null) {
+          setFailed(true);
+          return;
+        }
+        setUrl(result.url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reportId]);
+
+  if (failed) {
+    return <p className="text-xs text-muted-foreground">{t('screenshotUnavailable')}</p>;
+  }
+
+  if (url === null) return null;
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        data-slot="screenshot-thumbnail"
+        aria-label={t('screenshotThumbnailAlt')}
+        onClick={() => setLightboxOpen(true)}
+        // `<button>` ya activa con Enter/Space en el DOM real, pero jsdom no
+        // simula la acción por default de teclado sobre elementos nativos —
+        // handler explícito para que `fireEvent.keyDown` sea determinista en
+        // los tests (mismo motivo documentado en otros triggers del repo).
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setLightboxOpen(true);
+          }
+        }}
+        className="w-fit overflow-hidden rounded-md border border-border focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- URL firmada externa (R2), no un asset de Next. */}
+        <img src={url} alt={t('screenshotThumbnailAlt')} className="block h-20 w-20 object-cover" />
+      </button>
+      <ScreenshotLightbox reportId={reportId} open={lightboxOpen} onOpenChange={setLightboxOpen} triggerRef={buttonRef} />
+    </>
+  );
 }
 
 interface CommentEditorProps {
@@ -127,6 +261,8 @@ export function FeedbackCardDetail({ report, canManage, open, onOpenChange, onCo
         </div>
 
         <p className="text-sm whitespace-pre-wrap break-words">{report.body}</p>
+
+        {report.screenshot_key !== null && <ScreenshotThumbnail reportId={report.id} />}
 
         {!canManage && report.admin_comment !== null && (
           <div data-slot="admin-comment" className="rounded-md border-l-2 border-primary bg-primary/5 px-3 py-2 text-sm">

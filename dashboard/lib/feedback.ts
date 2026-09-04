@@ -42,6 +42,9 @@ export interface FeedbackPayload {
   url: string;
   /** navigator.userAgent.slice(0, 400) */
   user_agent: string;
+  /** Key ya subida a R2 (`uploadScreenshot`), o ausente si la captura falló
+   * o no llegó a tiempo — el submit NUNCA espera por ella. */
+  screenshot_key?: string;
 }
 
 export interface FeedbackReportCreated {
@@ -63,6 +66,21 @@ export interface FeedbackReport {
   status_changed_at: string | null;
   admin_comment: string | null;
   admin_comment_updated_at: string | null;
+  /** `null` si el reporte no tiene captura adjunta. */
+  screenshot_key: string | null;
+}
+
+/** Respuesta de `POST /feedback/upload-url` (design.md Decision 3). */
+export interface ScreenshotUploadUrl {
+  key: string;
+  upload_url: string;
+  expires_at: string;
+}
+
+/** Respuesta de `GET /feedback/{id}/screenshot-url` (design.md Decision 4). */
+export interface ScreenshotDownloadUrl {
+  url: string;
+  expires_at: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -110,4 +128,18 @@ export async function updateFeedbackComment(id: string, comment: string | null):
     method: 'PUT',
     body: JSON.stringify({ comment }),
   });
+}
+
+/** Pide una URL prefirmada de subida (`PUT` directo del browser a R2, el
+ * binario nunca pasa por FastAPI). 401 => null; 503 (R2 sin configurar) =>
+ * ApiStatusError, que `uploadScreenshot` atrapa y convierte en `null`. */
+export async function requestScreenshotUploadUrl(): Promise<ScreenshotUploadUrl | null> {
+  return request<ScreenshotUploadUrl>('/feedback/upload-url', { method: 'POST' });
+}
+
+/** Pide una URL prefirmada de lectura para el thumbnail/lightbox. Se re-pide
+ * SIEMPRE al abrir (nunca cachea la URL firmada — Open Question del design,
+ * resuelta en tasks.md Fase 4): las URLs expiran a los 5 minutos. */
+export async function getScreenshotDownloadUrl(reportId: string): Promise<ScreenshotDownloadUrl | null> {
+  return request<ScreenshotDownloadUrl>(`/feedback/${reportId}/screenshot-url`);
 }

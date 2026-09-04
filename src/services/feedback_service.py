@@ -15,11 +15,14 @@ import asyncpg
 from src.models.feedback import FeedbackReportCreate, FeedbackReportItem
 
 # Proyección compartida por las cuatro operaciones: el item completo del
-# tablero. Sin `user_id` (del autor solo viaja el email).
+# tablero. Sin `user_id` (del autor solo viaja el email). `screenshot_key`
+# (feedback-screenshot-attachment) va en las cuatro consultas — reconciliación
+# 4 de tasks.md: los tres endpoints de lectura/actualización lo exponen sin
+# excepción.
 _ITEM_COLUMNS = """
     r.id, r.type, r.body, r.route, r.url, r.user_agent, r.created_at,
     r.status, r.status_changed_at, r.admin_comment, r.admin_comment_updated_at,
-    u.email AS author_email
+    r.screenshot_key, u.email AS author_email
 """
 
 
@@ -41,6 +44,7 @@ def _row_to_item(row: asyncpg.Record) -> FeedbackReportItem:
         status_changed_at=row["status_changed_at"],
         admin_comment=row["admin_comment"],
         admin_comment_updated_at=row["admin_comment_updated_at"],
+        screenshot_key=row["screenshot_key"],
     )
 
 
@@ -50,12 +54,18 @@ class FeedbackService:
 
     async def create(self, user_id: UUID, payload: FeedbackReportCreate) -> asyncpg.Record:
         """INSERT sin `status` ni timestamps: los pone la base (DEFAULT 'new',
-        `now()`). El reloj del cliente no manda. Devuelve `{id, created_at}`."""
+        `now()`). El reloj del cliente no manda. Devuelve `{id, created_at}`.
+
+        `screenshot_key` (feedback-screenshot-attachment) se persiste tal
+        cual como texto, o NULL si no vino — este INSERT NUNCA llama a R2 (el
+        formato ya llegó validado por Pydantic, ver
+        FeedbackReportCreate._validate_screenshot_key)."""
         async with self._pool.acquire() as conn:
             return await conn.fetchrow(
                 """
-                INSERT INTO feedback_reports (user_id, type, body, route, url, user_agent)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO feedback_reports
+                    (user_id, type, body, route, url, user_agent, screenshot_key)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id, created_at
                 """,
                 user_id,
@@ -64,6 +74,7 @@ class FeedbackService:
                 payload.route,
                 payload.url,
                 payload.user_agent,
+                payload.screenshot_key,
             )
 
     async def list_all(self) -> list[FeedbackReportItem]:
@@ -103,6 +114,21 @@ class FeedbackService:
         if row is None:
             raise FeedbackReportNotFoundError(f"reporte {report_id} no encontrado")
         return _row_to_item(row)
+
+    async def get_screenshot_key(self, report_id: UUID) -> Optional[str]:
+        """`screenshot_key` crudo (posiblemente None) de un reporte, para
+        GET /feedback/{id}/screenshot-url (feedback-screenshot-attachment).
+        `FeedbackReportNotFoundError` si el reporte no existe — el router
+        decide 404 tanto para "no existe" como para "screenshot_key es NULL"
+        (mismo código, sin distinguir el caso al cliente)."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT screenshot_key FROM feedback_reports WHERE id = $1",
+                report_id,
+            )
+        if row is None:
+            raise FeedbackReportNotFoundError(f"reporte {report_id} no encontrado")
+        return row["screenshot_key"]
 
     async def set_admin_comment(
         self, report_id: UUID, comment: Optional[str]

@@ -35,7 +35,7 @@ import {
 import { FEEDBACK_STATUSES, type FeedbackReport, type FeedbackStatus } from '@/lib/feedback';
 import { cn } from '@/lib/utils';
 
-import { CARD_DATE_FORMAT, FeedbackCardDetail } from './FeedbackCardDetail';
+import { CARD_DATE_FORMAT, FeedbackCardDetail, ScreenshotThumbnail } from './FeedbackCardDetail';
 
 interface FeedbackCardProps {
   report: FeedbackReport;
@@ -121,6 +121,8 @@ export function FeedbackCard({ report, canManage, onMove, onComment }: FeedbackC
           </>
         )}
       </header>
+
+      {report.screenshot_key !== null && <ScreenshotThumbnail reportId={report.id} />}
 
       {/* Texto del tester: SIEMPRE texto plano (escape por defecto de React). */}
       <p className="line-clamp-3 whitespace-pre-line break-words">{report.body}</p>

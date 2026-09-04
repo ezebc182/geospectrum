@@ -177,6 +177,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_password: Optional[str] = None
 
+    # Cloudflare R2 (screenshot attachment, feedback-screenshot-attachment).
+    # Optional[str] = None a propósito: sin configurar, POST
+    # /feedback/upload-url responde 503 y el widget sigue funcionando sin
+    # captura (criterio "degrada, no rompe" del proposal) — mismo patrón que
+    # resend_api_key/EmailService.enabled, NO fail-fast como auth_secret_key.
+    s3_endpoint_url: Optional[str] = None
+    s3_bucket: Optional[str] = None
+    s3_access_key_id: Optional[str] = None
+    s3_secret_access_key: Optional[str] = None
+
     # Auth (multi-user-auth). auth_secret_key es Optional[str] = None por
     # convención (mismo patrón que timescaledb_password), pero a diferencia
     # de TimescaleDB (opcional/best-effort) NO tiene un modo degradado

@@ -17,6 +17,8 @@ from src.models.feedback import (
     FeedbackReportCreate,
     FeedbackReportItem,
     FeedbackStatusUpdate,
+    ScreenshotDownloadUrl,
+    ScreenshotUploadUrl,
 )
 
 VALID_STATUSES = ("new", "in_analysis", "in_progress", "done", "discarded")
@@ -129,6 +131,129 @@ def test_create_no_expone_user_id_created_at_ni_status():
     for attr in ("user_id", "created_at", "status"):
         assert not hasattr(report, attr), attr
         assert attr not in report.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# FeedbackReportCreate.screenshot_key (feedback-screenshot-attachment, 2.5)
+# ---------------------------------------------------------------------------
+
+_VALID_SCREENSHOT_KEY = "feedback-screenshots/3fa85f64-5717-4562-b3fc-2c963f66afa6.png"
+
+
+def test_create_screenshot_key_ausente_es_none():
+    report = FeedbackReportCreate.model_validate(_payload())
+    assert report.screenshot_key is None
+
+
+def test_create_screenshot_key_none_explicito_ok():
+    report = FeedbackReportCreate.model_validate(_payload(screenshot_key=None))
+    assert report.screenshot_key is None
+
+
+def test_create_screenshot_key_formato_valido_ok():
+    report = FeedbackReportCreate.model_validate(_payload(screenshot_key=_VALID_SCREENSHOT_KEY))
+    assert report.screenshot_key == _VALID_SCREENSHOT_KEY
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("../../etc/passwd", id="path-traversal"),
+        pytest.param("otro-bucket/imagen.jpg", id="bucket-y-extension-ajenos"),
+        pytest.param("feedback-screenshots/no-es-un-uuid.png", id="uuid-invalido"),
+        pytest.param(
+            "feedback-screenshots/3fa85f64-5717-4562-b3fc-2c963f66afa6", id="sin-extension"
+        ),
+        pytest.param(
+            "feedback-screenshots/3fa85f64-5717-4562-b3fc-2c963f66afa6.jpg", id="extension-jpg"
+        ),
+    ],
+)
+def test_create_screenshot_key_formato_invalido_rechazado(value):
+    with pytest.raises(ValidationError):
+        FeedbackReportCreate.model_validate(_payload(screenshot_key=value))
+
+
+# ---------------------------------------------------------------------------
+# FeedbackReportItem.screenshot_key (feedback-screenshot-attachment, 2.5)
+# ---------------------------------------------------------------------------
+
+
+def _item_payload(**overrides) -> dict:
+    data = {
+        "id": "3f9a2b1c-1111-2222-3333-444455556680",
+        "type": "bug",
+        "body": "x",
+        "route": "/",
+        "url": "https://a.b/",
+        "user_agent": "",
+        "author_email": "a@example.com",
+        "created_at": "2026-09-03T00:00:00Z",
+        "status": "new",
+        "status_changed_at": None,
+        "admin_comment": None,
+        "admin_comment_updated_at": None,
+    }
+    data.update(overrides)
+    return data
+
+
+def test_item_screenshot_key_acepta_none():
+    item = FeedbackReportItem.model_validate(_item_payload(screenshot_key=None))
+    assert item.screenshot_key is None
+
+
+def test_item_screenshot_key_acepta_formato_valido():
+    item = FeedbackReportItem.model_validate(_item_payload(screenshot_key=_VALID_SCREENSHOT_KEY))
+    assert item.screenshot_key == _VALID_SCREENSHOT_KEY
+
+
+def test_item_screenshot_key_ausente_default_none():
+    item = FeedbackReportItem.model_validate(_item_payload())
+    assert item.screenshot_key is None
+
+
+# ---------------------------------------------------------------------------
+# ScreenshotUploadUrl / ScreenshotDownloadUrl (feedback-screenshot-attachment, 2.5)
+# ---------------------------------------------------------------------------
+
+
+def test_screenshot_upload_url_construccion_valida_no_lanza():
+    payload = ScreenshotUploadUrl(
+        key=_VALID_SCREENSHOT_KEY,
+        upload_url="https://r2.example.com/put?sig=abc",
+        expires_at="2026-09-03T00:05:00Z",
+    )
+    assert payload.key == _VALID_SCREENSHOT_KEY
+    assert payload.upload_url == "https://r2.example.com/put?sig=abc"
+
+
+@pytest.mark.parametrize("missing", ["key", "upload_url", "expires_at"])
+def test_screenshot_upload_url_campo_faltante_lanza(missing):
+    data = {
+        "key": _VALID_SCREENSHOT_KEY,
+        "upload_url": "https://r2.example.com/put?sig=abc",
+        "expires_at": "2026-09-03T00:05:00Z",
+    }
+    del data[missing]
+    with pytest.raises(ValidationError):
+        ScreenshotUploadUrl.model_validate(data)
+
+
+def test_screenshot_download_url_construccion_valida_no_lanza():
+    payload = ScreenshotDownloadUrl(
+        url="https://r2.example.com/get?sig=abc",
+        expires_at="2026-09-03T00:05:00Z",
+    )
+    assert payload.url == "https://r2.example.com/get?sig=abc"
+
+
+@pytest.mark.parametrize("missing", ["url", "expires_at"])
+def test_screenshot_download_url_campo_faltante_lanza(missing):
+    data = {"url": "https://r2.example.com/get?sig=abc", "expires_at": "2026-09-03T00:05:00Z"}
+    del data[missing]
+    with pytest.raises(ValidationError):
+        ScreenshotDownloadUrl.model_validate(data)
 
 
 # ---------------------------------------------------------------------------

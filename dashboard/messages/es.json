@@ -1000,7 +1000,8 @@
       "error": "No pudimos enviar el reporte. Tu texto sigue acá: reintentá en un momento.",
       "sessionExpired": "Tu sesión venció. Volvé a iniciar sesión; tu texto sigue acá.",
       "retry": "Reintentar",
-      "tooLong": "El reporte supera los 2000 caracteres."
+      "tooLong": "El reporte supera los 2000 caracteres.",
+      "webglNotice": "Esta vista tiene contenido 3D: la captura automática puede no incluirlo."
     },
     "status": {
       "new": "Nuevo",
@@ -1029,7 +1030,10 @@
       "userAgent": "Navegador",
       "createdAt": "Enviado el {date}",
       "movedAt": "En esta columna desde el {date}",
-      "close": "Cerrar"
+      "close": "Cerrar",
+      "screenshotThumbnailAlt": "Ver la captura de pantalla adjunta al reporte",
+      "screenshotUnavailable": "La captura de pantalla no está disponible",
+      "screenshotLightboxTitle": "Captura de pantalla del reporte"
     },
     "comment": {
       "label": "Comentario del equipo",
