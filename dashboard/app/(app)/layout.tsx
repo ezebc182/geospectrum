@@ -45,7 +45,13 @@ export default function AppShellLayout({
             <UserMenu />
           </div>
         </header>
-        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
+        {/* min-w-0: sin esto, un hijo ancho (el tablero kanban de /feedback,
+            una tabla, lo que sea) fuerza a este flex item a crecer con su
+            contenido en vez de respetar el overflow-x-auto que ya tenga
+            adentro — y arrastra consigo al header de arriba, que vive en el
+            mismo contenedor flex. min-width:auto es el default de flexbox,
+            no cero; hay que pedirlo explícito. */}
+        <main className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
         {/* Wizard de onboarding del primer login: se renderiza solo si
             /auth/me trae onboarding_completed_at null. Vive en el layout
             porque las anclas del tour (sidebar, header) también viven acá. */}
