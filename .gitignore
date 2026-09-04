@@ -72,3 +72,6 @@ test-results/
 
 # Artefactos del MCP de Playwright (snapshots y logs de sesiones de debug)
 .playwright-mcp/
+
+# Dumps de StationXML del survey de estaciones (varios MB, se regeneran)
+scripts/station_survey/*.xml
