@@ -815,7 +815,7 @@ R2/Railway y verificación end-to-end en prod hechas por el usuario.
 permanente del usuario. Las tareas **(USUARIO)** las ejecuta el usuario; el
 agente no las marca `[x]` por su cuenta.
 
-- [ ] 6.1 Suite backend COMPLETA contra la baseline de HOY.
+- [x] 6.1 Suite backend COMPLETA contra la baseline de HOY.
       *Qué*: `./venv/bin/python -m pytest tests/ -q -p no:cacheprovider
       --no-cov` y comparar contra la baseline registrada en 1.1 — el delta
       debe ser exactamente los tests nuevos de este change, cero
@@ -825,12 +825,28 @@ agente no las marca `[x]` por su cuenta.
       `mutation-log.md` con la fecha real de la corrida (no asumir que los
       números del change base siguen vigentes).
       *Mutación*: no aplica.
-- [ ] 6.2 Suite frontend completa.
+      *Evidencia (2026-09-03)*: `pytest tests/ -q -p no:cacheprovider
+      --no-cov` ⇒ `9 failed, 1232 passed, 2 skipped` (110 s) — idéntico al
+      cierre de la Fase 2, cero regresiones de las Fases 3-5 (no tocan
+      backend). Los 9 fallos siguen siendo los mismos de
+      `test_ws_events.py`. `ruff check .` ⇒ 23 hallazgos en el repo, de los
+      cuales SOLO 1 toca un archivo de este change
+      (`src/main.py`, `F811 search_stations`, preexistente en HEAD,
+      documentado en la Fase 2); los 22 restantes son ajenos
+      (`scripts/station_survey/`, tests de otros módulos). Los 6 archivos
+      propios de este change (`screenshot_storage.py`, `models/feedback.py`,
+      `routers/feedback.py`, `config/settings.py`, `main.py`, tests de
+      screenshot) dan `Found 1 error` — el mismo F811 preexistente, cero
+      hallazgos nuevos.
+- [x] 6.2 Suite frontend completa.
       *Qué*: `./node_modules/.bin/vitest run` y `./node_modules/.bin/tsc
       --noEmit` tras cualquier retoque posterior a la Fase 5.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run &&
       ./node_modules/.bin/tsc --noEmit`. **Nunca `next build`.**
       *Mutación*: no aplica.
+      *Evidencia (2026-09-03)*: sin retoques desde el cierre de la Fase 5 —
+      vale el resultado de 5.3: `vitest run` ⇒ `102 files / 1129 tests
+      passed`, `tsc --noEmit` ⇒ exit 0.
 - [ ] 6.3 Deploy (solo cuando el usuario lo pida).
       *Qué*: commit convencional (sin atribución a IA) en rama propia, PR,
       merge; verificar en Railway que el servicio `api` redeploya y sus
