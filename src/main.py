@@ -505,6 +505,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "DISK_ALERT_ENABLED=true pero falta NTFY_TOPIC_URL — alerta de disco deshabilitada"
         )
 
+    # Rollup horario de uptime por canal (analytics-professional-panels).
+    # Mismo molde que la alerta de disco: apagado por default, encendido
+    # SOLO en el servicio api de Railway. Consolida spectrogram_columns (7
+    # días de retención) en station_uptime_hourly (sin retención). Un ciclo
+    # que falla se loguea y se reintenta; nunca propaga a este lifespan.
+    uptime_rollup_task: Optional[asyncio.Task] = None
+    uptime_rollup_stop = asyncio.Event()
+    if settings.uptime_rollup_enabled:
+        from src.services.station_uptime import run_uptime_rollup_loop
+
+        uptime_rollup_task = asyncio.create_task(
+            run_uptime_rollup_loop(
+                db_pool,
+                interval_seconds=settings.uptime_rollup_interval_seconds,
+                stop_event=uptime_rollup_stop,
+            )
+        )
+        logger.info(
+            "Rollup de uptime por canal activo: cada %d s",
+            settings.uptime_rollup_interval_seconds,
+        )
+
     yield
 
     if warmup_task is not None:
@@ -522,6 +544,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         disk_alert_task.cancel()
         try:
             await disk_alert_task
+        except asyncio.CancelledError:
+            pass
+
+    if uptime_rollup_task is not None:
+        uptime_rollup_stop.set()
+        uptime_rollup_task.cancel()
+        try:
+            await uptime_rollup_task
         except asyncio.CancelledError:
             pass
 

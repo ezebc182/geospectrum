@@ -102,6 +102,20 @@ class Settings(BaseSettings):
     disk_alert_interval_seconds: int = 3600
     ntfy_topic_url: Optional[str] = None
 
+    # Rollup horario de disponibilidad por canal (UPTIME_ROLLUP_ENABLED=true
+    # SOLO en el servicio api de Railway: los otros servicios comparten
+    # imagen y base y no deben competir por el upsert — mismo criterio que
+    # fdsn_warmup_enabled/disk_alert_enabled). Cada ciclo cuenta las filas de
+    # spectrogram_columns por canal y hora y las persiste en
+    # station_uptime_hourly (migración 021), que no tiene retención: es la
+    # historia que sobrevive a los 7 días de la raw. Sin la variable, la
+    # tabla queda vacía y nada rompe.
+    uptime_rollup_enabled: bool = False
+    # 10 min: la raw se escribe cada 4 s, así que una hora parcial se
+    # reescribe con su conteo actual varias veces antes de cerrarse; un
+    # ciclo más corto sólo agrega upserts sin información nueva.
+    uptime_rollup_interval_seconds: int = 600
+
     # Watchdog de servicios en Railway (WATCHDOG_ENABLED=true SOLO en el
     # servicio watchdog dedicado, mismo criterio opt-in que
     # disk_alert_enabled/fdsn_warmup_enabled). Cubre el caso que NI Railway

@@ -104,7 +104,7 @@ existe en la base del testcontainer (idempotencia por doble ejecución real);
 loop wireado en el lifespan del `api` detrás de `UPTIME_ROLLUP_ENABLED`;
 mutaciones M5 y M6 registradas. Deployable solo.
 
-- [ ] 1.1 Registrar la baseline ANTES de tocar cualquier archivo.
+- [x] 1.1 Registrar la baseline ANTES de tocar cualquier archivo.
       *Archivos*: crea `openspec/changes/analytics-professional-panels/mutation-log.md`.
       *Qué*: correr `./venv/bin/python -m pytest tests/ -q -p no:cacheprovider --no-cov`
       y `cd dashboard && ./node_modules/.bin/vitest run 2>&1 | tail -5` y
@@ -117,7 +117,11 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Aceptación*: el archivo existe con la baseline de HOY.
       *Verificación*: `bat openspec/changes/analytics-professional-panels/mutation-log.md`.
       *Mutación*: no aplica.
-- [ ] 1.2 (RED) Test de la migración 021 ANTES de crearla.
+- [x] 1.2 (RED) Test de la migración 021 ANTES de crearla.
+      *Resultado real (2026-09-05)*: RED observado con la 021 fuera del
+      directorio — `test_tabla_con_columnas_y_tipos_exactos` muere en
+      `assert rows` (information_schema devuelve `[]`, no lanza
+      `UndefinedTable`); 11 s con el container ya arriba.
       *Archivos*: crea `tests/integration/test_station_uptime_migration.py`
       (molde `tests/integration/test_feedback_screenshot_migration.py`:
       fixture `_migrated` de `tests/conftest.py`).
@@ -133,7 +137,7 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Aceptación*: falla HOY por tabla inexistente, no por error de setup.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_station_uptime_migration.py -q` ⇒ rojo por `UndefinedTable`.
       *Mutación*: no aplica (es el test).
-- [ ] 1.3 (GREEN) Crear la migración 021.
+- [x] 1.3 (GREEN) Crear la migración 021.
       *Archivos*: crea `deploy/sql/migrations/021_station_uptime_hourly.sql`.
       *Qué*: el SQL EXACTO del design ("Interfaces / Contracts"): `CREATE
       TABLE IF NOT EXISTS station_uptime_hourly (channel TEXT NOT NULL,
@@ -148,6 +152,11 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Mutación*: NO — se verifica por ejecución real doble (mismo criterio
       que la 020).
 - [ ] 1.4 Config: `uptime_rollup_enabled` / `uptime_rollup_interval_seconds`.
+      *Estado (2026-09-05)*: `settings.py` HECHO y verificado (`False 600`).
+      `.env.example` PENDIENTE: el entorno del agente tiene denegado el
+      acceso a ese archivo (Read y Bash), hay que agregar
+      `UPTIME_ROLLUP_ENABLED` / `UPTIME_ROLLUP_INTERVAL_SECONDS` a mano al
+      lado de `DISK_ALERT_*`.
       *Archivos*: modifica `src/config/settings.py`; modifica `.env.example`.
       *Qué*: `uptime_rollup_enabled: bool = False`,
       `uptime_rollup_interval_seconds: int = 600` en el bloque de loops
@@ -160,7 +169,11 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Aceptación*: `./venv/bin/python -c "from src.config.settings import settings; print(settings.uptime_rollup_enabled, settings.uptime_rollup_interval_seconds)"` ⇒ `False 600`.
       *Verificación*: el comando de arriba; `rg -n "UPTIME_ROLLUP" .env.example` ⇒ 2 matches.
       *Mutación*: NO — declaración de config; la protege 1.8 (lifespan).
-- [ ] 1.5 (RED) Tests de integración de `rollup_once` contra Postgres real.
+- [x] 1.5 (RED) Tests de integración de `rollup_once` contra Postgres real.
+      *Nota (2026-09-05)*: el caso (b) afirma `upserted == 1` en la segunda
+      corrida, no `2`: el piso `max(bucket_start)` hace que SOLO se relea
+      la hora parcial (invariante del design "nunca relee más atrás del
+      último bucket"). Verificado contra Postgres.
       *Archivos*: crea `tests/integration/test_station_uptime_rollup.py`.
       *Qué*: fixture que crea `spectrogram_columns` A MANO en el
       testcontainer (SOLO las columnas que el rollup lee: `channel TEXT,
@@ -179,7 +192,7 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Aceptación*: rojo por módulo inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_station_uptime_rollup.py -q`.
       *Mutación*: no aplica (es el test; sus mutaciones van en 1.9).
-- [ ] 1.6 (RED) Test unitario del loop: aislamiento por ciclo y parada limpia.
+- [x] 1.6 (RED) Test unitario del loop: aislamiento por ciclo y parada limpia.
       *Archivos*: crea `tests/unit/test_station_uptime_loop.py` (molde
       `tests/unit/test_disk_alert.py` / `test_watchdog_loop.py`).
       *Qué*: con `rollup_once` parcheado para lanzar en el primer ciclo y
@@ -193,7 +206,7 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Aceptación*: rojo por módulo inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_station_uptime_loop.py -q`.
       *Mutación*: no aplica (es el test).
-- [ ] 1.7 (GREEN) Crear `src/services/station_uptime.py` (rollup + loop).
+- [x] 1.7 (GREEN) Crear `src/services/station_uptime.py` (rollup + loop).
       *Archivos*: crea `src/services/station_uptime.py`.
       *Qué*: `EXPECTED_COLUMNS_PER_HOUR = 3600 // COLUMN_INTERVAL_SECONDS`
       (import de `seedlink_ingestor`, derivada, no redeclarada);
@@ -212,7 +225,10 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Aceptación*: 1.5 y 1.6 verdes.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_station_uptime_rollup.py tests/unit/test_station_uptime_loop.py -q`.
       *Mutación*: las lleva 1.9 (M5, M6).
-- [ ] 1.8 Wiring en el lifespan de `src/main.py`.
+- [x] 1.8 Wiring en el lifespan de `src/main.py`.
+      *Desvío menor (2026-09-05)*: sin el `elif` "sin db_pool" — `db_pool`
+      se crea incondicionalmente en el lifespan (`main.py:364`) antes de
+      llegar acá, así que esa rama sería código muerto.
       *Archivos*: modifica `src/main.py` (líneas ~482-505 y ~520-524).
       *Qué*: molde EXACTO de `disk_alert_task`: `uptime_rollup_task:
       Optional[asyncio.Task] = None`, `uptime_rollup_stop =
@@ -228,7 +244,7 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Verificación*: los dos comandos + `./venv/bin/python -m pytest tests/unit/test_station_rsam_endpoint.py -q` (el módulo sigue importando y el endpoint vecino no cambió).
       *Mutación*: NO — cableado sin lógica; el aislamiento del loop lo
       prueba 1.6 y el arranque real lo prueba 7.3 en prod.
-- [ ] 1.9 **Mutaciones críticas del rollup** + gate de fase.
+- [x] 1.9 **Mutaciones críticas del rollup** + gate de fase.
       *Archivos*: `src/services/station_uptime.py` (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |
       |---|---|---|
