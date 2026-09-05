@@ -151,13 +151,15 @@ mutaciones M5 y M6 registradas. Deployable solo.
       *Verificación*: mismo comando de 1.2 ⇒ verde.
       *Mutación*: NO — se verifica por ejecución real doble (mismo criterio
       que la 020).
-- [ ] 1.4 Config: `uptime_rollup_enabled` / `uptime_rollup_interval_seconds`.
+- [x] 1.4 Config: `uptime_rollup_enabled` / `uptime_rollup_interval_seconds`.
       *Estado (2026-09-05)*: `settings.py` HECHO y verificado (`False 600`).
-      `.env.example` PENDIENTE: el entorno del agente tiene denegado el
-      acceso a ese archivo (Read y Bash), hay que agregar
-      `UPTIME_ROLLUP_ENABLED` / `UPTIME_ROLLUP_INTERVAL_SECONDS` a mano al
-      lado de `DISK_ALERT_*`.
-      *Archivos*: modifica `src/config/settings.py`; modifica `.env.example`.
+      La parte de `.env.example` se DESCARTA: el usuario confirmó que
+      `DISK_ALERT_*` no está ahí, y `rg` verifica que ninguna variable
+      opt-in de Railway (`DISK_ALERT_ENABLED`, `FDSN_WARMUP_ENABLED`,
+      `WATCHDOG_ENABLED`) se documenta fuera de los comentarios de
+      `settings.py`. Esa es la convención del repo; el requisito de abajo
+      era inventado.
+      *Archivos*: modifica `src/config/settings.py`.
       *Qué*: `uptime_rollup_enabled: bool = False`,
       `uptime_rollup_interval_seconds: int = 600` en el bloque de loops
       opt-in (junto a `fdsn_warmup_*` / `disk_alert_*`, líneas 78-102),
