@@ -29,12 +29,12 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, Optional
 
 import asyncpg
 
+from src.models.analytics import StationUptimeResponse, UptimeBucket
 from src.services.seedlink_ingestor import COLUMN_INTERVAL_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -124,30 +124,6 @@ UptimeBucketKind = Literal["hour", "day"]
 UptimeRow = tuple[str, datetime, int]
 
 
-@dataclass(frozen=True)
-class UptimeBucketData:
-    """Un bucket de un canal. Mismos campos que `UptimeBucket` del contrato."""
-
-    bucket_start: datetime
-    columns_count: int  # 0 si el canal no tiene fila en el bucket
-    observed_hours: int  # horas del bucket con fila de ALGÚN canal (0 o 1 en bucket=hour)
-    expected: int  # EXPECTED_COLUMNS_PER_HOUR × observed_hours
-    ratio: Optional[float]  # min(1, count/expected); None si nadie observó o el canal no está
-    in_progress: bool  # el bucket contiene `now`
-
-
-@dataclass(frozen=True)
-class UptimeSeriesData:
-    """Salida de `build_uptime_series`. Mismos campos que `StationUptimeResponse`."""
-
-    bucket: UptimeBucketKind
-    window_start: datetime
-    window_end: datetime
-    expected_columns_per_hour: int
-    stations: dict[str, list[UptimeBucketData]]
-    overall: dict[str, Optional[float]]
-
-
 def _truncate(ts: datetime, bucket: UptimeBucketKind) -> datetime:
     """`date_trunc('hour' | 'day', ts)`, conservando la zona horaria."""
     if bucket == "day":
@@ -175,8 +151,12 @@ def build_uptime_series(
     bucket: UptimeBucketKind,
     channels: Optional[Sequence[str]],
     now: datetime,
-) -> UptimeSeriesData:
+) -> StationUptimeResponse:
     """Serie de disponibilidad por canal a partir de las filas del rollup. PURA.
+
+    Devuelve directamente el modelo de respuesta (`src/models/analytics.py`,
+    contrato del design): el router de `/analytics` lo sirve tal cual, sin
+    mapeo intermedio.
 
     Reglas ([R12] del design; Decisiones 4 y 5 de la spec de `signal-analysis`):
       * la lista cubre TODOS los buckets de la ventana, alineados al
@@ -211,18 +191,18 @@ def build_uptime_series(
     for hour in observed_hours:
         hours_by_bucket[_truncate(hour, bucket)].append(hour)
 
-    stations: dict[str, list[UptimeBucketData]] = {}
+    stations: dict[str, list[UptimeBucket]] = {}
     overall: dict[str, Optional[float]] = {}
     for ch in requested:
         channel_present = ch in present
-        buckets: list[UptimeBucketData] = []
+        buckets: list[UptimeBucket] = []
         total_columns = 0
         for bucket_start in bucket_starts:
             hours = hours_by_bucket[bucket_start]
             columns = sum(counts.get((ch, hour), 0) for hour in hours)
             total_columns += columns
             buckets.append(
-                UptimeBucketData(
+                UptimeBucket(
                     bucket_start=bucket_start,
                     columns_count=columns,
                     observed_hours=len(hours),
@@ -234,7 +214,7 @@ def build_uptime_series(
         stations[ch] = buckets
         overall[ch] = _ratio(total_columns, len(observed_hours), channel_present)
 
-    return UptimeSeriesData(
+    return StationUptimeResponse(
         bucket=bucket,
         window_start=start,
         window_end=end,

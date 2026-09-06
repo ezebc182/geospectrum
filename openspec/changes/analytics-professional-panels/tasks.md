@@ -431,9 +431,14 @@ M7, M10, M11, M12, M13 registradas.
 del design; `curl` contra un testcontainer prueba 200/422/503/404; los
 archivos protegidos sin cambios; M4 registrada.
 
-- [ ] 3.1 (RED→GREEN) Modelos Pydantic de `src/models/analytics.py`.
+- [x] 3.1 (RED→GREEN) Modelos Pydantic de `src/models/analytics.py`.
+      *Resultado real (2026-09-06)*: RED por `ModuleNotFoundError`; GREEN 41
+      passed. Además se cerró el mapeo que 2.8 dejó pendiente:
+      `build_uptime_series` devuelve `StationUptimeResponse`/`UptimeBucket`
+      (firma del design) y los dataclasses `UptimeBucketData`/`UptimeSeriesData`
+      desaparecen — `test_station_uptime.py` sigue verde sin tocarlo.
       *Archivos*: crea `tests/unit/test_analytics_models.py`; crea
-      `src/models/analytics.py`.
+      `src/models/analytics.py`; modifica `src/services/station_uptime.py`.
       *Qué (RED primero)*: `BValueOk` requiere `b`, `a`, `sigma_b` y
       `status == "ok"`; `BValueNotEstimable` rechaza `status == "ok"` y NO
       declara `b` (`"b" not in BValueNotEstimable.model_fields`); el
@@ -450,7 +455,11 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: el test pasa completo.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_analytics_models.py -q`.
       *Mutación*: NO — la ausencia de `b` se vuelve a afirmar end-to-end en 3.5.
-- [ ] 3.2 (RED) Tests de integración de `EventStore.between`.
+- [x] 3.2 (RED) Tests de integración de `EventStore.between`.
+      *Resultado real (2026-09-06)*: RED observado — 8 tests de `TestBetween`
+      mueren por `AttributeError: 'EventStore' object has no attribute
+      'between'` (no por setup). Además de (a)–(f): combinación de los tres
+      filtros (la consulta real del b-value) y lista vacía.
       *Archivos*: modifica `tests/integration/test_event_store.py`
       (fixture `event_store` existente).
       *Qué*: sembrar eventos con lat/lon dentro y fuera de un bbox, dentro
@@ -464,7 +473,12 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: rojo por método inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_event_store.py -q -k between`.
       *Mutación*: no aplica (es el test).
-- [ ] 3.3 (GREEN) `EventStore.between` en `src/services/event_store.py`.
+- [x] 3.3 (GREEN) `EventStore.between` en `src/services/event_store.py`.
+      *Resultado real (2026-09-06)*: `test_event_store.py` entero ⇒ 25 passed
+      (17 previos + 8 nuevos). M4 ya observada (ver `mutation-log.md`, Fase
+      3) junto con 5 mutaciones extra por rama (bbox, `min_magnitude`, borde
+      inferior de ventana, `limit`, desempate); 3.8 la repite contra
+      `hypocenters?limit=5` cuando exista el router.
       *Archivos*: modifica `src/services/event_store.py`.
       *Qué*: la firma EXACTA del design (keyword-only `min_magnitude`,
       `bbox`, `limit`, `order_by_magnitude`), reusando `_COLUMNS` y

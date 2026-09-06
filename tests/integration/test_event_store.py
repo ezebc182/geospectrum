@@ -122,17 +122,13 @@ class TestDedupeEntreFuentes:
         )
         assert len(await event_store.recent(hours=1)) == 2
 
-    async def test_dos_sismos_en_el_mismo_lugar_pero_separados_en_el_tiempo(
-        self, event_store
-    ):
+    async def test_dos_sismos_en_el_mismo_lugar_pero_separados_en_el_tiempo(self, event_store):
         """
         Una réplica 10 minutos después del sismo principal es un evento
         propio, no un duplicado.
         """
         base = datetime.now(timezone.utc)
-        await event_store.upsert(
-            build_event(hora_utc=base.isoformat().replace("+00:00", "Z"))
-        )
+        await event_store.upsert(build_event(hora_utc=base.isoformat().replace("+00:00", "Z")))
         await event_store.upsert(
             build_event(
                 id="usgs_replica",
@@ -174,9 +170,7 @@ class TestRecent:
     async def test_ordena_del_mas_nuevo_al_mas_viejo(self, event_store):
         await event_store.upsert(build_event(id="viejo", hora_utc=hours_ago(3)))
         await event_store.upsert(build_event(id="nuevo", lat=10.0, lon=10.0))
-        await event_store.upsert(
-            build_event(id="medio", lat=20.0, lon=20.0, hora_utc=hours_ago(1))
-        )
+        await event_store.upsert(build_event(id="medio", lat=20.0, lon=20.0, hora_utc=hours_ago(1)))
 
         assert [e.id for e in await event_store.recent(hours=24)] == [
             "nuevo",
@@ -202,9 +196,7 @@ class TestRecent:
 
     async def test_respeta_el_limit(self, event_store):
         for i in range(5):
-            await event_store.upsert(
-                build_event(id=f"ev{i}", lat=float(i * 10), lon=float(i * 10))
-            )
+            await event_store.upsert(build_event(id=f"ev{i}", lat=float(i * 10), lon=float(i * 10)))
         assert len(await event_store.recent(hours=24, limit=3)) == 3
 
     async def test_sin_eventos_devuelve_lista_vacia(self, event_store):
@@ -225,6 +217,130 @@ class TestStats:
         stats = await event_store.stats()
         assert stats["total"] == 0
         assert stats["ultimo_evento_utc"] is None
+
+
+class TestBetween:
+    """`between()` es la fuente del b-value y del mapa de hipocentros de
+    `/analytics` (analytics-professional-panels, 3.2). Etapa 1 del filtro de
+    área en SQL (bbox); la etapa 2 (polígono) la hace el caller.
+
+    Todos los sismos sembrados van a horas distintas (≥ 30 min) para que el
+    dedupe de `upsert` (±120 s) no los fusione: acá se prueba el SELECT, no
+    el dedupe.
+    """
+
+    # bbox de los Andes: (minlat, maxlat, minlon, maxlon), como area_to_filter_dict.
+    ANDES = (-40.0, -20.0, -75.0, -60.0)
+
+    @staticmethod
+    def _window(hours_back: float = 24) -> tuple[datetime, datetime]:
+        ahora = datetime.now(timezone.utc)
+        return ahora - timedelta(hours=hours_back), ahora + timedelta(minutes=1)
+
+    async def test_respeta_la_ventana(self, event_store):
+        await event_store.upsert(build_event(id="dentro", hora_utc=hours_ago(2)))
+        await event_store.upsert(build_event(id="borde", hora_utc=hours_ago(23.5)))
+        await event_store.upsert(build_event(id="fuera", hora_utc=hours_ago(30)))
+
+        start, end = self._window(24)
+        ids = {e.id for e in await event_store.between(start, end)}
+        assert ids == {"dentro", "borde"}
+
+    async def test_el_bbox_filtra_en_sql(self, event_store):
+        await event_store.upsert(build_event(id="andes", hora_utc=hours_ago(1)))
+        await event_store.upsert(
+            build_event(id="tokio", lat=35.6, lon=139.7, hora_utc=hours_ago(2))
+        )
+        # Latitud adentro, longitud afuera: el bbox tiene que mirar los DOS ejes.
+        await event_store.upsert(
+            build_event(id="atlantico", lat=-30.0, lon=-50.0, hora_utc=hours_ago(3))
+        )
+        # Justo en el borde: BETWEEN es inclusivo, el evento entra.
+        await event_store.upsert(
+            build_event(id="borde", lat=-20.0, lon=-60.0, hora_utc=hours_ago(4))
+        )
+
+        start, end = self._window()
+        ids = {e.id for e in await event_store.between(start, end, bbox=self.ANDES)}
+        assert ids == {"andes", "borde"}
+
+        # Sin bbox, la etapa 1 no recorta nada.
+        assert len(await event_store.between(start, end)) == 4
+
+    async def test_filtra_por_magnitud_minima(self, event_store):
+        await event_store.upsert(build_event(id="chico", mag=2.1, hora_utc=hours_ago(1)))
+        await event_store.upsert(build_event(id="justo", mag=5.0, hora_utc=hours_ago(2)))
+        await event_store.upsert(build_event(id="grande", mag=6.3, hora_utc=hours_ago(3)))
+
+        start, end = self._window()
+        ids = {e.id for e in await event_store.between(start, end, min_magnitude=5.0)}
+        assert ids == {"justo", "grande"}
+
+    async def test_por_magnitud_devuelve_las_mayores_con_desempate_por_hora(self, event_store):
+        """
+        [R18] / M4: con `limit`, el recorte se lleva microsismicidad, nunca el
+        M6. Dos sismos con la MISMA magnitud se desempatan por `hora_utc DESC`.
+        """
+        await event_store.upsert(build_event(id="chico", mag=4.5, hora_utc=hours_ago(0.5)))
+        await event_store.upsert(build_event(id="grande_nuevo", mag=6.3, hora_utc=hours_ago(1)))
+        await event_store.upsert(build_event(id="medio", mag=5.1, hora_utc=hours_ago(3)))
+        await event_store.upsert(build_event(id="grande_viejo", mag=6.3, hora_utc=hours_ago(5)))
+
+        start, end = self._window()
+        top2 = await event_store.between(start, end, order_by_magnitude=True, limit=2)
+        assert [e.id for e in top2] == ["grande_nuevo", "grande_viejo"]
+
+        todos = await event_store.between(start, end, order_by_magnitude=True)
+        assert [e.id for e in todos] == ["grande_nuevo", "grande_viejo", "medio", "chico"]
+
+    async def test_por_defecto_ordena_por_hora_descendente(self, event_store):
+        await event_store.upsert(build_event(id="chico", mag=4.5, hora_utc=hours_ago(0.5)))
+        await event_store.upsert(build_event(id="grande_nuevo", mag=6.3, hora_utc=hours_ago(1)))
+        await event_store.upsert(build_event(id="medio", mag=5.1, hora_utc=hours_ago(3)))
+        await event_store.upsert(build_event(id="grande_viejo", mag=6.3, hora_utc=hours_ago(5)))
+
+        start, end = self._window()
+        ids = [e.id for e in await event_store.between(start, end, order_by_magnitude=False)]
+        assert ids == ["chico", "grande_nuevo", "medio", "grande_viejo"]
+
+        # El limit también aplica en el orden por hora.
+        ids = [e.id for e in await event_store.between(start, end, limit=1)]
+        assert ids == ["chico"]
+
+    async def test_prof_km_nula_sobrevive(self, event_store):
+        """INPRES a veces no reporta profundidad; el mapa la dibuja distinto, no
+        la inventa."""
+        await event_store.upsert(build_event(id="sin_prof", prof_km=None, hora_utc=hours_ago(1)))
+        await event_store.upsert(
+            build_event(id="con_prof", prof_km=110.0, lat=-30.0, lon=-70.0, hora_utc=hours_ago(2))
+        )
+
+        start, end = self._window()
+        por_id = {e.id: e for e in await event_store.between(start, end, bbox=self.ANDES)}
+        assert por_id["sin_prof"].prof_km is None
+        assert por_id["con_prof"].prof_km == 110.0
+
+    async def test_los_filtros_se_combinan(self, event_store):
+        """Ventana + bbox + magnitud a la vez: es la consulta real del b-value."""
+        await event_store.upsert(build_event(id="ok", mag=5.5, hora_utc=hours_ago(1)))
+        await event_store.upsert(build_event(id="chico", mag=3.0, hora_utc=hours_ago(2)))
+        await event_store.upsert(
+            build_event(id="lejos", mag=7.0, lat=35.6, lon=139.7, hora_utc=hours_ago(3))
+        )
+        await event_store.upsert(build_event(id="viejo", mag=6.0, hora_utc=hours_ago(30)))
+
+        start, end = self._window(24)
+        ids = [
+            e.id
+            for e in await event_store.between(
+                start, end, min_magnitude=5.0, bbox=self.ANDES, order_by_magnitude=True
+            )
+        ]
+        assert ids == ["ok"]
+
+    async def test_sin_eventos_devuelve_lista_vacia(self, event_store):
+        start, end = self._window()
+        assert await event_store.between(start, end, bbox=self.ANDES, limit=10) == []
 
 
 class TestConexion:
