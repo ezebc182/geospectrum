@@ -21,8 +21,8 @@ encendido SOLO en el servicio `api` de Railway.
 
 Lectura: `build_uptime_series` (pura, regla [R12] del design) convierte las
 filas de la tabla en buckets por canal distinguiendo `null` ("nadie miró")
-de `0.0` ("se miró y el canal estaba mudo"). `fetch_uptime` (el SELECT que
-la alimenta) llega con el router de `/analytics`.
+de `0.0` ("se miró y el canal estaba mudo"). `fetch_uptime` hace el SELECT
+de la ventana y delega en ella; lo consume `GET /analytics/station-uptime`.
 """
 
 import asyncio
@@ -222,3 +222,35 @@ def build_uptime_series(
         stations=stations,
         overall=overall,
     )
+
+
+# El SELECT trae las filas de TODOS los canales de la ventana, aunque se pidan
+# pocos: "hora observada" es una hora con fila de CUALQUIER canal ([R12]), y
+# filtrar por `channel` en SQL convertiría el `0.0` de un canal mudo (otro
+# entregó, se miró) en un `null` (nadie miró). Con 107 canales son ~2.5 k
+# filas por día; `days=365` es el peor caso (~940 k) y el tope está acotado.
+_SELECT_WINDOW_SQL = """
+SELECT channel, bucket_start, columns_count
+FROM station_uptime_hourly
+WHERE bucket_start >= $1 AND bucket_start < $2
+"""
+
+
+async def fetch_uptime(
+    pool: asyncpg.Pool,
+    start: datetime,
+    end: datetime,
+    bucket: UptimeBucketKind,
+    channels: Optional[Sequence[str]],
+    now: datetime,
+) -> StationUptimeResponse:
+    """SELECT de las filas de la ventana y delegación en `build_uptime_series`.
+
+    La lectura arranca en el `date_trunc` de `start` (el primer bucket
+    completo), que es exactamente lo que la función pura considera dentro de
+    la ventana; el filtro de canales lo aplica ella sobre la salida.
+    """
+    async with pool.acquire() as conn:
+        records = await conn.fetch(_SELECT_WINDOW_SQL, _truncate(start, bucket), end)
+    rows = [(r["channel"], r["bucket_start"], r["columns_count"]) for r in records]
+    return build_uptime_series(rows, start, end, bucket, channels, now)

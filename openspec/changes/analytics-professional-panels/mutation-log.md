@@ -235,3 +235,68 @@ src/services/watchdog.py src/services/swarm_rsam.py
 src/services/seedlink_ingestor.py` vacío. (Una corrida previa con `-x` frenó
 en el primer fallo de `test_ws_events.py` con `1 failed, 1340 passed`: no
 es comparable y por eso se repitió sin `-x`.)
+
+## Fase 3 (3.4–3.8) — RED observados (2026-09-06)
+
+Rama `feat/analytics-panels-fase3` sobre `8faccbe` (3.1–3.3).
+
+- 3.4 + 3.5 en UNA corrida antes de crear el router: `42 failed`. Los 9
+  unitarios que parchean el singleton FDSN mueren con `AttributeError:
+  module 'src.api.routers' has no attribute 'analytics'` (target del patch
+  `src.api.routers.analytics.get_spectrogram_service`); los 5 de validación
+  del tremor y los 28 de integración reciben `404` (ruta inexistente) donde
+  esperan 200/422/503. Ninguno por setup. Router + `fetch_uptime` +
+  `include_router` ⇒ `42 passed`.
+- 3.7: batería de no-regresión (`test_station_rsam_endpoint.py`,
+  `test_api.py`, `test_areas_api.py`, `test_event_store.py`,
+  `test_watchdog_loop.py`) ⇒ `86 passed` sin tocar ningún test; `rg` de
+  `analytics/rsam|rsam_samples|INSERT INTO rsam` en `src/` sin matches;
+  `report()` sigue con `sources` + `current_user`.
+
+## Fase 3 (3.4–3.8) — mutaciones (2026-09-06)
+
+Mecánica: snapshot `cp` de `event_store.py`, `routers/analytics.py` y
+`station_uptime.py` en el scratchpad; `sd -s` (literal, UNA línea); `rg -F`
++ `cmp` ⇒ `ARCHIVO_DIFIERE_DEL_SNAPSHOT` ANTES de correr;
+`PYTHONDONTWRITEBYTECODE=1` + `rm -rf` de `__pycache__` de `services/` y
+`routers/`; reversión por `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; `cmp`
+final de los 3 archivos idéntico; verde final 28 + 14.
+
+Dos primeros intentos INVÁLIDOS, registrados para no repetirlos:
+
+1. **M4 (1er intento) NO mató el test del endpoint** (`1 failed, 16 passed`:
+   solo murió `TestBetween`). Causa: el test de `hypocenters?limit=5`
+   sembraba `hours_ago = 1 + (7.0 − mag)·24` — el M7.0 era el más NUEVO, así
+   que `ORDER BY hora_utc DESC` devolvía los mismos cinco que `mag DESC`. El
+   test no podía fallar. Fix: `hours_ago = 1 + (mag − 3.5)·24` (los grandes
+   son los viejos). Nunca se anotó como pasada.
+2. **XR1 (1er intento) NO mató nada** (`3 passed`). Causa: el área activa
+   era el preset `japon`, cuyo polígono ES su bbox (rectángulo,
+   verificado en `deploy/sql/seeds/areas_of_interest.json`); los eventos "de
+   afuera" estaban en los Andes, fuera del bbox, y la etapa 1 en SQL ya los
+   descartaba — la etapa 2 (`point_in_area`) nunca decidía. Con un preset
+   rectangular NINGUNA mutación de la etapa 2 es falsable. Fix: área custom
+   "Andes" TRIANGULAR creada con `AreaService.create` + `set_active` (lo
+   que dice la spec) y los eventos "de afuera" en `BBOX_CORNER`
+   (`(−26, −71.5)`: dentro del bbox, fuera del triángulo).
+
+| # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
+|---|---|---|---|---|---|
+| M4 (endpoint) | `src/services/event_store.py` | `order = "mag DESC, hora_utc DESC" if order_by_magnitude else "hora_utc DESC"` → `order = "hora_utc DESC"` | `274:        order = "hora_utc DESC"` | `tests/integration/test_analytics_api.py::test_hypocenters_limit_trunca_lo_declara_y_se_queda_con_los_grandes` — `assert [3.5, 4.0, 4.5, 5.0, 5.5] == [7.0, 6.5, 6.0, 5.5, 5.0]` (la mentira de truncado de R18, a nivel HTTP); también `TestBetween::test_por_magnitud_…` (`['chico', 'grande_nuevo'] == …`) (2 failed, 15 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL` |
+| XR1 | `src/api/routers/analytics.py` | `if area_filter is None:` → `if area_filter is None or True:` (se saltea la etapa 2, `point_in_area`) | `144:    if area_filter is None or True:` | `test_b_value_eventos_fuera_del_area_activa_no_cuentan` — `assert 'ok' == 'insufficient'` (la esquina del bbox entra: 2·MIN_EVENTS+90); `test_hypocenters_ventana_de_30_dias_recortada_al_area` — `assert 15 == 10` (2 failed, 1 passed) | ídem |
+| XR2 | `src/api/routers/analytics.py` | `truncated=total > limit,` → `truncated=False,` | `224:        truncated=False,` | `test_hypocenters_limit_trunca_…` — `assert False is True` (1 failed) | ídem |
+| XR3 | `src/api/routers/analytics.py` | `kind: UptimeBucketKind = "day" if days > MAX_HOURLY_DAYS else bucket` → `kind: UptimeBucketKind = bucket` | `250:    kind: UptimeBucketKind = bucket` | `test_station_uptime_days_mayor_a_14_fuerza_bucket_day` — `assert 'hour' == 'day'` (1 failed) | ídem |
+| XR4 | `src/services/station_uptime.py` | en `fetch_uptime`, `rows = [… for r in records]` → `[… for r in records if channels is None or r["channel"] in channels]` (el SELECT filtrado por canal, que rompe [R12]) | `255:    rows = [(r["channel"], r["bucket_start"], r["columns_count"]) for r in records if channels is None or r["channel"] in channels]` | `test_station_uptime_el_filtro_de_canal_no_cambia_que_es_hora_observada` — `assert None == 0.0` (el canal mudo pasa de "se miró" a "nadie miró") (1 failed, 1 passed) | ídem |
+| XR5 | `src/api/routers/analytics.py` | `"t": str(trace.stats.starttime + (i + 0.5) * period),` → `… + i * period),` (t en el borde izquierdo) | `334:            "t": str(trace.stats.starttime + i * period),` | `tests/unit/test_analytics_tremor_endpoint.py::test_traza_estacionaria_no_tiene_episodios` — `'2019-04-18T20:00:00.000000Z'.startswith('2019-04-18T20:05:00')` es False; `test_tremor_y_tendencia_comparten_la_serie` — `At index 0 diff: '…20:00:00.000000Z' != '…20:05:00.000000Z'` (2 failed) | ídem |
+
+## Fase 3 (3.4–3.8) — gate real (2026-09-06)
+
+`PYTHONDONTWRITEBYTECODE=1 ./venv/bin/python -m pytest tests -q --ignore=dashboard -p no:cacheprovider --no-cov -rf`
+⇒ `9 failed, 1384 passed, 2 skipped, 8 warnings in 91.15s`. Los 9 son los
+preexistentes de `test_ws_events.py`; +42 sobre el gate de 3.1–3.3 (1342)
+= 14 de `test_analytics_tremor_endpoint.py` + 28 de `test_analytics_api.py`.
+`ruff check` y `ruff format --check` limpios en `routers/analytics.py`,
+`models/analytics.py`, `event_store.py`, `station_uptime.py` y los 3 tests;
+`src/main.py` conserva SOLO el F811 preexistente de `search_stations`
+(ajeno). `git diff --stat main -- src/services/watchdog.py
+src/services/swarm_rsam.py src/services/seedlink_ingestor.py` vacío.
