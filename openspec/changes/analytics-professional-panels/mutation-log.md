@@ -113,3 +113,66 @@ completo de la real y siembra arrays dummy. Verificado en los DOS órdenes
 
 Segunda corrida: `9 failed, 1248 passed, 2 skipped in 104.69s` — los 9 son
 los preexistentes; +16 = los tests de la Fase 1.
+
+## Fase 2 — mutaciones de la lógica pura (2026-09-05)
+
+Mecánica: snapshot `cp` de los 4 archivos en el scratchpad ANTES de mutar;
+`sd -s` (literal) o un `str.replace` de Python con `assert count == 1` para
+el patrón multilínea (M12); confirmación por `rg` + `cmp` contra el snapshot
+(`ARCHIVO_DIFIERE_DEL_SNAPSHOT`) y, para el JSON (tracked), también `git
+diff --stat`; `PYTHONDONTWRITEBYTECODE=1` + `rm -rf src/services/__pycache__`
+antes de cada corrida (no queda `.pyc` que servir); reversión por `cp` +
+`cmp` ⇒ `REVERT_CMP_IDENTICAL`; verde.
+
+| # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
+|---|---|---|---|---|---|
+| M1 | `dashboard/lib/seismic-constants.json` | `"bValueMinEvents": 50` → `5` (`sd -s`) | `7:  "bValueMinEvents": 5,` + `git diff --stat` ⇒ `8 insertions(+), 1 deletion(-)` | `tests/unit/test_gutenberg_richter.py::TestConstantsFromSharedJson::test_la_guarda_de_n_es_al_menos_50` — `assert MIN_EVENTS >= 50` → `AssertionError: assert 5 >= 50` (1 failed, 15 passed). **No** murió 2.2(c) como predecía tasks.md: ese test construye `M_cut` DESDE `MIN_EVENTS` importado (regla de la spec), así que con 5 recorta a `M ≥ 5.8` (n = 4) y sigue dando `insufficient`. Lo que prueba que el backend lee el JSON es que `MIN_EVENTS` bajó a 5 (una copia hardcodeada habría dejado el `≥ 50` verde y la mutación NO habría matado nada) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M2 | `src/services/gutenberg_richter.py` | `b = log10(e) / (mean - (mc - BIN_WIDTH / 2))` → `/ (mean - mc)` (`sd -s`) | `195:    b = math.log10(math.e) / (mean - mc)` + `cmp` ⇒ difiere | `TestFitBValueOk::test_catalogo_b_1_0_recupera_b_cerca_de_1` — `assert 0.90 <= result.b <= 1.10` → `AssertionError: assert 1.125370822075077 <= 1.1` (exactamente el 1.1254 de R29). También `test_catalogo_b_1_5…` (`1.7917 <= 1.6`) y `TestMcAutomatico` (`1.1258 <= 1.1`) (3 failed, 13 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M3 | `src/services/gutenberg_richter.py` | `if n_above < MIN_EVENTS:` → `if n_above < 0:` (guarda de N salteada; `sd -s`) | `187:    if n_above < 0:` + `cmp` ⇒ difiere | `TestFitBValueNotEstimable::test_recorte_por_debajo_del_minimo_es_insuficiente_sin_b` y `test_n_se_cuenta_despues_de_filtrar_por_mc` — `assert 'ok' == 'insufficient'`; `test_catalogo_vacio…` — `ZeroDivisionError` (3 failed, 13 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M13 | `src/services/gutenberg_richter.py` | `above = [m for m in mags if m >= mc - _EPS]` → `above = list(mags)` (`sd -s`) | `174:        above = list(mags)` + `cmp` ⇒ difiere | `TestFitBValueNotEstimable::test_n_se_cuenta_despues_de_filtrar_por_mc` — `assert 'ok' == 'insufficient'` (1 000 eventos pasan a `ok`); también `TestMcAutomatico` (`1.8409 <= 1.1`) (2 failed, 14 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M7 | `dashboard/lib/seismic-constants.json` | `"tremorMinDurationPeriods": 3` → `1` (`sd -s`) | `11:  "tremorMinDurationPeriods": 1,` + `git diff --stat` | `tests/unit/test_tremor.py::TestClassifyEpisodes::test_un_pico_aislado_no_es_tremor` — `assert result.episodes == []` → `Left contains one more item: TremorEpisodeCore(… samples=1, mean_ratio=20.0, peak_rsam=800.0 …)` (el pico aislado pasa a episodio, como predecía tasks.md); también `test_cotas_de_la_spec` (`assert 1 >= 3`) y `TestCharacterize::test_veinte_minutos_no_alcanzan` (3 failed, 13 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M10 | `dashboard/lib/seismic-constants.json` | `"tremorBaselineFactor": 2.0` → `6.0` (`sd -s`) | `10:  "tremorBaselineFactor": 6.0,` + `git diff --stat` | `TestCharacterize::test_cuarenta_minutos_elevados_son_un_episodio_de_banda_baja` — `assert len(result.episodes) == 1` → `assert 0 == 1` (RSAM ≈ 2 de la señal sintética queda bajo `6 × 0.5 = 3`); también `test_tono_a_8_hz…` (`[] == ['high']`) y `test_la_rampa…` (3 failed, 13 passed). **No** murió 2.4(c) (la meseta) como predecía tasks.md: esa meseta se construye a `40 · BASELINE_FACTOR · 2` (texto literal de la tarea 2.4(c)), así que con 6.0 vale 480 y sigue sobre 240. El escenario de mutación de la spec supone la meseta fija en 160; la tarea la ata a la constante — son incompatibles para ESTA mutación. Lo que la mata es la capa 2 (amplitudes físicas fijas), que igual prueba que el módulo lee el JSON y aplica el factor | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M11 | `src/services/tremor.py` | `values = [v for _, v in samples if v is not None]` → `[v if v is not None else 0.0 for _, v in samples]` (`sd -s`) | `125:    values = [v if v is not None else 0.0 for _, v in samples]` + `cmp` ⇒ difiere | `TestClassifyEpisodes::test_un_hueco_parte_el_episodio_en_dos` — `assert 0.19 == 0.1919191919191919 ± 1.0e-03` (19/100 en vez de 19/99, la predicción exacta); también `test_serie_vacia_o_toda_none…` (`assert 0.0 is None`) (2 failed, 14 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+| M12 | `src/services/station_uptime.py` | en `_ratio`, `if not channel_present or observed_hours == 0: return None` → `observed_hours == 0` devuelve `0.0` (Python `str.replace`, multilínea) | `168:    if observed_hours == 0:` / `169:        return 0.0` + `cmp` ⇒ difiere | `tests/unit/test_station_uptime.py::test_hora_sin_filas_de_ningun_canal_es_none_no_cero` — `assert second.ratio is None` → `assert 0.0 is None`; también `test_bucket_day_con_dia_sin_horas_observadas_es_none` (`(0.0, 0, 0) == (None, 0, 0)`) y `test_filas_fuera_de_la_ventana_se_ignoran` (3 failed, 10 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 13 passed |
+| extra 2.6 | `src/services/tremor.py` | `duration_s=ep.samples * period` → `duration_s=ep.samples` (`sd -s`) — no está en el design; compensa que los tests de la capa 2 se escribieron DESPUÉS de `characterize` (RED de 2.6 no observado aparte) | `255:                duration_s=ep.samples,` + `cmp` ⇒ difiere | `TestCharacterize::test_cuarenta_minutos_elevados_son_un_episodio_de_banda_baja` — `assert episode.duration_s == 2400` → `assert 4 == 2400` (1 failed, 15 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 16 passed |
+
+## Fase 2 — RED observados (2026-09-05)
+
+- 2.2: `ModuleNotFoundError: No module named 'src.services.gutenberg_richter'`
+  (1 error during collection). Módulo creado ⇒ 16 passed.
+- 2.4: `ModuleNotFoundError: No module named 'src.services.tremor'`. Capa 1
+  creada ⇒ 10 passed.
+- 2.6: **RED no observado por separado** — `characterize` se escribió en el
+  mismo archivo que la capa 1, antes de sus 6 tests, que pasaron de una
+  (16 passed). Compensado con la mutación "extra 2.6" de arriba y con M7/M10,
+  que matan tests de la capa 2.
+- 2.7: `ImportError: cannot import name 'build_uptime_series' from
+  'src.services.station_uptime'`. Función creada ⇒ 13 passed.
+
+## Fase 2 — gate (2026-09-05)
+
+`PYTHONDONTWRITEBYTECODE=1 ./venv/bin/python -m pytest tests/unit/test_gutenberg_richter.py tests/unit/test_tremor.py tests/unit/test_station_uptime.py tests/unit/test_station_uptime_loop.py -q -p no:cacheprovider --no-cov`
+⇒ `49 passed` (16 + 16 + 13 + 4). `ruff check` ⇒ `All checks passed!`;
+`ruff format --check` ⇒ `6 files already formatted`. `git diff --stat --
+dashboard/lib/seismic-constants.json` ⇒ `8 insertions(+), 1 deletion(-)`,
+SOLO las 7 claves nuevas (la coma de `codaB` es la línea que cambia).
+`git diff --stat -- src/services/watchdog.py src/services/swarm_rsam.py
+src/services/seedlink_ingestor.py` vacío. Vecinos que leen el JSON o el
+endpoint de RSAM (`test_fdsn_warmup.py`, `test_signal_picks_formulas.py`,
+`test_station_rsam_endpoint.py`) verdes. La suite completa la corre el
+orchestrator (gate de fase); la Fase 2 no tiene tests de integración.
+
+Nota: `.env.example` figura como `M` en `git status` desde ANTES de la Fase 2
+(primer `git status` de la sesión) y no se tocó — el entorno deniega hasta
+leerlo.
+
+### Fase 2 — gate real (2026-09-05)
+
+`./venv/bin/python -m pytest tests/ -q -p no:cacheprovider --no-cov -rf`
+⇒ `9 failed, 1293 passed, 2 skipped in 88.52s`. Los 9 son los preexistentes
+de `test_ws_events.py`; +45 = los tests de la Fase 2 (16 + 16 + 13).
+Vitest `lib/signal-picks.test.ts` + `lib/helicorder-layout.test.ts`
+⇒ `43 passed`: el JSON de constantes sigue sirviendo a sus lectores viejos.
+Decisión del orquestador sobre M10: se mantiene la meseta derivada de la
+constante en 2.4(c); la mutación la matan los tests de la capa 2, y el
+escenario del spec se alinea en el archive.
