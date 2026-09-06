@@ -3,5 +3,12 @@
   "pVelocityKmS": 6.0,
   "vpVsRatio": 1.73,
   "codaA": 1.86,
-  "codaB": -0.85
+  "codaB": -0.85,
+  "bValueMinEvents": 50,
+  "magnitudeBinWidth": 0.1,
+  "mcCorrection": 0.2,
+  "tremorBaselineFactor": 2.0,
+  "tremorMinDurationPeriods": 3,
+  "tremorLowBandMaxHz": 2.0,
+  "tremorMidBandMaxHz": 5.0
 }

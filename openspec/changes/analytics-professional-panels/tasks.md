@@ -274,7 +274,7 @@ mutaciones M5 y M6 registradas. Deployable solo.
 de `signal-analysis` con valores calculados a mano; mutaciones M1, M2, M3,
 M7, M10, M11, M12, M13 registradas.
 
-- [ ] 2.1 Constantes nuevas en el JSON compartido.
+- [x] 2.1 Constantes nuevas en el JSON compartido.
       *Archivos*: modifica `dashboard/lib/seismic-constants.json`.
       *Qué*: agregar `bValueMinEvents: 50`, `magnitudeBinWidth: 0.1`,
       `mcCorrection: 0.2`, `tremorBaselineFactor: 2.0`,
@@ -285,7 +285,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: `./venv/bin/python -c "import json; c=json.load(open('dashboard/lib/seismic-constants.json')); print(c['bValueMinEvents'], c['tremorMinDurationPeriods'])"` ⇒ `50 3`; los tests existentes que leen el JSON (`test_fdsn_warmup.py`, `lib/signal-picks.test.ts`, `lib/helicorder-layout.test.ts`) siguen verdes.
       *Verificación*: el comando + `./venv/bin/python -m pytest tests/unit/test_fdsn_warmup.py tests/unit/test_signal_picks_formulas.py -q`.
       *Mutación*: las lleva 2.9 (M1, M7, M10 mutan ESTE archivo).
-- [ ] 2.2 (RED) Tests del b-value con los escenarios de la spec.
+- [x] 2.2 (RED) Tests del b-value con los escenarios de la spec.
       *Archivos*: crea `tests/unit/test_gutenberg_richter.py` (molde
       `tests/unit/test_signal_picks_formulas.py`; helper que construye el
       catálogo sintético `round(10^(a − b·M))` por bin).
@@ -311,7 +311,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: rojo por módulo inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_gutenberg_richter.py -q`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.3 (GREEN) Crear `src/services/gutenberg_richter.py`.
+- [x] 2.3 (GREEN) Crear `src/services/gutenberg_richter.py`.
       *Archivos*: crea `src/services/gutenberg_richter.py`.
       *Qué*: carga del JSON con el patrón EXACTO de `signal_picks.py:29-40`
       (acceso por clave sin `.get`); `METHOD = "aki-utsu-mle"`;
@@ -328,7 +328,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: 2.2 verde completo.
       *Verificación*: mismo comando de 2.2.
       *Mutación*: las lleva 2.9 (M1, M2, M3, M13).
-- [ ] 2.4 (RED) Tests del clasificador de tremor (capa 1, pura).
+- [x] 2.4 (RED) Tests del clasificador de tremor (capa 1, pura).
       *Archivos*: crea `tests/unit/test_tremor.py`.
       *Qué*: helper `series(values)` que produce `[(t0 + i·600 s, v)]`.
       Escenarios de la spec: (a) 100 × 40.0 ⇒ `episodes == []`,
@@ -348,7 +348,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: rojo por módulo inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_tremor.py -q`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.5 (GREEN) Crear `src/services/tremor.py` — capa 1.
+- [x] 2.5 (GREEN) Crear `src/services/tremor.py` — capa 1.
       *Archivos*: crea `src/services/tremor.py`.
       *Qué*: carga del JSON (mismo patrón); `classify_episodes(samples) ->
       TremorClassification` con la lógica EXACTA del design Decision 4
@@ -359,7 +359,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: 2.4 verde.
       *Verificación*: mismo comando de 2.4.
       *Mutación*: las lleva 2.9 (M7, M10, M11).
-- [ ] 2.6 (RED→GREEN) `characterize(signal, fs, start)` — capa 2.
+- [x] 2.6 (RED→GREEN) `characterize(signal, fs, start)` — capa 2.
       *Archivos*: modifica `tests/unit/test_tremor.py`; modifica
       `src/services/tremor.py`.
       *Qué (RED primero)*: señal sintética `fs=20`, 4 h (288 000 muestras):
@@ -378,7 +378,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: `test_tremor.py` verde completo.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_tremor.py -q`.
       *Mutación*: cubierta por M7/M10 (la capa 2 delega en la 1).
-- [ ] 2.7 (RED) Tests de `build_uptime_series` (pura).
+- [x] 2.7 (RED) Tests de `build_uptime_series` (pura).
       *Archivos*: crea `tests/unit/test_station_uptime.py`.
       *Qué*: filas `(channel, bucket_start, count)` y ventana explícita;
       escenarios de la spec: (a) 900 en 2 h ⇒ 2 buckets `ratio == 1.0`,
@@ -395,7 +395,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: rojo por función inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_station_uptime.py -q`.
       *Mutación*: no aplica (es el test).
-- [ ] 2.8 (GREEN) `build_uptime_series` en `station_uptime.py`.
+- [x] 2.8 (GREEN) `build_uptime_series` en `station_uptime.py`.
       *Archivos*: modifica `src/services/station_uptime.py`.
       *Qué*: la firma del design; devuelve los modelos de `src/models/analytics.py`
       (creados en 3.1 — si esta tarea se ejecuta antes, devolver dataclasses
@@ -403,7 +403,7 @@ M7, M10, M11, M12, M13 registradas.
       *Aceptación*: 2.7 verde.
       *Verificación*: mismo comando de 2.7.
       *Mutación*: la lleva 2.9 (M12).
-- [ ] 2.9 **Mutaciones críticas de la lógica pura** + gate de fase.
+- [x] 2.9 **Mutaciones críticas de la lógica pura** + gate de fase.
       *Archivos*: `dashboard/lib/seismic-constants.json`,
       `src/services/gutenberg_richter.py`, `src/services/tremor.py`,
       `src/services/station_uptime.py` (mutar y REVERTIR; `rm -rf
