@@ -176,3 +176,127 @@ Vitest `lib/signal-picks.test.ts` + `lib/helicorder-layout.test.ts`
 Decisión del orquestador sobre M10: se mantiene la meseta derivada de la
 constante en 2.4(c); la mutación la matan los tests de la capa 2, y el
 escenario del spec se alinea en el archive.
+
+## Fase 3 (3.1–3.3) — RED observados (2026-09-06)
+
+Rama `feat/analytics-panels-fase3` desde main `8929332` (#48 y #49 ya en
+main).
+
+- 3.1: `ModuleNotFoundError: No module named 'src.models.analytics'`
+  (1 error during collection). Módulo creado ⇒ 41 passed. En la misma tarea
+  se cerró el mapeo que 2.8 dejó pendiente: `build_uptime_series` devuelve
+  `StationUptimeResponse`/`UptimeBucket` (firma del design) y los
+  dataclasses `UptimeBucketData`/`UptimeSeriesData` se eliminan;
+  `test_station_uptime.py` (13) y `test_station_uptime_loop.py` (4) verdes
+  sin tocarlos.
+- 3.2: `AttributeError: 'EventStore' object has no attribute 'between'` en
+  los 8 tests de `TestBetween` (no por setup). Método creado ⇒
+  `test_event_store.py` entero 25 passed (17 previos + 8).
+
+## Fase 3 (3.1–3.3) — mutaciones (2026-09-06)
+
+Mecánica: snapshot `cp` en el scratchpad ANTES de mutar; `sd -s` (literal,
+patrón de UNA línea); `rg -F` + `cmp` ⇒ `ARCHIVO_DIFIERE_DEL_SNAPSHOT`
+antes de correr; `PYTHONDONTWRITEBYTECODE=1` + `rm -rf` de `__pycache__`;
+reversión por `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; verde final 66 passed
+(25 + 41) y `cmp` de los dos archivos contra el snapshot idéntico.
+
+Dos intentos INVÁLIDOS que se registran para no repetirlos: (1) la primera
+tanda pasó `"$T -k Between"` como UN argumento a pytest ("file or directory
+not found") — las 6 mutaciones se aplicaron y revirtieron sin que ningún
+test corriera; se rehízo entera; (2) el primer XM1 usó un patrón con `\n`
+en `sd -s`, que no matchea y sale 0 (`CMP_IDENTICAL` lo delató); (3) el
+primer X3 (`hora_utc <= $2 AND $1 IS NOT NULL`) mató los 8 tests por
+`IndeterminateDatatypeError` de asyncpg — rojo por la razón EQUIVOCADA, no
+cuenta; se rehízo con `$1::timestamptz`.
+
+| # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
+|---|---|---|---|---|---|
+| M4 | `src/services/event_store.py` | `order = "mag DESC, hora_utc DESC" if order_by_magnitude else "hora_utc DESC"` → `order = "hora_utc DESC"` | `274:        order = "hora_utc DESC"` | `TestBetween::test_por_magnitud_devuelve_las_mayores_con_desempate_por_hora` — `assert ['chico', 'grande_nuevo'] == ['grande_nuevo', 'grande_viejo']` (el `limit=2` se lleva el M6.3 viejo y devuelve el M4.5, la mentira de truncado de R18) (1 failed, 7 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL` |
+| X1 | `src/services/event_store.py` | `if bbox is not None:` → `if False and bbox is not None:` | `263:        if False and bbox is not None:` | `test_el_bbox_filtra_en_sql` — `assert {'andes','atlantico','borde','tokio'} == {'andes','borde'}`; `test_los_filtros_se_combinan` — `['lejos','ok'] == ['ok']` (2 failed, 6 passed) | ídem |
+| X2 | `src/services/event_store.py` | `if min_magnitude is not None:` → `if False and min_magnitude is not None:` | `270:        if False and min_magnitude is not None:` | `test_filtra_por_magnitud_minima` — `{'chico','grande','justo'} == {'grande','justo'}`; `test_los_filtros_se_combinan` — `['ok','chico'] == ['ok']` (2 failed, 6 passed) | ídem |
+| X3 | `src/services/event_store.py` | `conditions = ["hora_utc BETWEEN $1 AND $2"]` → `["hora_utc <= $2 AND $1::timestamptz IS NOT NULL"]` (sin borde inferior) | `261:        conditions = ["hora_utc <= $2 AND $1::timestamptz IS NOT NULL"]` | `test_respeta_la_ventana` — `{'borde','dentro','fuera'} == {'borde','dentro'}`; `test_los_filtros_se_combinan` — `['viejo','ok'] == ['ok']` (2 failed, 6 passed) | ídem |
+| X4 | `src/services/event_store.py` | `if limit is not None:` → `if False and limit is not None:` | `276:        if False and limit is not None:` | `test_por_magnitud_…` — `Left contains 2 more items, first extra item: 'medio'`; `test_por_defecto_ordena_por_hora_descendente` — `['chico','grande_nuevo','medio','grande_viejo'] == ['chico']` (2 failed, 6 passed) | ídem |
+| X5 | `src/services/event_store.py` | `"mag DESC, hora_utc DESC"` → `"mag DESC, hora_utc ASC"` (desempate) | `274:        order = "mag DESC, hora_utc ASC" if …` | `test_por_magnitud_…` — `At index 0 diff: 'grande_viejo' != 'grande_nuevo'` (1 failed, 7 passed) | ídem |
+| XM1 | `src/models/analytics.py` | `BValueOk.b: float` → `b: Optional[float] = None` | `54:    b: Optional[float] = None` | `tests/unit/test_analytics_models.py::TestBValueOk::test_exige_b_a_y_sigma_b[b]` — `DID NOT RAISE ValidationError` (1 failed, 40 passed). `test_status_ok_sin_b_es_error_no_degradacion` NO muere con esta mutación porque `a`/`sigma_b` siguen siendo obligatorios: la protege `[b]` de arriba | ídem |
+
+M4 se repite en 3.8 contra `hypocenters?limit=5` cuando exista el router
+(el design la pide a nivel endpoint). 3.1 no exigía mutación; XM1 es extra.
+
+## Fase 3 (3.1–3.3) — gate real (2026-09-06)
+
+`./venv/bin/python -m pytest tests -q --ignore=dashboard -p no:cacheprovider --no-cov -rf`
+⇒ `9 failed, 1342 passed, 2 skipped, 8 warnings in 77.74s`. Los 9 son los
+preexistentes de `test_ws_events.py` (Postgres local en 5433 ausente);
++49 sobre la baseline de la Fase 2 (1293) = 41 de
+`test_analytics_models.py` + 8 de `TestBetween`. `ruff check` y `ruff
+format --check` limpios en los 5 archivos tocados. `git diff --stat main --
+src/services/watchdog.py src/services/swarm_rsam.py
+src/services/seedlink_ingestor.py` vacío. (Una corrida previa con `-x` frenó
+en el primer fallo de `test_ws_events.py` con `1 failed, 1340 passed`: no
+es comparable y por eso se repitió sin `-x`.)
+
+## Fase 3 (3.4–3.8) — RED observados (2026-09-06)
+
+Rama `feat/analytics-panels-fase3` sobre `8faccbe` (3.1–3.3).
+
+- 3.4 + 3.5 en UNA corrida antes de crear el router: `42 failed`. Los 9
+  unitarios que parchean el singleton FDSN mueren con `AttributeError:
+  module 'src.api.routers' has no attribute 'analytics'` (target del patch
+  `src.api.routers.analytics.get_spectrogram_service`); los 5 de validación
+  del tremor y los 28 de integración reciben `404` (ruta inexistente) donde
+  esperan 200/422/503. Ninguno por setup. Router + `fetch_uptime` +
+  `include_router` ⇒ `42 passed`.
+- 3.7: batería de no-regresión (`test_station_rsam_endpoint.py`,
+  `test_api.py`, `test_areas_api.py`, `test_event_store.py`,
+  `test_watchdog_loop.py`) ⇒ `86 passed` sin tocar ningún test; `rg` de
+  `analytics/rsam|rsam_samples|INSERT INTO rsam` en `src/` sin matches;
+  `report()` sigue con `sources` + `current_user`.
+
+## Fase 3 (3.4–3.8) — mutaciones (2026-09-06)
+
+Mecánica: snapshot `cp` de `event_store.py`, `routers/analytics.py` y
+`station_uptime.py` en el scratchpad; `sd -s` (literal, UNA línea); `rg -F`
++ `cmp` ⇒ `ARCHIVO_DIFIERE_DEL_SNAPSHOT` ANTES de correr;
+`PYTHONDONTWRITEBYTECODE=1` + `rm -rf` de `__pycache__` de `services/` y
+`routers/`; reversión por `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; `cmp`
+final de los 3 archivos idéntico; verde final 28 + 14.
+
+Dos primeros intentos INVÁLIDOS, registrados para no repetirlos:
+
+1. **M4 (1er intento) NO mató el test del endpoint** (`1 failed, 16 passed`:
+   solo murió `TestBetween`). Causa: el test de `hypocenters?limit=5`
+   sembraba `hours_ago = 1 + (7.0 − mag)·24` — el M7.0 era el más NUEVO, así
+   que `ORDER BY hora_utc DESC` devolvía los mismos cinco que `mag DESC`. El
+   test no podía fallar. Fix: `hours_ago = 1 + (mag − 3.5)·24` (los grandes
+   son los viejos). Nunca se anotó como pasada.
+2. **XR1 (1er intento) NO mató nada** (`3 passed`). Causa: el área activa
+   era el preset `japon`, cuyo polígono ES su bbox (rectángulo,
+   verificado en `deploy/sql/seeds/areas_of_interest.json`); los eventos "de
+   afuera" estaban en los Andes, fuera del bbox, y la etapa 1 en SQL ya los
+   descartaba — la etapa 2 (`point_in_area`) nunca decidía. Con un preset
+   rectangular NINGUNA mutación de la etapa 2 es falsable. Fix: área custom
+   "Andes" TRIANGULAR creada con `AreaService.create` + `set_active` (lo
+   que dice la spec) y los eventos "de afuera" en `BBOX_CORNER`
+   (`(−26, −71.5)`: dentro del bbox, fuera del triángulo).
+
+| # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
+|---|---|---|---|---|---|
+| M4 (endpoint) | `src/services/event_store.py` | `order = "mag DESC, hora_utc DESC" if order_by_magnitude else "hora_utc DESC"` → `order = "hora_utc DESC"` | `274:        order = "hora_utc DESC"` | `tests/integration/test_analytics_api.py::test_hypocenters_limit_trunca_lo_declara_y_se_queda_con_los_grandes` — `assert [3.5, 4.0, 4.5, 5.0, 5.5] == [7.0, 6.5, 6.0, 5.5, 5.0]` (la mentira de truncado de R18, a nivel HTTP); también `TestBetween::test_por_magnitud_…` (`['chico', 'grande_nuevo'] == …`) (2 failed, 15 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL` |
+| XR1 | `src/api/routers/analytics.py` | `if area_filter is None:` → `if area_filter is None or True:` (se saltea la etapa 2, `point_in_area`) | `144:    if area_filter is None or True:` | `test_b_value_eventos_fuera_del_area_activa_no_cuentan` — `assert 'ok' == 'insufficient'` (la esquina del bbox entra: 2·MIN_EVENTS+90); `test_hypocenters_ventana_de_30_dias_recortada_al_area` — `assert 15 == 10` (2 failed, 1 passed) | ídem |
+| XR2 | `src/api/routers/analytics.py` | `truncated=total > limit,` → `truncated=False,` | `224:        truncated=False,` | `test_hypocenters_limit_trunca_…` — `assert False is True` (1 failed) | ídem |
+| XR3 | `src/api/routers/analytics.py` | `kind: UptimeBucketKind = "day" if days > MAX_HOURLY_DAYS else bucket` → `kind: UptimeBucketKind = bucket` | `250:    kind: UptimeBucketKind = bucket` | `test_station_uptime_days_mayor_a_14_fuerza_bucket_day` — `assert 'hour' == 'day'` (1 failed) | ídem |
+| XR4 | `src/services/station_uptime.py` | en `fetch_uptime`, `rows = [… for r in records]` → `[… for r in records if channels is None or r["channel"] in channels]` (el SELECT filtrado por canal, que rompe [R12]) | `255:    rows = [(r["channel"], r["bucket_start"], r["columns_count"]) for r in records if channels is None or r["channel"] in channels]` | `test_station_uptime_el_filtro_de_canal_no_cambia_que_es_hora_observada` — `assert None == 0.0` (el canal mudo pasa de "se miró" a "nadie miró") (1 failed, 1 passed) | ídem |
+| XR5 | `src/api/routers/analytics.py` | `"t": str(trace.stats.starttime + (i + 0.5) * period),` → `… + i * period),` (t en el borde izquierdo) | `334:            "t": str(trace.stats.starttime + i * period),` | `tests/unit/test_analytics_tremor_endpoint.py::test_traza_estacionaria_no_tiene_episodios` — `'2019-04-18T20:00:00.000000Z'.startswith('2019-04-18T20:05:00')` es False; `test_tremor_y_tendencia_comparten_la_serie` — `At index 0 diff: '…20:00:00.000000Z' != '…20:05:00.000000Z'` (2 failed) | ídem |
+
+## Fase 3 (3.4–3.8) — gate real (2026-09-06)
+
+`PYTHONDONTWRITEBYTECODE=1 ./venv/bin/python -m pytest tests -q --ignore=dashboard -p no:cacheprovider --no-cov -rf`
+⇒ `9 failed, 1384 passed, 2 skipped, 8 warnings in 91.15s`. Los 9 son los
+preexistentes de `test_ws_events.py`; +42 sobre el gate de 3.1–3.3 (1342)
+= 14 de `test_analytics_tremor_endpoint.py` + 28 de `test_analytics_api.py`.
+`ruff check` y `ruff format --check` limpios en `routers/analytics.py`,
+`models/analytics.py`, `event_store.py`, `station_uptime.py` y los 3 tests;
+`src/main.py` conserva SOLO el F811 preexistente de `search_stations`
+(ajeno). `git diff --stat main -- src/services/watchdog.py
+src/services/swarm_rsam.py src/services/seedlink_ingestor.py` vacío.

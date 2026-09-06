@@ -431,9 +431,14 @@ M7, M10, M11, M12, M13 registradas.
 del design; `curl` contra un testcontainer prueba 200/422/503/404; los
 archivos protegidos sin cambios; M4 registrada.
 
-- [ ] 3.1 (RED→GREEN) Modelos Pydantic de `src/models/analytics.py`.
+- [x] 3.1 (RED→GREEN) Modelos Pydantic de `src/models/analytics.py`.
+      *Resultado real (2026-09-06)*: RED por `ModuleNotFoundError`; GREEN 41
+      passed. Además se cerró el mapeo que 2.8 dejó pendiente:
+      `build_uptime_series` devuelve `StationUptimeResponse`/`UptimeBucket`
+      (firma del design) y los dataclasses `UptimeBucketData`/`UptimeSeriesData`
+      desaparecen — `test_station_uptime.py` sigue verde sin tocarlo.
       *Archivos*: crea `tests/unit/test_analytics_models.py`; crea
-      `src/models/analytics.py`.
+      `src/models/analytics.py`; modifica `src/services/station_uptime.py`.
       *Qué (RED primero)*: `BValueOk` requiere `b`, `a`, `sigma_b` y
       `status == "ok"`; `BValueNotEstimable` rechaza `status == "ok"` y NO
       declara `b` (`"b" not in BValueNotEstimable.model_fields`); el
@@ -450,7 +455,11 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: el test pasa completo.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_analytics_models.py -q`.
       *Mutación*: NO — la ausencia de `b` se vuelve a afirmar end-to-end en 3.5.
-- [ ] 3.2 (RED) Tests de integración de `EventStore.between`.
+- [x] 3.2 (RED) Tests de integración de `EventStore.between`.
+      *Resultado real (2026-09-06)*: RED observado — 8 tests de `TestBetween`
+      mueren por `AttributeError: 'EventStore' object has no attribute
+      'between'` (no por setup). Además de (a)–(f): combinación de los tres
+      filtros (la consulta real del b-value) y lista vacía.
       *Archivos*: modifica `tests/integration/test_event_store.py`
       (fixture `event_store` existente).
       *Qué*: sembrar eventos con lat/lon dentro y fuera de un bbox, dentro
@@ -464,7 +473,12 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: rojo por método inexistente.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_event_store.py -q -k between`.
       *Mutación*: no aplica (es el test).
-- [ ] 3.3 (GREEN) `EventStore.between` en `src/services/event_store.py`.
+- [x] 3.3 (GREEN) `EventStore.between` en `src/services/event_store.py`.
+      *Resultado real (2026-09-06)*: `test_event_store.py` entero ⇒ 25 passed
+      (17 previos + 8 nuevos). M4 ya observada (ver `mutation-log.md`, Fase
+      3) junto con 5 mutaciones extra por rama (bbox, `min_magnitude`, borde
+      inferior de ventana, `limit`, desempate); 3.8 la repite contra
+      `hypocenters?limit=5` cuando exista el router.
       *Archivos*: modifica `src/services/event_store.py`.
       *Qué*: la firma EXACTA del design (keyword-only `min_magnitude`,
       `bbox`, `limit`, `order_by_magnitude`), reusando `_COLUMNS` y
@@ -477,7 +491,15 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: 3.2 verde y el resto del archivo verde.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_event_store.py -q`.
       *Mutación*: la lleva 3.8 (M4).
-- [ ] 3.4 (RED) Tests unitarios del endpoint de tremor (sin red).
+- [x] 3.4 (RED) Tests unitarios del endpoint de tremor (sin red).
+      *Resultado real (2026-09-06)*: RED observado — los 9 tests que
+      parchean mueren con `AttributeError: module 'src.api.routers' has no
+      attribute 'analytics'` y los 5 de validación reciben `404` (ruta
+      inexistente) donde esperan 422. La "traza constante" es la senoidal
+      del molde de `/rsam` (RSAM constante): una DC pura da RSAM 0 tras el
+      demean y `classify_episodes` ya la guarda como "sin señal". Además de
+      lo pedido: el cache de `tremor:` no colisiona con el de `rsam:` y los
+      tres casos del cache eterno en DB (cubierta/parcial/hit). GREEN 14.
       *Archivos*: crea `tests/unit/test_analytics_tremor_endpoint.py`
       (molde `tests/unit/test_station_rsam_endpoint.py`: `TestClient(app)`
       SIN `with`, `patch` de `get_spectrogram_service` — OJO: el router
@@ -496,8 +518,20 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: rojo por router inexistente (404 genérico).
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_analytics_tremor_endpoint.py -q`.
       *Mutación*: no aplica (es el test).
-- [ ] 3.5 (RED) Tests de integración del router (`b-value`, `hypocenters`,
+- [x] 3.5 (RED) Tests de integración del router (`b-value`, `hypocenters`,
       `station-uptime`).
+      *Resultado real (2026-09-06)*: RED observado — 28 tests con `404`
+      donde esperan 200/422/503 (no por setup). Desvíos documentados: (1) el
+      seed de áreas NO tiene preset "andes" (tiene `global` y `japon`), así
+      que el escenario "fuera del área activa" usa `japon` como área activa
+      con `MIN_EVENTS+100` en los Andes (afuera) y `MIN_EVENTS−10` en Tokio
+      (adentro) — misma falsabilidad, sin fabricar un área; (2) `EventStore`
+      usa `self.pool.fetch()` sin `acquire`, y `TestClient` sin `with` corre
+      cada request en un loop nuevo ⇒ `_LazyPool` (molde feedback) extendido
+      con `fetch`/`fetchrow`/`execute` e inyectado como `store._pool`; la
+      query es la real. Sembrado por `executemany` de psycopg2 (el `upsert`
+      dedupearía 483 eventos en el mismo punto). Extra: "el filtro de canal
+      no cambia qué es hora observada" (protege el SELECT de [R12]). GREEN 28.
       *Archivos*: crea `tests/integration/test_analytics_api.py` (molde
       `tests/integration/test_areas_api.py` para sesión + área;
       `test_api.py::test_report_*` para el área default; `_login_as` /
@@ -534,7 +568,20 @@ archivos protegidos sin cambios; M4 registrada.
       `feedback-screenshot-attachment` 2.10.
       *Verificación*: `./venv/bin/python -m pytest tests/integration/test_analytics_api.py -q`.
       *Mutación*: no aplica (es el test).
-- [ ] 3.6 (GREEN) Crear `src/api/routers/analytics.py` y montarlo.
+- [x] 3.6 (GREEN) Crear `src/api/routers/analytics.py` y montarlo.
+      *Resultado real (2026-09-06)*: 3.4 + 3.5 ⇒ 42 passed. Desvíos: (1)
+      `hypocenters` NUNCA pone `LIMIT` en SQL (ni sin polígono): `total`
+      tiene que contarse ANTES del corte y un `LIMIT` obligaría a una
+      segunda query de conteo; el catálogo pesa ~1 MB/año. (2) `fetch_uptime`
+      trae las filas de TODOS los canales de la ventana aunque se pidan
+      pocos: "hora observada" es hora con fila de CUALQUIER canal ([R12]) y
+      filtrar por `channel` en SQL convertiría `0.0` en `null` (test extra
+      de 3.5 lo prueba). (3) `MAX_TREMOR_WINDOW_HOURS = 24` se declara en el
+      router como espejo de `MAX_WAVEFORM_WINDOW_HOURS` (importarlo de
+      `main` sería circular). (4) `samples[i].t` del tremor se formatea con
+      la MISMA expresión que `/rsam` (`str(UTCDateTime)`) y `rsam` con el
+      mismo `round(·, 2)` para la igualdad byte a byte del spec; los
+      episodios llevan datetimes ISO de Pydantic. `response_model` en los 4.
       *Archivos*: crea `src/api/routers/analytics.py`; modifica
       `src/main.py` (línea ~598: `app.include_router(analytics_router.router)`);
       modifica `src/services/station_uptime.py` (`fetch_uptime`).
@@ -564,7 +611,11 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: 3.4 y 3.5 verdes completos.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_analytics_tremor_endpoint.py tests/integration/test_analytics_api.py -q`.
       *Mutación*: la lleva 3.8.
-- [ ] 3.7 No-regresión de los contratos existentes.
+- [x] 3.7 No-regresión de los contratos existentes.
+      *Resultado real (2026-09-06)*: batería ⇒ `86 passed` sin tocar ningún
+      test; `git diff --stat main` de los 3 protegidos vacío; `rg` de
+      `analytics/rsam|rsam_samples|INSERT INTO rsam` en `src/` sin matches;
+      `report()` sigue con `sources` + `current_user` únicamente.
       *Qué*: correr la batería previa de `/rsam`, `/report`, eventos y áreas
       SIN tocar ningún test; `git diff --stat main -- src/services/watchdog.py
       src/services/swarm_rsam.py src/services/seedlink_ingestor.py` vacío;
@@ -574,7 +625,18 @@ archivos protegidos sin cambios; M4 registrada.
       *Aceptación*: todo verde, diff vacío, sin matches.
       *Verificación*: `./venv/bin/python -m pytest tests/unit/test_station_rsam_endpoint.py tests/integration/test_api.py tests/integration/test_areas_api.py tests/integration/test_event_store.py tests/unit/test_watchdog_loop.py -q`.
       *Mutación*: no aplica.
-- [ ] 3.8 **Mutación crítica del router/store** + gate de fase.
+- [x] 3.8 **Mutación crítica del router/store** + gate de fase.
+      *Resultado real (2026-09-06)*: M4 a nivel endpoint observada (segundo
+      intento — el primero NO mató nada: el test de `limit=5` tenía el orden
+      temporal invertido y `hora_utc DESC` devolvía los mismos cinco; se
+      arregló el test, nunca se anotó como pasada) + 5 mutaciones extra
+      (XR1–XR5, una por rama crítica del router; XR1 también necesitó un
+      segundo intento: con el preset `japon` — un rectángulo — la etapa 2
+      nunca decide distinto que el bbox, por eso el área activa pasó a ser un
+      triángulo custom "Andes"). Gate: suite completa sin `-x` ⇒ `9 failed,
+      1384 passed, 2 skipped` (+42 sobre 1342; los 9 son `test_ws_events.py`);
+      `ruff check`/`format --check` limpios en los 7 archivos; protegidos sin
+      diff. Detalle en `mutation-log.md`.
       *Archivos*: `src/services/event_store.py` (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |
       |---|---|---|

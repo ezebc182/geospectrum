@@ -43,9 +43,7 @@ DEDUP_LOOKUP_MARGIN_SECONDS = MATCH_WINDOW_SECONDS + 60.0
 
 # Columnas en el orden en que las devuelven las queries. Una sola definición
 # para que _row_to_event no se desincronice de los SELECT.
-_COLUMNS = (
-    "id, fuentes, hora_utc, lat, lon, prof_km, mag, mag_tipo, lugar, sentido, revisado"
-)
+_COLUMNS = "id, fuentes, hora_utc, lat, lon, prof_km, mag, mag_tipo, lugar, sentido, revisado"
 
 
 def _row_to_event(row: asyncpg.Record) -> SeismicEvent:
@@ -231,6 +229,55 @@ class EventStore:
                 min_magnitude,
                 limit,
             )
+        return [_row_to_event(r) for r in rows]
+
+    async def between(
+        self,
+        start: datetime,
+        end: datetime,
+        *,
+        min_magnitude: Optional[float] = None,
+        bbox: Optional[tuple[float, float, float, float]] = None,
+        limit: Optional[int] = None,
+        order_by_magnitude: bool = False,
+    ) -> list[SeismicEvent]:
+        """
+        Eventos con `hora_utc` en `[start, end]` — el catálogo del b-value y
+        del mapa de hipocentros de `/analytics`.
+
+        Filtro de área en DOS etapas (mismo fast-path que
+        `geo_filter.point_in_area`): la etapa 1 es el `bbox` en SQL
+        (`minlat, maxlat, minlon, maxlon`, `BETWEEN` inclusivo en los dos
+        ejes; lo cubre `seismic_events_hora_mag_idx` en el rango de
+        `hora_utc`); la etapa 2 (polígono, `point_in_area`) la hace el
+        CALLER sobre lo que vuelve. Un área que cruza el antimeridiano
+        declara `-180..180` y deja todo el trabajo a la etapa 2.
+
+        `order_by_magnitude=True` ⇒ `ORDER BY mag DESC, hora_utc DESC`: con
+        `limit`, el recorte se lleva microsismicidad, nunca el M6 (un
+        `hora_utc DESC` recortado mentiría por omisión del evento grande).
+        Sin ese flag, más nuevo primero, como `recent()`.
+        """
+        conditions = ["hora_utc BETWEEN $1 AND $2"]
+        params: list[Any] = [start, end]
+        if bbox is not None:
+            minlat, maxlat, minlon, maxlon = bbox
+            conditions.append(
+                f"lat BETWEEN ${len(params) + 1} AND ${len(params) + 2} "
+                f"AND lon BETWEEN ${len(params) + 3} AND ${len(params) + 4}"
+            )
+            params.extend([minlat, maxlat, minlon, maxlon])
+        if min_magnitude is not None:
+            conditions.append(f"mag >= ${len(params) + 1}")
+            params.append(min_magnitude)
+
+        order = "mag DESC, hora_utc DESC" if order_by_magnitude else "hora_utc DESC"
+        sql = f"SELECT {_COLUMNS} FROM seismic_events WHERE {' AND '.join(conditions)} ORDER BY {order}"
+        if limit is not None:
+            sql += f" LIMIT ${len(params) + 1}"
+            params.append(limit)
+
+        rows = await self.pool.fetch(sql, *params)
         return [_row_to_event(r) for r in rows]
 
     async def get(self, event_id: str) -> Optional[SeismicEvent]:

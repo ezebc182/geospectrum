@@ -122,6 +122,7 @@ from src.services.invitation_service import (
     InvitationService,
     insert_invitation_row,
 )
+from src.api.routers import analytics as analytics_router
 from src.api.routers import areas as areas_router
 from src.api.routers import comments as comments_router
 from src.api.routers import feedback as feedback_router
@@ -626,6 +627,7 @@ app.include_router(comments_router.router)
 app.include_router(feedback_router.router)
 app.include_router(walls_router.router)
 app.include_router(stations_router.router)
+app.include_router(analytics_router.router)
 
 
 # =============================================================================
