@@ -38,6 +38,7 @@ import {
 } from 'recharts';
 
 import { getTremor, type TremorBand, type TremorFiSign, type TremorResult } from '@/lib/analytics';
+import { CHART_AXIS_STROKE, CHART_GRID_STROKE } from '@/lib/chart-theme';
 import type { SignalWindow } from '@/lib/rsam-trend';
 import {
   bandLabelKey,
@@ -184,20 +185,20 @@ export function TremorPanel({ channel, window: win, className }: TremorPanelProp
           </ul>
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={rows} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
               <XAxis
                 type="number"
                 dataKey="t"
                 domain={['dataMin', 'dataMax']}
                 tickFormatter={(ts: number) => format.dateTime(new Date(ts), { hour: '2-digit', minute: '2-digit' })}
-                stroke="#9ca3af"
+                stroke={CHART_AXIS_STROKE}
               />
-              <YAxis type="number" domain={[0, 'dataMax']} stroke="#9ca3af" />
+              <YAxis type="number" domain={[0, 'dataMax']} stroke={CHART_AXIS_STROKE} />
               <Tooltip
                 content={({ payload, label }) => {
                   if (!payload || payload.length === 0) return null;
                   return (
-                    <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-white shadow-lg">
+                    <div className="rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
                       <p className="text-sm">
                         {format.dateTime(new Date(Number(label)), 'medium')} {tCommon('utcSuffix')}
                       </p>
@@ -223,7 +224,7 @@ export function TremorPanel({ channel, window: win, className }: TremorPanelProp
                 />
               ))}
               {baseline !== null && (
-                <ReferenceLine y={baseline} stroke="#9ca3af" strokeDasharray="4 4" label={t('tremor.baseline')} />
+                <ReferenceLine y={baseline} stroke={CHART_AXIS_STROKE} strokeDasharray="4 4" label={t('tremor.baseline')} />
               )}
               {threshold !== null && (
                 <ReferenceLine y={threshold} stroke={THRESHOLD_COLOR} strokeDasharray="6 3" label={t('tremor.threshold')} />

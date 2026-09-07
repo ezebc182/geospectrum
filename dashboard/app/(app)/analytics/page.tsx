@@ -23,10 +23,13 @@ import { StationUptimeChart } from '@/components/analytics/StationUptimeChart';
 import { BValueChart } from '@/components/analytics/BValueChart';
 import { HypocenterMap } from '@/components/analytics/HypocenterMap';
 import { DepthSectionChart } from '@/components/analytics/DepthSectionChart';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart3 } from 'lucide-react';
 
 const PANEL_CLASS =
   'rounded-lg border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6';
+
+const GRID_CLASS = 'grid grid-cols-1 gap-8 lg:grid-cols-2';
 
 export default function AnalyticsPage() {
   const t = useTranslations('analytics');
@@ -114,7 +117,7 @@ export default function AnalyticsPage() {
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className={GRID_CLASS}>
         <div className={PANEL_CLASS}>
           <MagnitudeTimeChart eventos={eventos} />
         </div>
@@ -147,42 +150,66 @@ export default function AnalyticsPage() {
         <StationPicker selected={channels} onChange={setChannels} />
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className={PANEL_CLASS}>
-          <BValueChart data={bValue} error={bValueError} isLoading={bValueLoading} />
-        </div>
+      {/* Pestañas por TEMA (pedido del usuario tras el QA visual): apiladas en
+          una sola columna los paneles obligaban a un scroll infinito. Los
+          selectores de arriba quedan FUERA de las pestañas a propósito: son
+          estado compartido y se usan mirando cualquiera de las tres.
 
-        <div className={PANEL_CLASS}>
-          <StationUptimeChart days={catalogDays} />
-        </div>
-      </div>
+          `keepMounted` en vez de montar/desmontar: los paneles que se
+          autocargan (RSAM, tremor, uptime) piden en un `useEffect`, así que
+          desmontarlos al cambiar de pestaña haría que cada vuelta re-disparara
+          las MISMAS peticiones —FDSN de por medio, que tarda segundos—. El
+          panel inactivo queda montado pero con el `hidden` nativo puesto, así
+          que para el lector de pantalla no existe. El costo es tener los tres
+          árboles montados, que es exactamente lo que se quiere. */}
+      <Tabs defaultValue="seismicity">
+        <TabsList aria-label={t('tabs.label')}>
+          <TabsTrigger value="seismicity">{t('tabs.seismicity')}</TabsTrigger>
+          <TabsTrigger value="signal">{t('tabs.signal')}</TabsTrigger>
+          <TabsTrigger value="network">{t('tabs.network')}</TabsTrigger>
+        </TabsList>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className={PANEL_CLASS}>
-          <HypocenterMap
-            data={hypocenters}
-            error={hypocentersError}
-            isLoading={hypocentersLoading}
-            areaBbox={region_monitorizada}
-          />
-        </div>
+        <TabsContent value="seismicity" keepMounted className="space-y-8">
+          <div className={GRID_CLASS}>
+            <div className={PANEL_CLASS}>
+              <BValueChart data={bValue} error={bValueError} isLoading={bValueLoading} />
+            </div>
 
-        {/* Los MISMOS eventos que el mapa: dónde al lado de a qué profundidad.
-            No pide nada por su cuenta — se cuelga del useSWR de hipocentros. */}
-        <div className={PANEL_CLASS}>
-          <DepthSectionChart eventos={hypocenters?.eventos ?? []} />
-        </div>
-      </div>
+            <div className={PANEL_CLASS}>
+              <HypocenterMap
+                data={hypocenters}
+                error={hypocentersError}
+                isLoading={hypocentersLoading}
+                areaBbox={region_monitorizada}
+              />
+            </div>
+          </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className={PANEL_CLASS}>
-          <RsamTrendChart channels={channels} window={signalWindow} />
-        </div>
+          {/* Los MISMOS eventos que el mapa: dónde al lado de a qué profundidad.
+              No pide nada por su cuenta — se cuelga del useSWR de hipocentros. */}
+          <div className={PANEL_CLASS}>
+            <DepthSectionChart eventos={hypocenters?.eventos ?? []} />
+          </div>
+        </TabsContent>
 
-        <div className={PANEL_CLASS}>
-          <TremorPanel channel={tremorChannel} window={signalWindow} />
-        </div>
-      </div>
+        <TabsContent value="signal" keepMounted>
+          <div className={GRID_CLASS}>
+            <div className={PANEL_CLASS}>
+              <RsamTrendChart channels={channels} window={signalWindow} />
+            </div>
+
+            <div className={PANEL_CLASS}>
+              <TremorPanel channel={tremorChannel} window={signalWindow} />
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="network" keepMounted>
+          <div className={PANEL_CLASS}>
+            <StationUptimeChart days={catalogDays} />
+          </div>
+        </TabsContent>
+      </Tabs>
     </AreaRefreshIndicator>
   );
 }

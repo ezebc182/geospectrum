@@ -27,7 +27,12 @@ import {
   YAxis,
 } from 'recharts';
 
-import { toDepthSectionPoints } from '@/lib/depth-section';
+import {
+  CHART_AXIS_STROKE,
+  CHART_GRID_STROKE,
+  CHART_TOOLTIP_CONTENT_STYLE,
+} from '@/lib/chart-theme';
+import { depthAxisDomain, formatDepthTick, toDepthSectionPoints } from '@/lib/depth-section';
 import type { SeismicEvent } from '@/lib/types';
 
 interface DepthSectionChartProps {
@@ -48,31 +53,31 @@ export function DepthSectionChart({ eventos, className }: DepthSectionChartProps
       {points.length > 0 && (
         <ResponsiveContainer width="100%" height={300}>
           <ScatterChart data={points} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
             <XAxis
               type="number"
               dataKey="mag"
               name={t('bValue.magnitudeAxis')}
-              stroke="#9ca3af"
-              tick={{ fontSize: 12 }}
+              stroke={CHART_AXIS_STROKE}
+              tick={{ fontSize: 12, fill: CHART_AXIS_STROKE }}
             />
-            {/* `reversed`: la profundidad crece hacia abajo. */}
+            {/*
+              `reversed` + dominio explícito: la profundidad crece hacia ABAJO,
+              como en cualquier sección sismológica. El dominio se calcula a
+              mano porque el automático de Recharts daba vuelta el eje y
+              dibujaba ticks negativos hacia arriba.
+            */}
             <YAxis
               type="number"
               dataKey="depthKm"
               name={t('depthSection.depthAxis')}
               reversed
-              stroke="#9ca3af"
-              tick={{ fontSize: 12 }}
+              domain={depthAxisDomain(points.map((p) => p.depthKm))}
+              tickFormatter={formatDepthTick}
+              stroke={CHART_AXIS_STROKE}
+              tick={{ fontSize: 12, fill: CHART_AXIS_STROKE }}
             />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
-                borderRadius: '0.5rem',
-                color: '#f9fafb',
-              }}
-            />
+            <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
             <Scatter data={points}>
               {points.map((point) => (
                 <Cell key={point.id} fill={point.color} />

@@ -5,6 +5,7 @@ import { getLocale } from 'next-intl/server';
 import { Familjen_Grotesk, IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { UserWayWidget } from '@/components/UserWayWidget';
 import { cn } from '@/lib/utils';
 
 const fontHeading = Familjen_Grotesk({
@@ -52,6 +53,10 @@ export default async function RootLayout({
             <Providers>{children}</Providers>
           </ToastProvider>
         </NextIntlClientProvider>
+        {/* Widget de accesibilidad, en el layout RAÍZ para que cargue en todo
+            el sitio (landing pública, login y dashboard). Sin la var de
+            entorno no renderiza nada. */}
+        <UserWayWidget />
       </body>
     </html>
   );

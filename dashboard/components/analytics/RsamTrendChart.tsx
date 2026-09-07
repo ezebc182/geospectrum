@@ -33,6 +33,7 @@ import {
 } from 'recharts';
 
 import { seismicAPI, type RsamResponse } from '@/lib/api';
+import { CHART_AXIS_STROKE, CHART_GRID_STROKE } from '@/lib/chart-theme';
 import { mergeSeriesByTime, type SettledSeries, type SignalWindow } from '@/lib/rsam-trend';
 
 /** Período de SWARM (`RSAM_PERIOD_SECONDS` del backend). */
@@ -153,7 +154,7 @@ export function RsamTrendChart({ channels, window: win, className }: RsamTrendCh
       {merged.rows.length > 0 && (
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={merged.rows} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
             <XAxis
               type="number"
               dataKey="t"
@@ -161,14 +162,14 @@ export function RsamTrendChart({ channels, window: win, className }: RsamTrendCh
               tickFormatter={(ts: number) =>
                 format.dateTime(new Date(ts), { hour: '2-digit', minute: '2-digit' })
               }
-              stroke="#9ca3af"
+              stroke={CHART_AXIS_STROKE}
             />
-            <YAxis type="number" name={t('rsam.axis')} domain={[0, 'dataMax']} stroke="#9ca3af" />
+            <YAxis type="number" name={t('rsam.axis')} domain={[0, 'dataMax']} stroke={CHART_AXIS_STROKE} />
             <Tooltip
               content={({ payload, label }) => {
                 if (!payload || payload.length === 0) return null;
                 return (
-                  <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-white shadow-lg">
+                  <div className="rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
                     <p className="text-sm">
                       {format.dateTime(new Date(Number(label)), 'medium')} {tCommon('utcSuffix')}
                     </p>

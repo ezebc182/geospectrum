@@ -249,6 +249,13 @@ function clickPreset(groupLabel: string, buttonLabel: string) {
   fireEvent.click(button);
 }
 
+/** Cambia de pestaña. Radix Tabs activa el trigger en `mousedown` (y en
+ * `focus` al navegar con flechas), NO en `click`: un `fireEvent.click` pelado
+ * no cambia nada y el test pasaría a verde por el motivo equivocado. */
+function switchTab(name: string) {
+  fireEvent.mouseDown(screen.getByRole('tab', { name }), { button: 0, ctrlKey: false });
+}
+
 describe('/analytics — peticiones de la carga inicial', () => {
   it('pide el reporte y los tres paneles de catálogo con days=30, y nada de señal sin canales', async () => {
     await renderLoaded();
@@ -390,5 +397,78 @@ describe('/analytics — cambio de área', () => {
 
     releaseHypocenters!();
     await waitFor(() => expect(screen.queryByText(es.common.refreshingArea)).toBeNull());
+  });
+});
+
+describe('/analytics — pestañas por tema', () => {
+  it('muestra las tres pestañas y arranca en Sismicidad', async () => {
+    await renderLoaded();
+
+    const list = screen.getByRole('tablist', { name: A.tabs.label });
+    const tabs = within(list).getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      A.tabs.seismicity,
+      A.tabs.signal,
+      A.tabs.network,
+    ]);
+    expect(within(list).getByRole('tab', { name: A.tabs.seismicity })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('cada pestaña muestra sus paneles y oculta los de las otras', async () => {
+    await renderLoaded();
+
+    // Sismicidad: b-value + hipocentros + corte en profundidad.
+    expect(screen.getByText(A.bValue.title)).toBeVisible();
+    expect(screen.getByTestId('hypocenter-map-stub')).toBeVisible();
+    expect(screen.getByText(A.depthSection.title)).toBeVisible();
+    // Señal y Red están montados pero ocultos (`hidden` nativo, `keepMounted`).
+    expect(screen.getByText(A.rsam.title)).not.toBeVisible();
+    expect(screen.getByText(A.uptime.title)).not.toBeVisible();
+
+    switchTab(A.tabs.signal);
+    expect(screen.getByText(A.rsam.title)).toBeVisible();
+    expect(screen.getByText(A.tremor.title)).toBeVisible();
+    expect(screen.getByText(A.bValue.title)).not.toBeVisible();
+    expect(screen.getByText(A.uptime.title)).not.toBeVisible();
+
+    switchTab(A.tabs.network);
+    expect(screen.getByText(A.uptime.title)).toBeVisible();
+    expect(screen.getByText(A.bValue.title)).not.toBeVisible();
+    expect(screen.getByText(A.rsam.title)).not.toBeVisible();
+  });
+
+  it('los selectores compartidos siguen visibles en las tres pestañas', async () => {
+    await renderLoaded();
+
+    for (const tab of [A.tabs.seismicity, A.tabs.signal, A.tabs.network]) {
+      switchTab(tab);
+      expect(screen.getByRole('group', { name: A.window.catalogDays })).toBeVisible();
+      expect(screen.getByRole('group', { name: A.window.signalWindow })).toBeVisible();
+      expect(screen.getByTestId('station-picker')).toBeVisible();
+    }
+  });
+
+  it('cambiar de pestaña NO vuelve a pedir nada (los paneles quedan montados)', async () => {
+    // Falsabilidad del `keepMounted`: si cada `TabsContent` desmontara sus
+    // hijos, volver a Señal remontaría `RsamTrendChart`/`TremorPanel` y su
+    // `useEffect` dispararía otra vez las mismas peticiones.
+    await renderLoaded();
+
+    pickChannel(/CX\.PB01\.\.HHZ/);
+    await waitFor(() => expect(countMatching(/\/rsam/)).toBe(1));
+    await waitFor(() => expect(countMatching(/\/analytics\/tremor\//)).toBe(1));
+    await waitFor(() => expect(countMatching(/\/analytics\/station-uptime/)).toBe(1));
+
+    requestedUrls.length = 0;
+    switchTab(A.tabs.signal);
+    switchTab(A.tabs.network);
+    switchTab(A.tabs.seismicity);
+    switchTab(A.tabs.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requestedUrls).toEqual([]);
   });
 });

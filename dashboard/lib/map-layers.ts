@@ -45,10 +45,32 @@ const BASE_LAYER_DEFS = {
 
 export type BaseLayerId = keyof typeof BASE_LAYER_DEFS;
 
+// API key de CARTO, opcional. Al ser NEXT_PUBLIC_*, Next la inlinea en el
+// bundle del cliente durante el build: la key viaja al navegador y CUALQUIERA
+// puede leerla desde el código fuente de la página. Es PÚBLICA por
+// construcción, no hay forma de esconderla acá. Por eso la key tiene que
+// estar restringida por dominio en la consola de CARTO: esa restricción es
+// el único control que impide que un tercero la use desde otro sitio.
+// Ausente o vacía, la capa sigue funcionando con la URL sin query string
+// (dev local, deploys existentes y tests no necesitan configurar nada).
+const CARTO_API_KEY = process.env.NEXT_PUBLIC_CARTO_API_KEY?.trim() || '';
+
+/** Agrega `?api_key=` sólo si hay key; si no, devuelve la URL tal cual. */
+function withCartoApiKey(url: string): string {
+  if (!CARTO_API_KEY) return url;
+  return `${url}?api_key=${encodeURIComponent(CARTO_API_KEY)}`;
+}
+
 // Claves literales (para t(`baseLayers.${id}`) tipado) con valores anchos
 // (MapLayer): sin el widening, `layer.maxZoom` no tipa en las capas que no
 // lo declaran.
-export const BASE_LAYERS: Record<BaseLayerId, MapLayer> = BASE_LAYER_DEFS;
+export const BASE_LAYERS: Record<BaseLayerId, MapLayer> = {
+  ...BASE_LAYER_DEFS,
+  greyscale: {
+    ...BASE_LAYER_DEFS.greyscale,
+    url: withCartoApiKey(BASE_LAYER_DEFS.greyscale.url),
+  },
+};
 
 // Los GEOLOGICAL_OVERLAYS (densidad de población, fallas US, peligro sísmico
 // US) se retiraron el 2026-08-05: los tres endpoints de tiles estaban muertos
