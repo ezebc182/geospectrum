@@ -55,10 +55,18 @@ export type BaseLayerId = keyof typeof BASE_LAYER_DEFS;
 // (dev local, deploys existentes y tests no necesitan configurar nada).
 const CARTO_API_KEY = process.env.NEXT_PUBLIC_CARTO_API_KEY?.trim() || '';
 
-/** Agrega `?api_key=` sólo si hay key; si no, devuelve la URL tal cual. */
+/**
+ * Agrega `?key=` sólo si hay key; si no, devuelve la URL tal cual.
+ *
+ * El parámetro se llama `key`, NO `api_key`: el CDN descarta los parámetros
+ * que no conoce sin avisar, así que con el nombre equivocado el tile volvía
+ * 200 con la marca de agua "API KEY REQUIRED" estampada encima. Verificado
+ * comparando bytes: sin key 2145 B (con marca), con `key=` 1058 B (limpio).
+ * Un 200 NO prueba que el tile sirva — hay que mirar el contenido.
+ */
 function withCartoApiKey(url: string): string {
   if (!CARTO_API_KEY) return url;
-  return `${url}?api_key=${encodeURIComponent(CARTO_API_KEY)}`;
+  return `${url}?key=${encodeURIComponent(CARTO_API_KEY)}`;
 }
 
 // Claves literales (para t(`baseLayers.${id}`) tipado) con valores anchos
