@@ -3,7 +3,7 @@
  *
  * Lo que se protege acá es la DEGRADACIÓN: sin `NEXT_PUBLIC_CARTO_API_KEY`
  * la URL tiene que ser EXACTAMENTE la de siempre, sin `?` colgado ni el
- * string `undefined`. Un `?api_key=undefined` no rompe el build ni los tipos:
+ * string `undefined`. Un `?key=undefined` no rompe el build ni los tipos:
  * rompe los tiles en runtime, en silencio, y sólo se ve en el navegador.
  *
  * La var se lee a nivel de módulo, así que cada rama necesita su propio
@@ -48,11 +48,11 @@ describe('BASE_LAYERS.greyscale (CARTO Positron)', () => {
     }
   });
 
-  it('con la var puesta, agrega ?api_key= al final y conserva los placeholders', async () => {
+  it('con la var puesta, agrega ?key= al final y conserva los placeholders', async () => {
     const { BASE_LAYERS } = await importarConKey('abc123');
     const url = BASE_LAYERS.greyscale.url;
 
-    expect(url).toBe(`${URL_SIN_KEY}?api_key=abc123`);
+    expect(url).toBe(`${URL_SIN_KEY}?key=abc123`);
     // Un solo `?`: la URL base no traía query string.
     expect(url.match(/\?/g)).toHaveLength(1);
     // Los placeholders de Leaflet siguen intactos y ANTES del query string.
@@ -64,7 +64,7 @@ describe('BASE_LAYERS.greyscale (CARTO Positron)', () => {
 
   it('escapa la key para que no rompa el query string', async () => {
     const { BASE_LAYERS } = await importarConKey('a b&c=d');
-    expect(BASE_LAYERS.greyscale.url).toBe(`${URL_SIN_KEY}?api_key=${encodeURIComponent('a b&c=d')}`);
+    expect(BASE_LAYERS.greyscale.url).toBe(`${URL_SIN_KEY}?key=${encodeURIComponent('a b&c=d')}`);
   });
 
   it('conserva la atribución doble (término de uso de CARTO) y el maxZoom, con y sin key', async () => {

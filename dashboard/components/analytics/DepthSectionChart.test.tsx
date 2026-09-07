@@ -162,6 +162,29 @@ describe('DepthSectionChart', () => {
     expect(contentStyle.color).toMatch(/^hsl\(var\(--/);
   });
 
+  /**
+   * Bug reportado con captura: en oscuro el tooltip salía con la etiqueta
+   * legible y las FILAS en gris oscuro sobre panel oscuro.
+   *
+   * La causa es de Recharts, no del token: el renderer por defecto estila la
+   * etiqueta con `labelStyle` y CADA fila con `itemStyle`, y a falta de
+   * `itemStyle` le mete el color de la serie/`payload` a la fila. `color` de
+   * `contentStyle` NO cascadea a las filas. Sin las tres props no alcanza.
+   */
+  it('el tooltip tematiza también la etiqueta y las filas, no solo el contenedor', () => {
+    renderChart([evento({ prof_km: 10 })]);
+
+    const labelStyle = tooltipProps[0].labelStyle as Record<string, string> | undefined;
+    const itemStyle = tooltipProps[0].itemStyle as Record<string, string> | undefined;
+
+    expect(labelStyle?.color, 'sin labelStyle la etiqueta usa el color por defecto').toMatch(
+      /^hsl\(var\(--/,
+    );
+    expect(itemStyle?.color, 'sin itemStyle cada fila hereda el color de la serie').toMatch(
+      /^hsl\(var\(--/,
+    );
+  });
+
   it('cada punto lleva el color de SU magnitud', () => {
     renderChart([evento({ id: 'micro', mag: 2, prof_km: 10 }), evento({ id: 'mayor', mag: 6.5, prof_km: 40 })]);
 

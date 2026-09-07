@@ -31,6 +31,8 @@ import {
   CHART_AXIS_STROKE,
   CHART_GRID_STROKE,
   CHART_TOOLTIP_CONTENT_STYLE,
+  CHART_TOOLTIP_ITEM_STYLE,
+  CHART_TOOLTIP_LABEL_STYLE,
 } from '@/lib/chart-theme';
 import { depthAxisDomain, formatDepthTick, toDepthSectionPoints } from '@/lib/depth-section';
 import type { SeismicEvent } from '@/lib/types';
@@ -77,7 +79,14 @@ export function DepthSectionChart({ eventos, className }: DepthSectionChartProps
               stroke={CHART_AXIS_STROKE}
               tick={{ fontSize: 12, fill: CHART_AXIS_STROKE }}
             />
-            <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
+            {/* Las tres props: sin `itemStyle` Recharts pinta cada fila con el
+                color del punto (la escala de magnitud) y en oscuro no se lee.
+                Acá el color no se pierde: sigue en el punto del gráfico. */}
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+              labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+              itemStyle={CHART_TOOLTIP_ITEM_STYLE}
+            />
             <Scatter data={points}>
               {points.map((point) => (
                 <Cell key={point.id} fill={point.color} />
