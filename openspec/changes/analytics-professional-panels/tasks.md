@@ -656,7 +656,18 @@ archivos protegidos sin cambios; M4 registrada.
 y 4 fetchers; 5 libs puras con tests que afirman `null` ≠ `0`, orden y
 bordes; ningún componente todavía.
 
-- [ ] 4.1 Baseline frontend + tipos y fetchers.
+- [x] 4.1 Baseline frontend + tipos y fetchers.
+      *Resultado real (2026-09-06)*: baseline de HOY en `mutation-log.md`
+      (`102 files / 1135 tests`, `tsc` exit 0). RED observado: `Failed to
+      resolve import "./analytics"`. GREEN 15 passed. Desvíos: (1) el
+      `request<T>` NO devuelve `null` en 401 como `feedback.ts`: los cuatro
+      endpoints son públicos (`get_current_user_optional`), así que un 401
+      es una anomalía y se lanza como cualquier `!ok`; (2) `getTremor`
+      devuelve `TremorResult = {kind:'data', data} | {kind:'no-data',
+      detail}`; (3) `getStationUptime` con `[]` manda la URL sin `channel=`
+      (= todos), documentado en el test; (4) `TremorSample` tipado (no
+      `dict`): `t` con 6 decimales como `/rsam`, `dominant_hz`/`fi`
+      `number | null`. Mutaciones extra MF9/MF10 (no exigidas) en el log.
       *Archivos*: crea `dashboard/lib/analytics.ts`; crea
       `dashboard/lib/analytics.test.ts` (molde `lib/feedback.test.ts` /
       `lib/walls.test.ts` con `mockFetch`).
@@ -675,7 +686,16 @@ bordes; ningún componente todavía.
       *Aceptación*: test verde; `tsc --noEmit` exit 0.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/analytics.test.ts && ./node_modules/.bin/tsc --noEmit`.
       *Mutación*: NO — contrato con fetch mockeado; la lógica vive en las libs.
-- [ ] 4.2 (RED→GREEN) `dashboard/lib/b-value-plot.ts`.
+- [x] 4.2 (RED→GREEN) `dashboard/lib/b-value-plot.ts`.
+      *Resultado real (2026-09-06)*: RED `Failed to resolve import
+      "./b-value-plot"` (los 5 libs en UNA corrida antes de crear ninguno);
+      GREEN 16 passed. Extras sobre lo pedido: `maxBinMagnitude(bins)`
+      (`null` sin bins) para el `maxM` de la recta; `fittedLinePoints` con
+      `maxM <= mc` corre el 2.º punto un bin a la derecha (nunca longitud
+      cero) y con un parámetro no finito devuelve `[]`; `formatB` devuelve
+      `{b, sigma}` o `null` si algo no es finito (nunca "NaN").
+      `notEstimableMessageArgs` acepta `BValueResponse` y devuelve `null`
+      con `status === "ok"`. Mutaciones MF6/MF7 en el log (no exigidas).
       *Archivos*: crea `dashboard/lib/b-value-plot.test.ts`; crea
       `dashboard/lib/b-value-plot.ts`.
       *Qué*: `toFmdRows(bins)` ⇒ `{m, count, cumulative, log10Cumulative:
@@ -689,7 +709,14 @@ bordes; ningún componente todavía.
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/b-value-plot.test.ts`.
       *Mutación*: NO — cubierto por M8 en el componente (5.7).
-- [ ] 4.3 (RED→GREEN) `dashboard/lib/uptime-series.ts`.
+- [x] 4.3 (RED→GREEN) `dashboard/lib/uptime-series.ts`.
+      *Resultado real (2026-09-06)*: RED por import; GREEN 13 passed.
+      `rankStations` ⇒ `B, D, A, C` con el fixture de la spec, estable con
+      empates y varios `null`; `stationTimeline` lleva `bucket_start` a ms
+      epoch, ordena por `t`, descarta un `bucket_start` imparseable (una
+      fila `t: NaN` rompe el eje) y afirma `toBeNull()` en el hueco;
+      `percentLabel(NaN)` ⇒ `null`. Mutaciones MF3 (null primero) y MF4
+      (`null` ⇒ "0 %") en el log, ambas muertas por la aserción predicha.
       *Archivos*: crea `dashboard/lib/uptime-series.test.ts`; crea
       `dashboard/lib/uptime-series.ts`.
       *Qué*: `rankStations(overall)` ⇒ peor primero, estable, los `null` al
@@ -702,7 +729,17 @@ bordes; ningún componente todavía.
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/uptime-series.test.ts`.
       *Mutación*: NO — M12 protege el backend; acá el test `toBeNull()` es la aserción.
-- [ ] 4.4 (RED→GREEN) `dashboard/lib/tremor-episodes.ts`.
+- [x] 4.4 (RED→GREEN) `dashboard/lib/tremor-episodes.ts`.
+      *Resultado real (2026-09-06)*: RED por import; GREEN 11 passed.
+      Desvío documentado: `x1`/`x2` y `t` van en **ms epoch** (no el string
+      crudo): `samples[i].t` llega con 6 decimales (`str(UTCDateTime)`, dato
+      REAL de prod) y `episodes[].start/end` como ISO de Pydantic — en un eje
+      X numérico de Recharts tienen que compartir dominio, y como strings el
+      mismo instante en dos formatos no colapsaría. El test afirma
+      `x1 === Date.UTC(...)` exacto y acepta `Z` y `+00:00`. Las claves i18n
+      son relativas al namespace `analytics` (`tremor.band.low`).
+      `TREMOR_BASELINE_FACTOR` se exporta SOLO para la leyenda; MF8
+      (recalcular `baseline × factor`) muere con `expected 80 to be 123`.
       *Archivos*: crea `dashboard/lib/tremor-episodes.test.ts`; crea
       `dashboard/lib/tremor-episodes.ts`.
       *Qué*: `episodesToReferenceAreas(episodes)` ⇒ `{x1: start, x2: end}`
@@ -715,7 +752,15 @@ bordes; ningún componente todavía.
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/tremor-episodes.test.ts`.
       *Mutación*: no aplica.
-- [ ] 4.5 (RED→GREEN) `dashboard/lib/hypocenter-markers.ts`.
+- [x] 4.5 (RED→GREEN) `dashboard/lib/hypocenter-markers.ts`.
+      *Resultado real (2026-09-06)*: RED por import; GREEN 13 passed. Dato
+      REAL de prod incorporado: `hypocenters` devuelve `prof_km` NEGATIVO
+      (`-35.0`, EMSC/USGS, sobre el nivel del mar) además de `null`. Regla:
+      negativo ES profundidad (superficial, color de `< 70 km`); SOLO
+      `null`/no finito es "sin profundidad" (test explícito para `-35` y
+      para `NaN`). M14 ya observada acá como MF5 (la guarda de `null`
+      salteada ⇒ `expected 'depth' to be 'no-depth'`); 5.7 la repite sobre
+      el componente. `popupArgs` lleva además `magType` e `id`.
       *Archivos*: crea `dashboard/lib/hypocenter-markers.test.ts`; crea
       `dashboard/lib/hypocenter-markers.ts`.
       *Qué*: `markerRadius(mag)` monótona creciente con un mínimo visible;
@@ -728,7 +773,16 @@ bordes; ningún componente todavía.
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/hypocenter-markers.test.ts`.
       *Mutación*: la lleva 5.7 (M14).
-- [ ] 4.6 (RED→GREEN) `dashboard/lib/rsam-trend.ts`.
+- [x] 4.6 (RED→GREEN) `dashboard/lib/rsam-trend.ts`.
+      *Resultado real (2026-09-06)*: RED por import; GREEN 12 passed. Los 3
+      escenarios de la spec + `t` en ms epoch (el mismo instante como `Z` y
+      `+00:00` es UNA fila — test), `value` no finito ⇒ `null`, `t`
+      imparseable descartado, orden por `t` aunque un canal venga
+      desordenado. `signalWindowFromHours` devuelve `{start, end}` ISO Y
+      `{startMs, endMs}` (la forma `TimeWindow` de los fetchers); lanza con
+      `h > 24`, `h <= 0` y `NaN`. MF1 (hueco ⇒ `0`) muere con `expected +0
+      to be null` (R27); MF2b (canal rechazado en `channels`) con `expected
+      true to be false` sobre `'B' in row`.
       *Archivos*: crea `dashboard/lib/rsam-trend.test.ts`; crea
       `dashboard/lib/rsam-trend.ts`.
       *Qué*: `mergeSeriesByTime(settled)` sobre resultados de
@@ -741,7 +795,15 @@ bordes; ningún componente todavía.
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/rsam-trend.test.ts`.
       *Mutación*: no aplica (R27 se afirma con `toBeNull()`).
-- [ ] 4.7 Gate de fase.
+- [x] 4.7 Gate de fase.
+      *Resultado real (2026-09-06)*: los 6 archivos ⇒ `80 passed`; `tsc
+      --noEmit` exit 0 (un error propio corregido antes: `thresholdLine`
+      tomaba `Pick<>` y el test pasaba el objeto entero); suite completa
+      `108 files / 1215 tests passed` (baseline 102 / 1135: +6 archivos,
+      +80 tests, cero regresiones). ESLint: `dashboard/` NO tiene archivo de
+      config (solo `next lint`, que pediría crearla de forma interactiva) —
+      no se corrió, no se finge. Archivos protegidos sin diff (solo
+      untracked nuevos en `dashboard/lib/`).
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/analytics.test.ts lib/b-value-plot.test.ts lib/uptime-series.test.ts lib/tremor-episodes.test.ts lib/hypocenter-markers.test.ts lib/rsam-trend.test.ts && ./node_modules/.bin/tsc --noEmit`.
       *Mutación*: no aplica.
 

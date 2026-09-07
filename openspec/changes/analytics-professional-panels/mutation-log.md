@@ -300,3 +300,88 @@ preexistentes de `test_ws_events.py`; +42 sobre el gate de 3.1–3.3 (1342)
 `src/main.py` conserva SOLO el F811 preexistente de `search_stations`
 (ajeno). `git diff --stat main -- src/services/watchdog.py
 src/services/swarm_rsam.py src/services/seedlink_ingestor.py` vacío.
+
+## Fase 4 — baseline frontend (2026-09-06)
+
+Rama `feat/analytics-panels-fase4` desde main `ab947e5` (#51, Fase 3).
+Node v22.16.0 de nvm; `./node_modules/.bin/vitest run` y `./node_modules/.bin/tsc --noEmit`.
+
+```
+Test Files  102 passed (102)
+     Tests  1135 passed (1135)
+  Duration  40.79s
+TSC_EXIT=0
+```
+
+(+6 tests sobre los 1129 de la baseline del 2026-09-04: main se movió en
+tests desde entonces; se registra el número de HOY.)
+
+## Fase 4 — RED observados (2026-09-06)
+
+- 4.1: `Failed to resolve import "./analytics" from "lib/analytics.test.ts"`
+  (1 failed, no tests). Módulo creado ⇒ 15 passed.
+- 4.2–4.6 en UNA corrida antes de crear ningún lib: los 5 archivos mueren
+  con `Failed to resolve import "./b-value-plot" | "./hypocenter-markers" |
+  "./rsam-trend" | "./tremor-episodes" | "./uptime-series"` (5 failed, no
+  tests). Libs creados ⇒ 16 + 13 + 11 + 13 + 12 = 65 passed. Un error de
+  `tsc` propio (`thresholdLine` con `Pick<>` vs. el objeto entero del test)
+  corregido en el lib, no en el test.
+
+## Fase 4 — mutaciones del frontend (2026-09-06)
+
+Ninguna exigida por tasks.md (las del design que tocan el frontend, M8 y
+M14, van en 5.7 sobre los componentes); se hizo UNA por rama crítica de
+cada lib, con la mecánica de siempre: snapshot `cp` en el scratchpad; `sd
+-s` (literal, UNA línea); `rg -F` + `cmp` ⇒ `ARCHIVO_DIFIERE_DEL_SNAPSHOT`
+ANTES de correr; test ROJO por la aserción predicha; `cp` + `cmp` ⇒
+`REVERT_CMP_IDENTICAL`; verde. Vitest no tiene el problema del `.pyc`
+(transforma en memoria por corrida).
+
+Dos intentos INVÁLIDOS, registrados para no repetirlos:
+
+1. **MF2 y MF4 (1er intento) NO se aplicaron**: patrón con `\n` en `sd -s`
+   ⇒ `CMP_IDENTICAL` y el test verde. Es el gotcha de
+   `sd-s-no-matchea-saltos-de-linea`; el `cmp` del script lo delató. Se
+   rehicieron con patrones de UNA línea.
+2. **MF2 (2.º intento, quitar el `continue` del canal rechazado) murió por
+   la razón EQUIVOCADA**: `TypeError: Cannot read properties of undefined
+   (reading 'samples')` — el código lee `result.value` después del
+   `continue`, así que la mutación crashea antes de llegar a la aserción.
+   No cuenta. Se reemplazó por MF2b (empujar el canal rechazado a
+   `channels`), que deja el crash fuera y mata la aserción `'B' in row`.
+
+| # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
+|---|---|---|---|---|---|
+| MF1 | `dashboard/lib/rsam-trend.ts` | fila sin muestra del canal: `: null` → `: 0` | `75:        row[channel] = values.has(channel) ? (values.get(channel) as number \| null) : 0;` + `cmp` ⇒ difiere | `mergeSeriesByTime > B sin t1 ⇒ siguen siendo 3 filas y B es null (no 0) en t1` — `AssertionError: expected +0 to be null` (la mutación que R27 nombra) (1 failed, 11 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 12 passed |
+| MF2b | `dashboard/lib/rsam-trend.ts` | `errors[channel] = reasonMessage(result.reason);` → `…; channels.push(channel);` (el canal rechazado entra en `channels` ⇒ sus claves aparecen como `null` en las filas) | `54:      errors[channel] = reasonMessage(result.reason); channels.push(channel);` | `mergeSeriesByTime > un canal rechazado ⇒ sus claves ausentes de las filas y errors[B] con la razón` — `AssertionError: expected true to be false` sobre `'B' in row` (1 failed, 11 passed) | ídem; 12 passed |
+| MF3 | `dashboard/lib/uptime-series.ts` | en el comparador de `rankStations`, `if (a.ratio === null) return 1;` → `return -1;` (los `null` primero) | `42:    if (a.ratio === null) return -1;` | `rankStations > ordena peor primero…` — `expected [ 'D', 'C', 'B', 'A' ] to deeply equal [ 'B', 'D', 'A', 'C' ]`; también `es estable…` y `0.0 es observado…` (3 failed, 10 passed) | ídem; 13 passed |
+| MF4 | `dashboard/lib/uptime-series.ts` | `percentLabel`: `if (ratio === null \|\| !Number.isFinite(ratio)) return null;` → `if (ratio === null) ratio = 0; if (!Number.isFinite(ratio)) return null;` | `83:  if (ratio === null) ratio = 0; if (!Number.isFinite(ratio)) return null;` | `percentLabel > null ⇒ null (…), nunca "0 %" ni "NaN %"` — `AssertionError: expected '0 %' to be null` (1 failed, 12 passed) | ídem; 13 passed |
+| MF5 (= M14 en el lib) | `dashboard/lib/hypocenter-markers.ts` | guarda de `markerStyle`: `if (ev.prof_km === null \|\| !Number.isFinite(ev.prof_km))` → `if (ev.prof_km !== null && !Number.isFinite(ev.prof_km))` (el `null` cae en `getDepthColor(null)`, que como `null < 70` da el rojo de "< 70 km" — el mismo efecto que `prof_km ?? 0`) | `49:  if (ev.prof_km !== null && !Number.isFinite(ev.prof_km)) {` | `markerStyle > prof_km null ⇒ kind "no-depth", …, NO el color de <70 km (R26/M14)` — `AssertionError: expected 'depth' to be 'no-depth'` (1 failed, 12 passed) | ídem; 13 passed |
+| MF6 | `dashboard/lib/b-value-plot.ts` | `log10Cumulative: bin.cumulative > 0 ? Math.log10(bin.cumulative) : null,` → `log10Cumulative: Math.log10(bin.cumulative),` | `34:    log10Cumulative: Math.log10(bin.cumulative),` | `toFmdRows > cumulative 0 ⇒ log10Cumulative null, NUNCA -Infinity` — `AssertionError: expected -Infinity to be null` (1 failed, 15 passed) | ídem; 16 passed |
+| MF7 | `dashboard/lib/b-value-plot.ts` | primer punto de la recta `{ m: mc, log10N: a - b * mc }` → `{ m: mc, log10N: a }` | `56:    { m: mc, log10N: a },` | `fittedLinePoints > el primer punto es EXACTAMENTE (mc, a − b·mc)…` — `expected { m: 2, log10N: 6 } to deeply equal { m: 2, log10N: 4 }`; también `con b=1.5 la pendiente cambia` (`expected 8 to be close to 5`) (2 failed, 14 passed) | ídem; 16 passed |
+| MF8 | `dashboard/lib/tremor-episodes.ts` | `thresholdLine`: `return response.threshold_rsam;` → `return response.baseline_rsam === null ? null : response.baseline_rsam * response.parameters.baseline_factor;` (recalcular en el cliente) | `50:  return response.baseline_rsam === null ? null : …` | `thresholdLine > devuelve threshold_rsam TAL CUAL, aunque baseline × factor dé otra cosa` — `AssertionError: expected 80 to be 123` (1 failed, 10 passed) | ídem; 11 passed |
+| MF9 | `dashboard/lib/analytics.ts` | `getTremor`: `if (response.status === 404) return { kind: 'no-data', … }` → `=== -1` (el 404 pasa a lanzar) | `266:  if (response.status === -1) return { kind: 'no-data', detail: await readDetail(response) };` | `getTremor > 404 (sin datos FDSN) ⇒ {kind: "no-data"} con el detail, NO una excepción` — `ApiStatusError: Sin datos FDSN para GE.KBU..BHZ` (1 failed, 14 passed) | ídem; 15 passed |
+| MF10 | `dashboard/lib/analytics.ts` | `query()`: `search.append(key, item)` → `search.set(key, item)` (solo queda el último `channel=`) | `223:      for (const item of value) search.set(key, item);` | `getStationUptime > repite channel= por cada canal pedido, en orden y URL-encoded` — `AssertionError: expected '/analytics/station-uptime?days=30&buc…' to be '…'` (la URL pierde `channel=GE.KBU..BHZ`) (1 failed, 14 passed) | ídem; 15 passed |
+
+`cmp` final de los 6 libs contra sus snapshots: idéntico (todas las
+reversiones `REVERT_CMP_IDENTICAL`).
+
+## Fase 4 — gate real (2026-09-06)
+
+`./node_modules/.bin/vitest run lib/analytics.test.ts lib/b-value-plot.test.ts lib/uptime-series.test.ts lib/tremor-episodes.test.ts lib/hypocenter-markers.test.ts lib/rsam-trend.test.ts`
+⇒ `6 files, 80 passed`. `./node_modules/.bin/tsc --noEmit` ⇒ exit 0.
+
+`./node_modules/.bin/vitest run` (suite completa) ⇒
+
+```
+Test Files  108 passed (108)
+     Tests  1215 passed (1215)
+  Duration  39.40s
+```
+
++6 archivos / +80 tests sobre la baseline de hoy (102 / 1135), cero
+regresiones. ESLint: no hay archivo de configuración en `dashboard/` (solo
+el script `next lint`, que pediría crearla de forma interactiva); no se
+corrió y no se anota como corrido. `git status`: solo los 12 archivos nuevos
+en `dashboard/lib/` más `.env.example` y el proposal del asistente, que
+estaban modificados desde antes y no se tocan ni se stagean.
