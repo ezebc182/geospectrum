@@ -907,7 +907,29 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/StationUptimeChart.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.5 (RED→GREEN) `BValueChart.tsx`.
+- [x] 5.5 (RED→GREEN) `BValueChart.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import";
+      GREEN = 8 tests (`ok` ⇒ `b-value-number` con `1.00` y `± 0.00`, etiqueta
+      `bValueLabel`, `nAboveMc`/`mc`/`method`, `bins` como `data` del
+      `ComposedChart` mockeado y UNA `Line` con `dataKey="log10N"` cuyo primer
+      punto es `(mc, a − b·mc)`; `mcAtFloor` solo con el flag; `insufficient`
+      ⇒ `b-value-insufficient` con `23`/`50`, `queryByTestId("b-value-number")`
+      null, `queryByText(bValueLabel)` null, cero `Line` de ajuste, histograma
+      presente; body malformado `{insufficient, b: 1.2}` ⇒ ni `1.2` ni `1,2`
+      en el DOM; `degenerate` ⇒ `b-value-degenerate` y NO `b-value-insufficient`;
+      `mag_type_counts` listado; estado insuficiente en `en` sale de `en.json`;
+      `role="status"` cargando y `role="alert"` con error).
+      **DECISIÓN para 5.8 (paneles que dependen del área)**: `BValueChart` y
+      `HypocenterMap` son PRESENTACIONALES — reciben `data`/`error`/`isLoading`
+      por props del `useSWR` de la PÁGINA (`useSWR(['/analytics/b-value', days],
+      () => getBValue(days))`, ídem hipocentros, sin `refreshInterval`), y la
+      página hace `useAreaRefresh(() => Promise.all([mutate(), mutateBValue(),
+      mutateHypocenters()]))` — el `Promise.all` de las tres que exige el
+      escenario de la spec. Motivo: la revalidación por área la dispara la
+      página; con SWR adentro del componente la página tendría que conocer la
+      clave ajena y usar `mutate` global. RSAM/uptime/tremor NO dependen del
+      área y siguen autocargándose (`useEffect` + flag, 5.3/5.4/5.6). Los
+      componentes de `components/analytics/` no importan `swr`.
       *Archivos*: crea `dashboard/components/analytics/BValueChart.tsx`
       (+ `.test.tsx`).
       *Qué (RED primero)*: `status: "ok"`, `b: 0.9963`, `sigma_b: 0.0047` ⇒
