@@ -1041,7 +1041,42 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: 2 filas más en `mutation-log.md` con `rg`, rojo,
       reversión por `cmp`, verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics lib/hypocenter-markers.test.ts`.
-- [ ] 5.8 (RED→GREEN) Página `/analytics` — estado, grilla, `useAreaRefresh`.
+- [x] 5.8 (RED→GREEN) Página `/analytics` — estado, grilla, `useAreaRefresh`.
+      *Resultado real (2026-09-07)*: RED = 7 tests fallando por timeout (la
+      página vieja no monta el `StationPicker`, así que `renderLoaded` nunca
+      encuentra el botón del canal); GREEN = 7 passed. Cubre (a) carga inicial
+      con 1 `/report` SIN query string + 1 `b-value?days=30` + 1
+      `hipocentros?days=30` + 1 `station-uptime?days=30&bucket=hour` y CERO
+      RSAM/tremor; (b) preset `7` ⇒ los tres de catálogo con `days=7` y 0 a
+      `/report`/RSAM/tremor; (c) 2 canales + preset `6 h` ⇒ 2 RSAM + 1 tremor
+      con `end − start = 6 h` exactos y 0 a catálogo/`/report`, con el tremor
+      apuntando al PRIMER canal (el endpoint es por canal); (d) uptime en 503 ⇒
+      `role="alert"` propio del panel, sin `loadError` de página y con
+      `MagnitudeTimeChart`/`DepthDistributionChart`/`EventsTable` montados;
+      (e) `emitAreaChanged()` ⇒ 1 `/report` + 1 b-value + 1 hipocentros y CERO
+      uptime/RSAM/tremor, más un test del `Promise.all` que retiene la
+      respuesta de hipocentros y observa que el indicador de `AreaRefreshIndicator`
+      sigue encendido con el reporte y el b-value ya resueltos.
+      Falsabilidad VERIFICADA por mutación (no la pedía la tarea, pero el
+      `Promise.all` es la cláusula normativa): `Promise.all([mutate(),
+      mutateBValue(), mutateHypocenters()])` → `mutate()` ⇒ `2 failed | 5
+      passed` (mueren los DOS tests de área); reversión con `cmp` idéntica y 7
+      passed. Entre corridas se borró `node_modules/.vite`.
+      Dos hallazgos del RED que corrigieron el TEST, no el código: el ranking
+      de uptime también renderiza botones con el nombre del canal (las
+      búsquedas del picker se acotan con `within(getByTestId('station-picker'))`),
+      y `RsamTrendChart` reinicia sus series al cambiar la lista de canales, así
+      que elegir 2 canales dispara 3 RSAM — el conteo del escenario (c) espera a
+      que esa cascada se asiente antes de resetear el contador.
+      `HypocenterMap` y `recharts` se mockean en el test de página (el mapa es
+      presentacional: el mock no esconde ninguna request, y Leaflet real exige
+      el andamio entero de `HypocenterMap.test.tsx`).
+      `areaBbox` sale de `report.region_monitorizada` — mismo shape que
+      `AreaBbox` y ya viene en el body: encuadrar el mapa NO agrega una request
+      a `/areas/active`.
+      Aceptación verificada: `git diff --stat` de los tres componentes
+      existentes VACÍO; `tsc --noEmit -p .` exit 0; los 3 archivos de la
+      verificación ⇒ `3 files / 34 tests passed`.
       *Archivos*: modifica `dashboard/app/(app)/analytics/page.tsx`; crea
       `dashboard/app/(app)/analytics/page.test.tsx` (molde
       `app/(app)/feedback/page.test.tsx`; `fetch` mockeado con contador por
