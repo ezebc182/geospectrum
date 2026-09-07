@@ -23,6 +23,12 @@ import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { getStationUptime, type StationUptimeResponse } from '@/lib/analytics';
+import {
+  CHART_AXIS_STROKE,
+  CHART_GRID_STROKE,
+  CHART_TOOLTIP_CONTENT_STYLE,
+  CHART_TOOLTIP_LABEL_STYLE,
+} from '@/lib/chart-theme';
 import { percentLabel, rankStations, stationTimeline, type TimelineRow } from '@/lib/uptime-series';
 
 interface StationUptimeChartProps {
@@ -141,12 +147,12 @@ export function StationUptimeChart({ days, className }: StationUptimeChartProps)
                 barCategoryGap={BAR_GAP}
                 data-chart="ranking"
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} unit=" %" stroke="#9ca3af" />
-                <YAxis type="category" dataKey="channel" width={120} stroke="#9ca3af" tick={{ fontSize: 10 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} unit=" %" stroke={CHART_AXIS_STROKE} />
+                <YAxis type="category" dataKey="channel" width={120} stroke={CHART_AXIS_STROKE} tick={{ fontSize: 10 }} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                  labelStyle={{ color: '#fff' }}
+                  contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                  labelStyle={CHART_TOOLTIP_LABEL_STYLE}
                   formatter={(value) => [`${value} %`, t('uptime.title')]}
                 />
                 <Bar dataKey="pct" fill={RATIO_COLOR} radius={[0, 4, 4, 0]} isAnimationActive={false} />
@@ -192,21 +198,21 @@ export function StationUptimeChart({ days, className }: StationUptimeChartProps)
           </h4>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={timelineRows} margin={{ top: 4, right: 16, bottom: 4, left: 8 }} barCategoryGap={BAR_GAP} data-chart="timeline">
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} vertical={false} />
               <XAxis
                 dataKey="t"
                 tickFormatter={(ts: number) => bucketTime(ts)}
-                stroke="#9ca3af"
+                stroke={CHART_AXIS_STROKE}
                 tick={{ fontSize: 10 }}
                 minTickGap={24}
               />
-              <YAxis type="number" domain={[0, 100]} unit=" %" stroke="#9ca3af" />
+              <YAxis type="number" domain={[0, 100]} unit=" %" stroke={CHART_AXIS_STROKE} />
               <Tooltip
                 content={({ payload }) => {
                   if (!payload || payload.length === 0) return null;
                   const row = payload[0].payload as TimelineRow;
                   return (
-                    <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-white shadow-lg">
+                    <div className="rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
                       <p className="text-sm">{bucketTime(row.t)}</p>
                       <p className="font-mono text-xs">{bucketLabel(row)}</p>
                       {row.inProgress && <p className="text-xs text-gray-400">{t('uptime.inProgress')}</p>}

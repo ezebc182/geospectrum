@@ -37,6 +37,7 @@ import {
 } from 'recharts';
 
 import type { BValueResponse } from '@/lib/analytics';
+import { CHART_AXIS_STROKE, CHART_GRID_STROKE } from '@/lib/chart-theme';
 import {
   fittedLinePoints,
   formatB,
@@ -155,22 +156,22 @@ export function BValueChart({ data, error, isLoading, className }: BValueChartPr
           </ul>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={rows} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
               <XAxis
                 type="number"
                 dataKey="m"
                 name={t('bValue.magnitudeAxis')}
                 domain={['dataMin', 'dataMax']}
                 tickFormatter={(m: number) => m.toFixed(1)}
-                stroke="#9ca3af"
+                stroke={CHART_AXIS_STROKE}
               />
-              <YAxis yAxisId="log" type="number" name={`log10 ${t('bValue.countAxis')}`} stroke="#9ca3af" />
-              <YAxis yAxisId="count" orientation="right" type="number" name={t('bValue.countAxis')} stroke="#9ca3af" />
+              <YAxis yAxisId="log" type="number" name={`log10 ${t('bValue.countAxis')}`} stroke={CHART_AXIS_STROKE} />
+              <YAxis yAxisId="count" orientation="right" type="number" name={t('bValue.countAxis')} stroke={CHART_AXIS_STROKE} />
               <Tooltip
                 content={({ payload, label }) => {
                   if (!payload || payload.length === 0) return null;
                   return (
-                    <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-white shadow-lg">
+                    <div className="rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
                       <p className="text-sm">M {Number(label).toFixed(1)}</p>
                       {payload.map((entry) => (
                         <p key={String(entry.dataKey)} className="font-mono text-xs">
