@@ -686,6 +686,12 @@
   "analytics": {
     "title": "Advanced Seismic Analysis",
     "loadError": "Failed to load data",
+    "tabs": {
+      "label": "Analysis sections",
+      "seismicity": "Seismicity",
+      "signal": "Signal",
+      "network": "Network"
+    },
     "fullEventsTable": "Full Events Table",
     "loading": "Loading…",
     "error": "This panel could not be loaded",
