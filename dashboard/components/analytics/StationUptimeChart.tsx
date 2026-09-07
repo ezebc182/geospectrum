@@ -27,6 +27,7 @@ import {
   CHART_AXIS_STROKE,
   CHART_GRID_STROKE,
   CHART_TOOLTIP_CONTENT_STYLE,
+  CHART_TOOLTIP_ITEM_STYLE,
   CHART_TOOLTIP_LABEL_STYLE,
 } from '@/lib/chart-theme';
 import { percentLabel, rankStations, stationTimeline, type TimelineRow } from '@/lib/uptime-series';
@@ -150,9 +151,13 @@ export function StationUptimeChart({ days, className }: StationUptimeChartProps)
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} horizontal={false} />
                 <XAxis type="number" domain={[0, 100]} unit=" %" stroke={CHART_AXIS_STROKE} />
                 <YAxis type="category" dataKey="channel" width={120} stroke={CHART_AXIS_STROKE} tick={{ fontSize: 10 }} />
+                {/* `itemStyle` faltaba: la fila del % heredaba el color de la
+                    barra. Es serie única, así que unificar no pierde ninguna
+                    codificación — la barra sigue teniendo su color. */}
                 <Tooltip
                   contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
                   labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                  itemStyle={CHART_TOOLTIP_ITEM_STYLE}
                   formatter={(value) => [`${value} %`, t('uptime.title')]}
                 />
                 <Bar dataKey="pct" fill={RATIO_COLOR} radius={[0, 4, 4, 0]} isAnimationActive={false} />
@@ -215,7 +220,12 @@ export function StationUptimeChart({ days, className }: StationUptimeChartProps)
                     <div className="rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
                       <p className="text-sm">{bucketTime(row.t)}</p>
                       <p className="font-mono text-xs">{bucketLabel(row)}</p>
-                      {row.inProgress && <p className="text-xs text-gray-400">{t('uptime.inProgress')}</p>}
+                      {/* `text-gray-400` era fijo y sin pareja `dark:`: 2,54:1
+                          sobre `--popover` en claro, debajo de AA. El token
+                          da 6,07:1 en claro y 6,05:1 en oscuro. */}
+                      {row.inProgress && (
+                        <p className="text-xs text-muted-foreground">{t('uptime.inProgress')}</p>
+                      )}
                     </div>
                   );
                 }}

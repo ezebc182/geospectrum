@@ -41,3 +41,22 @@ export const CHART_TOOLTIP_CONTENT_STYLE = {
 export const CHART_TOOLTIP_LABEL_STYLE = {
   color: 'hsl(var(--popover-foreground))',
 } as const;
+
+/**
+ * Texto de CADA FILA del tooltip. Recharts estila el tooltip por defecto en
+ * tres tramos independientes — contenedor (`contentStyle`), etiqueta
+ * (`labelStyle`) y filas (`itemStyle`) — y el `color` del contenedor NO
+ * cascadea a las filas: a falta de `itemStyle`, Recharts le pinta a cada fila
+ * el color de SU serie/`payload`. Ese era el bug de oscuro: la etiqueta se
+ * leía y las filas quedaban en gris oscuro sobre el panel oscuro.
+ *
+ * Se unifica al foreground del popover (18,61:1 en claro, 14,86:1 en oscuro
+ * contra `--popover`, ambos AA holgado) porque en estos paneles el color de
+ * la fila NO codifica dato: los gráficos de tooltip por defecto son de UNA
+ * sola serie (uptime %, profundidad), así que no hay cue que perder. Los
+ * paneles multi-serie (RSAM, tremor, b-value) NO usan este renderer: tienen
+ * `content` propio con su chip de color por serie, que se conserva.
+ */
+export const CHART_TOOLTIP_ITEM_STYLE = {
+  color: 'hsl(var(--popover-foreground))',
+} as const;
