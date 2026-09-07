@@ -816,7 +816,12 @@ picker y los 5 paneles (más el corte SHOULD si entra), cada uno con su
 carga/error; los 3 paneles existentes intactos; M8 y M14 registradas.
 Recharts NO se asserta por SVG (design Decision 8).
 
-- [ ] 5.1 Claves i18n `analytics.*` (es/en) ANTES de los componentes.
+- [x] 5.1 Claves i18n `analytics.*` (es/en) ANTES de los componentes.
+      *Resultado real (2026-09-06)*: 5 sub-bloques + `loading`/`error` en
+      ambos JSON (claves extra respecto de la lista: `picker.filter/selected/
+      noMatches`, `rsam.axis/period`, `uptime.error/loading/selectStation`,
+      `bValue.nonCumulative/cumulative/fit/…Axis`, `tremor.threshold/baseline/
+      columns.*`, `map.error/loading`); `parity.test.ts` 4/4 verde.
       *Archivos*: modifica `dashboard/messages/es.json`,
       `dashboard/messages/en.json`.
       *Qué*: bajo el namespace `analytics` existente, sub-bloques `window`

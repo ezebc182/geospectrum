@@ -686,7 +686,118 @@
   "analytics": {
     "title": "Análisis Sísmico Avanzado",
     "loadError": "Error al cargar datos",
-    "fullEventsTable": "Tabla Completa de Eventos"
+    "fullEventsTable": "Tabla Completa de Eventos",
+    "loading": "Cargando…",
+    "error": "No se pudo cargar este panel",
+    "window": {
+      "catalogDays": "Ventana de catálogo",
+      "signalWindow": "Ventana de señal",
+      "days": "{count} días",
+      "hours": "{count} h"
+    },
+    "picker": {
+      "title": "Canales",
+      "max4": "Máximo 4 canales: quitá uno para agregar otro",
+      "live": "en vivo",
+      "chooseChannel": "Elegí un canal para ver este panel",
+      "loading": "Cargando catálogo de canales…",
+      "error": "No se pudo cargar el catálogo de canales",
+      "filter": "Filtrar canales",
+      "selected": "{count} de {max} elegidos",
+      "noMatches": "Ningún canal coincide con el filtro"
+    },
+    "rsam": {
+      "title": "Tendencia RSAM",
+      "loading": "Cargando RSAM de {channel}…",
+      "errorFor": "{channel}: sin serie RSAM ({reason})",
+      "noData": "{channel}: sin muestras en la ventana",
+      "axis": "RSAM (cuentas)",
+      "period": "Período {seconds} s"
+    },
+    "uptime": {
+      "title": "Uptime de estaciones",
+      "ranking": "Ranking (peor primero)",
+      "timeline": "Línea de tiempo de {channel}",
+      "noObservation": "sin observación",
+      "noObservations": "sin observaciones",
+      "inProgress": "en curso",
+      "noHistoryYet": "Sin historial todavía: el rollup de uptime aún no escribió ninguna hora",
+      "zeroPercent": "0 %",
+      "observedHours": "sobre {hours} h observadas",
+      "error": "No se pudo cargar el uptime de estaciones",
+      "loading": "Cargando uptime…",
+      "selectStation": "Ver línea de tiempo de {channel}"
+    },
+    "bValue": {
+      "title": "b-value (Gutenberg-Richter)",
+      "bValueLabel": "b-value",
+      "sigma": "± {sigma}",
+      "nAboveMc": "N sobre Mc: {n}",
+      "mc": "Mc: {mc}",
+      "mcAtFloor": "Mc coincide con el piso del catálogo ingerido: el Mc real puede ser menor",
+      "insufficient": "Datos insuficientes: n = {n} sobre Mc, mínimo {min}",
+      "degenerate": "No estimable: todas las magnitudes sobre Mc son iguales (n = {n}, mínimo {min})",
+      "magTypes": "Tipos de magnitud",
+      "method": "Método: {method}",
+      "nonCumulative": "N por bin",
+      "cumulative": "N acumulado (M ≥ m)",
+      "fit": "Ajuste log10 N = a − b·M",
+      "magnitudeAxis": "Magnitud",
+      "countAxis": "N",
+      "error": "No se pudo calcular el b-value",
+      "loading": "Calculando b-value…"
+    },
+    "tremor": {
+      "title": "Tremor: episodios sostenidos",
+      "sustainedEpisode": "Episodio sostenido (candidato a tremor)",
+      "noEpisodes": "Sin episodios sostenidos en la ventana",
+      "noDataForChannel": "Sin datos FDSN para este canal en la ventana",
+      "fraction": "Fracción de la ventana en episodio: {percent}",
+      "parameters": "Parámetros: umbral = {factor} × mediana, mínimo {periods} períodos",
+      "threshold": "Umbral",
+      "baseline": "Mediana",
+      "error": "No se pudo caracterizar el tremor",
+      "loading": "Caracterizando tremor…",
+      "band": {
+        "low": "baja (< 2 Hz)",
+        "mid": "media (2–5 Hz)",
+        "high": "alta (> 5 Hz)",
+        "undefined": "indefinida"
+      },
+      "fiSign": {
+        "lp_like": "FI < 0 (tipo LP)",
+        "vt_like": "FI ≥ 0 (tipo VT)",
+        "undefined": "FI indefinido"
+      },
+      "columns": {
+        "start": "Inicio (UTC)",
+        "end": "Fin (UTC)",
+        "duration": "Duración",
+        "meanRatio": "Ratio medio",
+        "band": "Banda",
+        "fiSign": "Signo de FI",
+        "onsetRatio": "Inicio (ratio)"
+      }
+    },
+    "map": {
+      "title": "Hipocentros",
+      "total": "{total} eventos en la ventana",
+      "truncated": "Mostrando {shown} de {total}: subí la magnitud mínima para ver el resto",
+      "noDepth": "sin profundidad",
+      "error": "No se pudo cargar el mapa de hipocentros",
+      "loading": "Cargando hipocentros…",
+      "popup": {
+        "magnitude": "Magnitud",
+        "depth": "Profundidad",
+        "time": "Hora UTC",
+        "place": "Lugar",
+        "noDepth": "sin profundidad"
+      }
+    },
+    "depthSection": {
+      "title": "Corte de profundidad",
+      "omittedNoDepth": "{count} sin profundidad (omitidos)"
+    }
   },
   "explore": {
     "title": "Explorador de Eventos Sísmicos",
