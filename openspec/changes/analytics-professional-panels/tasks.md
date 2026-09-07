@@ -1144,7 +1144,24 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: tests verdes o tarea explícitamente diferida.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/depth-section.test.ts components/analytics/DepthSectionChart.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.10 Gate de fase.
+- [x] 5.10 Gate de fase.
+      *Resultado real (2026-09-07)*: suite COMPLETA `118 files / 1287 tests
+      passed` (baseline 5.7: 115 / 1270 ⇒ +3 archivos, +17 tests, que son
+      EXACTAMENTE los de 5.8 (7) y 5.9 (5 + 5); cero regresiones).
+      `tsc --noEmit -p .` exit 0.
+      `git diff --stat main -- AdvancedSeismicMap SeismicMapWithCities
+      MagnitudeTimeChart DepthDistributionChart EventsTable RsamChart` ⇒
+      VACÍO: los seis componentes protegidos siguen byte a byte como en `main`
+      en toda la rama, no solo en el último commit.
+      Auditoría estática adelantada de 6.2: `rg` de
+      `RsamChart|AdvancedSeismicMap|SeismicMapWithCities|StationMiniMap|
+      use-area-refresh|EventSource|/ws/|from 'swr'` sobre
+      `components/analytics --glob '!*.test.tsx'` ⇒ exit 1 (cero matches),
+      mientras que la PÁGINA sí usa `useSWR`/`use-area-refresh` (6 matches),
+      que es exactamente el reparto que fija la Decisión 8.
+      El gate es de frontend: no pide la suite de Python, así que los 9 fallos
+      preexistentes de `tests/integration/test_ws_events.py` quedan fuera de
+      esta fase (siguen anotados para 7.x).
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run && ./node_modules/.bin/tsc --noEmit` — suite COMPLETA contra la baseline de 4.1 (delta = solo tests nuevos) y `git diff --stat -- dashboard/components/AdvancedSeismicMap.tsx dashboard/components/SeismicMapWithCities.tsx dashboard/components/MagnitudeTimeChart.tsx dashboard/components/DepthDistributionChart.tsx dashboard/components/EventsTable.tsx dashboard/components/RsamChart.tsx` vacío.
       *Mutación*: no aplica.
 
