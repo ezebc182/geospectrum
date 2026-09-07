@@ -21,11 +21,11 @@ El riesgo central que este change gestiona es la ALUCINACIÓN: un LLM libre pued
 ### Out of Scope
 
 - LangChain, LangGraph o cualquier framework de orquestación de agentes.
-- Streaming de la respuesta (SSE/WebSocket) — se define en Open Questions, no se implementa en este change salvo que se resuelva a favor.
-- Cacheo de resultados de tools — se define en Open Questions.
-- Que el asistente responda sobre picks de usuarios distintos al autenticado (rol admin) — se define en Open Questions.
+- Streaming de la respuesta (SSE/WebSocket) — DECIDIDO: no se implementa. Ver "Approach" para la razón.
+- Cacheo de resultados de tools — DECIDIDO: no se implementa. Ver "Approach" para la razón.
+- Que el asistente responda sobre picks de usuarios distintos al autenticado (rol admin) — DECIDIDO: no se implementa, ni en este change ni como variante futura planeada. Ver "Approach".
 - Frontend: cualquier componente de chat/UI en `dashboard/` queda fuera de este change (se abordará en un change posterior una vez validado el backend).
-- Selección final de modelo Anthropic y estimación de costo en producción — pendiente de cargar el skill `claude-api` en la fase de diseño.
+- Selección final de modelo Anthropic y estimación de costo en producción — pendiente de cargar el skill `claude-api` en la fase de diseño (única decisión que sigue abierta, ver Open Questions).
 - Cualquier tool que escriba datos (el asistente es de solo lectura sobre datos ya persistidos).
 
 ## Approach
@@ -39,6 +39,12 @@ Razones (ya evaluadas y decididas, no reabrir en diseño):
 - Es coherente con el resto del backend, que usa `httpx` puro para integraciones externas (USGS/INPRES/EMSC) sin SDKs pesados de orquestación.
 
 Asimetría de permisos a respetar en el diseño: `seismic_events` es un dato público/global (sin `user_id`), mientras que `signal_picks` tiene ownership real (`WHERE user_id = $1`). La tool de eventos puede tomar filtros libres del LLM; la tool de picks NUNCA debe aceptar `user_id` como parámetro elegible por el modelo — debe inyectarse server-side desde la sesión, igual que hace `SignalPickService.list_for_window` hoy vía `deps.py`.
+
+Tres decisiones adicionales ya tomadas (no reabrir en diseño):
+
+- **Sin streaming**: la respuesta se devuelve completa (request/response simple), no por SSE/WS. Razón: es más simple verificar el grounding (que ningún dato numérico esté alucinado) antes de mostrarle texto al usuario cuando se tiene la respuesta entera en mano, en vez de validar un stream incremental token a token. Además, este asistente es para consultas puntuales, no para sesiones de chat largas donde el streaming aporta percepción de velocidad.
+- **Sin cache de resultados de tool calls**: cada pregunta dispara una llamada real a `EventStore.recent()` / `SignalPickService.list_for_window`, sin TTL ni capa de cache intermedia. Razón: coincide con la opción de menor riesgo que la propia proposal ya identificaba — `seismic_events` cambia constantemente por la ingesta continua, y el volumen de uso esperado (pocos usuarios) no justifica la complejidad de manejar invalidación y TTL.
+- **`buscar_picks` solo devuelve datos del usuario autenticado**: no existe, ni está planeada, una variante admin que consulte picks de otros usuarios. `user_id` es siempre inyectado server-side desde la sesión y nunca un parámetro que el modelo pueda elegir. Si en el futuro se necesita una vista admin de picks ajenos, es un change nuevo que reabre esta decisión explícitamente — no algo implícito en este change.
 
 ## Affected Areas
 
@@ -59,7 +65,7 @@ Asimetría de permisos a respetar en el diseño: `seismic_events` es un dato pú
 | Alucinación de datos numéricos (magnitud, fecha, ubicación) por el LLM | Med | Tool-calling obligatorio para cualquier dato numérico; prompt de sistema explícito; el diseño debe incluir un mecanismo de verificación de que la respuesta final solo cita valores presentes en resultados de tools |
 | Fuga de picks de un usuario hacia otro usuario | Low (si se implementa como se especifica) | `user_id` NUNCA es parámetro del LLM; se inyecta server-side siempre, sin excepción, hasta que se resuelva la Open Question de rol admin |
 | Costo/latencia impredecible de la API de Anthropic en producción | Med | Cargar skill `claude-api` en fase de diseño para elegir modelo y estimar costo antes de implementar; considerar límites de uso por usuario/sesión |
-| `seismic_events` cambia constantemente (ingesta continua) y las respuestas pueden quedar desactualizadas si se cachea mal | Low | Ver Open Question de TTL de cache; por defecto (sin cache) no hay riesgo de datos stale |
+| `seismic_events` cambia constantemente (ingesta continua) y las respuestas pueden quedar desactualizadas si se cachea mal | Low | DECIDIDO: no hay cache de resultados de tool calls (no es un default reabrible, es la decisión final) — cada consulta lee el dato vigente, sin riesgo de datos stale |
 | Nueva dependencia externa (Anthropic API) introduce un punto de falla en el backend | Med | Manejo de errores explícito en el router (timeout, rate limit, API caída) devolviendo error honesto al usuario, no una respuesta silenciosa o inventada |
 
 ## Rollback Plan
@@ -78,15 +84,14 @@ El asistente es aditivo: un router nuevo, tools nuevas, sin modificar contratos 
 
 ## Open Questions
 
-1. ¿Streaming de la respuesta (SSE/WS) o respuesta completa (request/response simple)?
-2. ¿Cachear resultados de tool calls con TTL corto (30-60s), dado que `seismic_events` cambia constantemente por la ingesta continua? ¿O se resuelve sin cache dado el volumen esperado de uso?
-3. ¿El asistente debe poder responder sobre picks de OTROS usuarios (caso admin)? Si la respuesta es sí, requiere una tool separada que use `require_role` de `deps.py`, con params explícitos y auditoría de que un admin efectivamente lo es antes de exponer datos de otro usuario.
-4. ¿Qué modelo de Anthropic usar y cuál es la estimación de costo por consulta/sesión? Pendiente: cargar el skill `claude-api` en la fase de diseño para tomar esta decisión con datos de pricing y capacidades actuales, no de memoria.
+1. ¿Qué modelo de Anthropic usar y cuál es la estimación de costo por consulta/sesión? Pendiente: cargar el skill `claude-api` en la fase de diseño para tomar esta decisión con datos de pricing y capacidades actuales, no de memoria.
 
 ## Success Criteria
 
 - [ ] El asistente responde preguntas sobre eventos sísmicos recientes (magnitud, ventana horaria, cercanía a estación/coordenadas) usando exclusivamente datos de `buscar_eventos`, verificable porque cada dato numérico en la respuesta es rastreable a un resultado de tool.
-- [ ] El asistente responde preguntas sobre picks del usuario autenticado usando `buscar_picks`, sin que el `user_id` sea nunca un valor que el LLM pueda elegir o filtrar.
+- [ ] El asistente responde preguntas sobre picks del usuario autenticado usando `buscar_picks`, sin que el `user_id` sea nunca un valor que el LLM pueda elegir o filtrar, y sin ninguna vía (tool o parámetro) para consultar picks de otros usuarios.
+- [ ] Cada consulta devuelve una respuesta completa en un solo request/response, sin streaming (SSE/WS).
+- [ ] Cada consulta ejecuta las tool calls contra los datos vigentes, sin capa de cache intermedia con TTL.
 - [ ] Ante una pregunta fuera del alcance de las tools disponibles (ej. predicción de sismos futuros), el asistente responde honestamente que no tiene esa capacidad, sin inventar una respuesta.
 - [ ] Los endpoints nuevos están protegidos con el mismo patrón de autenticación que el resto del backend (`get_current_user`).
-- [ ] Las 4 Open Questions quedan resueltas antes de pasar de diseño a implementación (tasks).
+- [ ] La Open Question restante (modelo y costo) queda resuelta antes de pasar de diseño a implementación (tasks).
