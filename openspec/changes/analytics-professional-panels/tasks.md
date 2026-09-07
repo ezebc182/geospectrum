@@ -861,7 +861,14 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: tests verdes.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/AnalyticsWindowSelector.test.tsx components/analytics/StationPicker.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.3 (RED→GREEN) `RsamTrendChart.tsx`.
+- [x] 5.3 (RED→GREEN) `RsamTrendChart.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import";
+      GREEN = 6 tests (sin canales ⇒ `chooseChannel`; 1 request por canal con
+      `(channel, window, 600)`; loader `role="status"` por serie; `B`
+      rechazado ⇒ 1 `role="alert"` con `B` y la razón, leyenda solo `A`;
+      hueco ⇒ `A: null` con `toBeNull()` sobre `data` del `LineChart`
+      mockeado y `connectNulls === false` en cada `Line`). `rg -c RsamChart`
+      sobre el componente ⇒ 0.
       *Archivos*: crea `dashboard/components/analytics/RsamTrendChart.tsx`
       (+ `.test.tsx`).
       *Qué (RED primero)*: con `getStationRsam` mockeado (resuelve `A`,
