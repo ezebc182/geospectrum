@@ -946,7 +946,39 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/BValueChart.test.tsx`.
       *Mutación*: la lleva 5.7 (M8).
-- [ ] 5.6 (RED→GREEN) `TremorPanel.tsx` y `HypocenterMap.tsx`.
+- [x] 5.6 (RED→GREEN) `TremorPanel.tsx` y `HypocenterMap.tsx`.
+      *Resultado real (2026-09-07)*: RED = "Failed to resolve import" en los
+      dos tests (`./TremorPanel`, `./HypocenterMap`); GREEN = 9 + 11 tests.
+      El `TremorPanel.test.tsx` que dejó escrito el sub-agente anterior se
+      REVISÓ contra la spec y las libs de Fase 4 y se conservó SIN cambios:
+      cubre los 3 escenarios de la spec más la regla del umbral (el fixture
+      trae `threshold_rsam: 123` con `baseline 40 × factor 2.5 = 100`, así que
+      un recálculo en el cliente muere). `HypocenterMap.test.tsx` se escribió
+      de cero (nunca existió).
+      Tremor: carga sola (`useEffect` + flag, molde `RsamTrendChart`, sin
+      `swr`); el 404 es estado (`tremor-no-data`, sin `role="alert"` y sin
+      `ComposedChart`); `episodes: []` ⇒ `noEpisodes` y CERO `ReferenceArea`;
+      2 episodios ⇒ 2 filas `data-testid="tremor-episode"` con `10:00/10:40` y
+      `11:20/11:50` en UTC y 2 `ReferenceArea` con esos ms epoch exactos.
+      Mapa: PRESENTACIONAL (`data`/`error`/`isLoading` por props, Decision 8);
+      `L.map` espiado sobre el módulo REAL (no `vi.mock`: la trampa UMD-vs-ESM
+      de `map-locale-popups.test.tsx`) ⇒ `preferCanvas: true`; 3 eventos ⇒ 3
+      `circleMarker` y el de `prof_km: null` con `fillOpacity: 0`, `dashArray`
+      definido y `fillColor`/`color` ≠ `getDepthColor(0)` (M14), mientras los
+      otros dos usan `getDepthColor(50)`/`getDepthColor(200)`; popup del nulo
+      con "sin profundidad"; `truncated: true` ⇒ `hypocenter-truncated` con
+      `5000` y `3`; 120 s de timers falsos ⇒ sigue en 3 marcadores.
+      Un error PROPIO encontrado por `tsc` (no por los tests): `bandLabelKey`/
+      `fiSignLabelKey` devuelven `string` y `t()` exige el literal — se agregó
+      el tipo `TremorMessageKey` (template literal sobre `TremorBand`/
+      `TremorFiSign`) en vez de un `as any`.
+      Gate: `tsc --noEmit -p .` exit 0; suite completa `115 files / 1270 tests
+      passed` (baseline 5.5: 113 / 1250 ⇒ +2 archivos, +20 tests, cero
+      regresiones). `rg -c "AdvancedSeismicMap|SeismicMapWithCities|
+      StationMiniMap|use-area-refresh|/ws/|EventSource"` sobre
+      `HypocenterMap.tsx` ⇒ exit 1 (cero matches), y el propio test lo
+      chequea leyendo el fuente con `readFileSync` (suma `setInterval`,
+      `refreshInterval` y `from 'swr'`).
       *Archivos*: crea `dashboard/components/analytics/TremorPanel.tsx`
       (+ `.test.tsx`); crea `dashboard/components/analytics/HypocenterMap.tsx`
       (+ `.test.tsx`).
