@@ -796,7 +796,8 @@
     },
     "depthSection": {
       "title": "Corte de profundidad",
-      "omittedNoDepth": "{count} sin profundidad (omitidos)"
+      "omittedNoDepth": "{count} sin profundidad (omitidos)",
+      "depthAxis": "Profundidad (km)"
     }
   },
   "explore": {

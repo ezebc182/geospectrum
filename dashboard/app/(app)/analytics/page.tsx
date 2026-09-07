@@ -22,6 +22,7 @@ import { TremorPanel } from '@/components/analytics/TremorPanel';
 import { StationUptimeChart } from '@/components/analytics/StationUptimeChart';
 import { BValueChart } from '@/components/analytics/BValueChart';
 import { HypocenterMap } from '@/components/analytics/HypocenterMap';
+import { DepthSectionChart } from '@/components/analytics/DepthSectionChart';
 import { BarChart3 } from 'lucide-react';
 
 const PANEL_CLASS =
@@ -156,13 +157,21 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <div className={PANEL_CLASS}>
-        <HypocenterMap
-          data={hypocenters}
-          error={hypocentersError}
-          isLoading={hypocentersLoading}
-          areaBbox={region_monitorizada}
-        />
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <div className={PANEL_CLASS}>
+          <HypocenterMap
+            data={hypocenters}
+            error={hypocentersError}
+            isLoading={hypocentersLoading}
+            areaBbox={region_monitorizada}
+          />
+        </div>
+
+        {/* Los MISMOS eventos que el mapa: dónde al lado de a qué profundidad.
+            No pide nada por su cuenta — se cuelga del useSWR de hipocentros. */}
+        <div className={PANEL_CLASS}>
+          <DepthSectionChart eventos={hypocenters?.eventos ?? []} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">

@@ -796,7 +796,8 @@
     },
     "depthSection": {
       "title": "Depth section",
-      "omittedNoDepth": "{count} without depth (omitted)"
+      "omittedNoDepth": "{count} without depth (omitted)",
+      "depthAxis": "Depth (km)"
     }
   },
   "explore": {

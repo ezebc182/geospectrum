@@ -1106,7 +1106,29 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Mutación*: NO — los contadores de fetch son la aserción; una
       regresión que agregue `refreshInterval` a un panel nuevo muere en (d)/
       timers falsos de 5.6.
-- [ ] 5.9 (SHOULD, ÚLTIMA — recortable) `DepthSectionChart.tsx`.
+- [x] 5.9 (SHOULD, ÚLTIMA — recortable) `DepthSectionChart.tsx`.
+      *Resultado real (2026-09-07)*: ENTRÓ, no se recortó — el alcance real
+      fueron una lib pura de 30 líneas y un componente presentacional que se
+      cuelga del `useSWR` de hipocentros que ya tenía la página (cero requests
+      nuevas), y las claves `depthSection.*` ya existían de 5.1.
+      RED = "Failed to resolve import" en los dos tests (`./depth-section`,
+      `./DepthSectionChart`); GREEN = 5 + 5 tests.
+      Lib: 3 eventos con 1 `prof_km: null` ⇒ 2 puntos y `omitted: 1`;
+      `prof_km: NaN` ⇒ omitido y NINGÚN punto en `depthKm === 0` (la trampa
+      del `?? 0`, misma regla que M14); profundidad NEGATIVA (`-35`) SÍ entra;
+      color por `getMagnitudeColor`; lista vacía ⇒ `{points: [], omitted: 0}`.
+      Componente: `data` del `ScatterChart` mockeado trae solo los eventos con
+      profundidad; el aviso `omittedNoDepth` sale con `1` y NO aparece cuando
+      no hay omitidos; `YAxis reversed === true` (prop capturada — sin eso el
+      corte estaría dado vuelta y el DOM no lo delataría); un `Cell` por punto
+      con el color de SU magnitud (`#14b8a6` / `#dc2626`); cero eventos con
+      profundidad ⇒ no se dibuja el gráfico pero sí el aviso.
+      Desvío MENOR: el eje Y necesitaba una etiqueta y `charts.depthKm` no
+      existe en ese namespace (`tsc` lo cazó: las claves son literales
+      tipados) — se agregó `analytics.depthSection.depthAxis` a es.json Y
+      en.json; `messages/parity.test.ts` ⇒ 4 passed.
+      Montado en la página al lado del mapa, en la misma grilla de 2 columnas,
+      sobre `hypocenters?.eventos ?? []`. `tsc --noEmit -p .` exit 0.
       *Archivos*: crea `dashboard/lib/depth-section.ts` (+ `.test.ts`);
       crea `dashboard/components/analytics/DepthSectionChart.tsx`
       (+ `.test.tsx`); modifica `dashboard/app/(app)/analytics/page.tsx`
