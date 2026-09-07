@@ -883,7 +883,18 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/RsamTrendChart.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.4 (RED→GREEN) `StationUptimeChart.tsx`.
+- [x] 5.4 (RED→GREEN) `StationUptimeChart.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import";
+      GREEN = 9 tests (`[1.0, 0.0, null, 1.0]` ⇒ tira de buckets con
+      `100 %`, `zeroPercent`, `noObservation` sin `0 %`/`NaN`, `inProgress`
+      en el 4.º; `overall: null` ⇒ `noObservations` sin `\d+ %`; ranking
+      `B, D, A, C` por `data-channel` y `data` del `BarChart` mockeado solo
+      con las observadas; `stations: {}` ⇒ `noHistoryYet`; error ⇒
+      `role="alert"`; timeline del peor por defecto y cambio por botón).
+      El componente pide `getStationUptime(days, "hour")` y lee `bucket` de
+      la respuesta. Gate parcial: suite completa `112 files / 1242 tests`
+      (baseline 4.7: 108 / 1215 ⇒ +4 archivos, +27 tests, cero regresiones);
+      `tsc --noEmit` exit 0.
       *Archivos*: crea `dashboard/components/analytics/StationUptimeChart.tsx`
       (+ `.test.tsx`).
       *Qué (RED primero)*: con `ratio` `[1.0, 0.0, null, 1.0]` el 2.º bucket

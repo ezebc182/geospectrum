@@ -2,7 +2,7 @@
  * Tendencia RSAM multi-canal de /analytics (analytics-professional-panels,
  * 5.3; design Decision 3 y 8, spec dashboard-ui "Panel de tendencia RSAM").
  *
- * NO es `RsamChart.tsx` (canvas del detalle de estación, un canal, ventana
+ * NO es el canvas RSAM del detalle de estación (un canal, ventana
  * de 2 min): este es Recharts, multi-serie, con el patrón visual de
  * `MagnitudeTimeChart`. Mismo endpoint (`GET /stations/{channel}/rsam`), dos
  * consumidores.
