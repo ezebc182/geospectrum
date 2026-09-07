@@ -686,7 +686,119 @@
   "analytics": {
     "title": "Advanced Seismic Analysis",
     "loadError": "Failed to load data",
-    "fullEventsTable": "Full Events Table"
+    "fullEventsTable": "Full Events Table",
+    "loading": "Loading…",
+    "error": "This panel could not be loaded",
+    "window": {
+      "catalogDays": "Catalog window",
+      "signalWindow": "Signal window",
+      "days": "{count} days",
+      "hours": "{count} h"
+    },
+    "picker": {
+      "title": "Channels",
+      "max4": "Maximum 4 channels: remove one to add another",
+      "live": "live",
+      "chooseChannel": "Pick a channel to see this panel",
+      "loading": "Loading channel catalog…",
+      "error": "The channel catalog could not be loaded",
+      "filter": "Filter channels",
+      "selected": "{count} of {max} selected",
+      "noMatches": "No channel matches the filter"
+    },
+    "rsam": {
+      "title": "RSAM trend",
+      "loading": "Loading RSAM for {channel}…",
+      "errorFor": "{channel}: no RSAM series ({reason})",
+      "noData": "{channel}: no samples in the window",
+      "axis": "RSAM (counts)",
+      "period": "Period {seconds} s"
+    },
+    "uptime": {
+      "title": "Station uptime",
+      "ranking": "Ranking (worst first)",
+      "timeline": "Timeline for {channel}",
+      "noObservation": "not observed",
+      "noObservations": "no observations",
+      "inProgress": "in progress",
+      "noHistoryYet": "No history yet: the uptime rollup has not written any hour",
+      "zeroPercent": "0 %",
+      "observedHours": "over {hours} observed h",
+      "error": "Station uptime could not be loaded",
+      "loading": "Loading uptime…",
+      "selectStation": "Show timeline for {channel}"
+    },
+    "bValue": {
+      "title": "b-value (Gutenberg-Richter)",
+      "bValueLabel": "b-value",
+      "sigma": "± {sigma}",
+      "nAboveMc": "N above Mc: {n}",
+      "mc": "Mc: {mc}",
+      "mcAtFloor": "Mc matches the ingested catalog floor: the real Mc may be lower",
+      "insufficient": "Insufficient data: n = {n} above Mc, minimum {min}",
+      "degenerate": "Not estimable: all magnitudes above Mc are equal (n = {n}, minimum {min})",
+      "magTypes": "Magnitude types",
+      "method": "Method: {method}",
+      "nonCumulative": "N per bin",
+      "cumulative": "Cumulative N (M ≥ m)",
+      "fit": "Fit log10 N = a − b·M",
+      "magnitudeAxis": "Magnitude",
+      "countAxis": "N",
+      "error": "The b-value could not be computed",
+      "loading": "Computing b-value…"
+    },
+    "tremor": {
+      "title": "Tremor: sustained episodes",
+      "sustainedEpisode": "Sustained episode (tremor candidate)",
+      "noEpisodes": "No sustained episodes in the window",
+      "noDataForChannel": "No FDSN data for this channel in the window",
+      "fraction": "Fraction of the window in episode: {percent}",
+      "parameters": "Parameters: threshold = {factor} × median, minimum {periods} periods",
+      "threshold": "Threshold",
+      "baseline": "Median",
+      "error": "Tremor could not be characterized",
+      "loading": "Characterizing tremor…",
+      "band": {
+        "low": "low (< 2 Hz)",
+        "mid": "mid (2–5 Hz)",
+        "high": "high (> 5 Hz)",
+        "undefined": "undefined"
+      },
+      "fiSign": {
+        "lp_like": "FI < 0 (LP-like)",
+        "vt_like": "FI ≥ 0 (VT-like)",
+        "undefined": "FI undefined"
+      },
+      "columns": {
+        "start": "Start (UTC)",
+        "end": "End (UTC)",
+        "duration": "Duration",
+        "meanRatio": "Mean ratio",
+        "band": "Band",
+        "fiSign": "FI sign",
+        "onsetRatio": "Onset (ratio)"
+      }
+    },
+    "map": {
+      "title": "Hypocenters",
+      "total": "{total} events in the window",
+      "truncated": "Showing {shown} of {total}: raise the minimum magnitude to see the rest",
+      "noDepth": "no depth",
+      "error": "The hypocenter map could not be loaded",
+      "loading": "Loading hypocenters…",
+      "popup": {
+        "magnitude": "Magnitude",
+        "depth": "Depth",
+        "time": "UTC time",
+        "place": "Place",
+        "noDepth": "no depth"
+      }
+    },
+    "depthSection": {
+      "title": "Depth section",
+      "omittedNoDepth": "{count} without depth (omitted)",
+      "depthAxis": "Depth (km)"
+    }
   },
   "explore": {
     "title": "Seismic Event Explorer",

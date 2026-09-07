@@ -816,7 +816,12 @@ picker y los 5 paneles (más el corte SHOULD si entra), cada uno con su
 carga/error; los 3 paneles existentes intactos; M8 y M14 registradas.
 Recharts NO se asserta por SVG (design Decision 8).
 
-- [ ] 5.1 Claves i18n `analytics.*` (es/en) ANTES de los componentes.
+- [x] 5.1 Claves i18n `analytics.*` (es/en) ANTES de los componentes.
+      *Resultado real (2026-09-06)*: 5 sub-bloques + `loading`/`error` en
+      ambos JSON (claves extra respecto de la lista: `picker.filter/selected/
+      noMatches`, `rsam.axis/period`, `uptime.error/loading/selectStation`,
+      `bValue.nonCumulative/cumulative/fit/…Axis`, `tremor.threshold/baseline/
+      columns.*`, `map.error/loading`); `parity.test.ts` 4/4 verde.
       *Archivos*: modifica `dashboard/messages/es.json`,
       `dashboard/messages/en.json`.
       *Qué*: bajo el namespace `analytics` existente, sub-bloques `window`
@@ -836,7 +841,13 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: `parity.test.ts` verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`.
       *Mutación*: NO — `parity.test.ts` es el guardián.
-- [ ] 5.2 (RED→GREEN) `AnalyticsWindowSelector.tsx` y `StationPicker.tsx`.
+- [x] 5.2 (RED→GREEN) `AnalyticsWindowSelector.tsx` y `StationPicker.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import" en los
+      dos tests; GREEN = 5 + 7 tests. Ambos controlados (`selected`/
+      `onChange`, `catalogDays`/`signalWindowHours`); presets exportados
+      (`CATALOG_DAYS_PRESETS`, `SIGNAL_WINDOW_PRESETS`, `MAX_PICKED_CHANNELS`);
+      el picker reusa `filterCatalog` de `lib/station-search.ts` para el
+      filtro de texto.
       *Archivos*: crea `dashboard/components/analytics/AnalyticsWindowSelector.tsx`
       (+ `.test.tsx`); crea `dashboard/components/analytics/StationPicker.tsx`
       (+ `.test.tsx`).
@@ -850,7 +861,14 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: tests verdes.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/AnalyticsWindowSelector.test.tsx components/analytics/StationPicker.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.3 (RED→GREEN) `RsamTrendChart.tsx`.
+- [x] 5.3 (RED→GREEN) `RsamTrendChart.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import";
+      GREEN = 6 tests (sin canales ⇒ `chooseChannel`; 1 request por canal con
+      `(channel, window, 600)`; loader `role="status"` por serie; `B`
+      rechazado ⇒ 1 `role="alert"` con `B` y la razón, leyenda solo `A`;
+      hueco ⇒ `A: null` con `toBeNull()` sobre `data` del `LineChart`
+      mockeado y `connectNulls === false` en cada `Line`). `rg -c RsamChart`
+      sobre el componente ⇒ 0.
       *Archivos*: crea `dashboard/components/analytics/RsamTrendChart.tsx`
       (+ `.test.tsx`).
       *Qué (RED primero)*: con `getStationRsam` mockeado (resuelve `A`,
@@ -865,7 +883,18 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/RsamTrendChart.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.4 (RED→GREEN) `StationUptimeChart.tsx`.
+- [x] 5.4 (RED→GREEN) `StationUptimeChart.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import";
+      GREEN = 9 tests (`[1.0, 0.0, null, 1.0]` ⇒ tira de buckets con
+      `100 %`, `zeroPercent`, `noObservation` sin `0 %`/`NaN`, `inProgress`
+      en el 4.º; `overall: null` ⇒ `noObservations` sin `\d+ %`; ranking
+      `B, D, A, C` por `data-channel` y `data` del `BarChart` mockeado solo
+      con las observadas; `stations: {}` ⇒ `noHistoryYet`; error ⇒
+      `role="alert"`; timeline del peor por defecto y cambio por botón).
+      El componente pide `getStationUptime(days, "hour")` y lee `bucket` de
+      la respuesta. Gate parcial: suite completa `112 files / 1242 tests`
+      (baseline 4.7: 108 / 1215 ⇒ +4 archivos, +27 tests, cero regresiones);
+      `tsc --noEmit` exit 0.
       *Archivos*: crea `dashboard/components/analytics/StationUptimeChart.tsx`
       (+ `.test.tsx`).
       *Qué (RED primero)*: con `ratio` `[1.0, 0.0, null, 1.0]` el 2.º bucket
@@ -878,7 +907,29 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/StationUptimeChart.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.5 (RED→GREEN) `BValueChart.tsx`.
+- [x] 5.5 (RED→GREEN) `BValueChart.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import";
+      GREEN = 8 tests (`ok` ⇒ `b-value-number` con `1.00` y `± 0.00`, etiqueta
+      `bValueLabel`, `nAboveMc`/`mc`/`method`, `bins` como `data` del
+      `ComposedChart` mockeado y UNA `Line` con `dataKey="log10N"` cuyo primer
+      punto es `(mc, a − b·mc)`; `mcAtFloor` solo con el flag; `insufficient`
+      ⇒ `b-value-insufficient` con `23`/`50`, `queryByTestId("b-value-number")`
+      null, `queryByText(bValueLabel)` null, cero `Line` de ajuste, histograma
+      presente; body malformado `{insufficient, b: 1.2}` ⇒ ni `1.2` ni `1,2`
+      en el DOM; `degenerate` ⇒ `b-value-degenerate` y NO `b-value-insufficient`;
+      `mag_type_counts` listado; estado insuficiente en `en` sale de `en.json`;
+      `role="status"` cargando y `role="alert"` con error).
+      **DECISIÓN para 5.8 (paneles que dependen del área)**: `BValueChart` y
+      `HypocenterMap` son PRESENTACIONALES — reciben `data`/`error`/`isLoading`
+      por props del `useSWR` de la PÁGINA (`useSWR(['/analytics/b-value', days],
+      () => getBValue(days))`, ídem hipocentros, sin `refreshInterval`), y la
+      página hace `useAreaRefresh(() => Promise.all([mutate(), mutateBValue(),
+      mutateHypocenters()]))` — el `Promise.all` de las tres que exige el
+      escenario de la spec. Motivo: la revalidación por área la dispara la
+      página; con SWR adentro del componente la página tendría que conocer la
+      clave ajena y usar `mutate` global. RSAM/uptime/tremor NO dependen del
+      área y siguen autocargándose (`useEffect` + flag, 5.3/5.4/5.6). Los
+      componentes de `components/analytics/` no importan `swr`.
       *Archivos*: crea `dashboard/components/analytics/BValueChart.tsx`
       (+ `.test.tsx`).
       *Qué (RED primero)*: `status: "ok"`, `b: 0.9963`, `sigma_b: 0.0047` ⇒
@@ -895,7 +946,39 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: test verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/BValueChart.test.tsx`.
       *Mutación*: la lleva 5.7 (M8).
-- [ ] 5.6 (RED→GREEN) `TremorPanel.tsx` y `HypocenterMap.tsx`.
+- [x] 5.6 (RED→GREEN) `TremorPanel.tsx` y `HypocenterMap.tsx`.
+      *Resultado real (2026-09-07)*: RED = "Failed to resolve import" en los
+      dos tests (`./TremorPanel`, `./HypocenterMap`); GREEN = 9 + 11 tests.
+      El `TremorPanel.test.tsx` que dejó escrito el sub-agente anterior se
+      REVISÓ contra la spec y las libs de Fase 4 y se conservó SIN cambios:
+      cubre los 3 escenarios de la spec más la regla del umbral (el fixture
+      trae `threshold_rsam: 123` con `baseline 40 × factor 2.5 = 100`, así que
+      un recálculo en el cliente muere). `HypocenterMap.test.tsx` se escribió
+      de cero (nunca existió).
+      Tremor: carga sola (`useEffect` + flag, molde `RsamTrendChart`, sin
+      `swr`); el 404 es estado (`tremor-no-data`, sin `role="alert"` y sin
+      `ComposedChart`); `episodes: []` ⇒ `noEpisodes` y CERO `ReferenceArea`;
+      2 episodios ⇒ 2 filas `data-testid="tremor-episode"` con `10:00/10:40` y
+      `11:20/11:50` en UTC y 2 `ReferenceArea` con esos ms epoch exactos.
+      Mapa: PRESENTACIONAL (`data`/`error`/`isLoading` por props, Decision 8);
+      `L.map` espiado sobre el módulo REAL (no `vi.mock`: la trampa UMD-vs-ESM
+      de `map-locale-popups.test.tsx`) ⇒ `preferCanvas: true`; 3 eventos ⇒ 3
+      `circleMarker` y el de `prof_km: null` con `fillOpacity: 0`, `dashArray`
+      definido y `fillColor`/`color` ≠ `getDepthColor(0)` (M14), mientras los
+      otros dos usan `getDepthColor(50)`/`getDepthColor(200)`; popup del nulo
+      con "sin profundidad"; `truncated: true` ⇒ `hypocenter-truncated` con
+      `5000` y `3`; 120 s de timers falsos ⇒ sigue en 3 marcadores.
+      Un error PROPIO encontrado por `tsc` (no por los tests): `bandLabelKey`/
+      `fiSignLabelKey` devuelven `string` y `t()` exige el literal — se agregó
+      el tipo `TremorMessageKey` (template literal sobre `TremorBand`/
+      `TremorFiSign`) en vez de un `as any`.
+      Gate: `tsc --noEmit -p .` exit 0; suite completa `115 files / 1270 tests
+      passed` (baseline 5.5: 113 / 1250 ⇒ +2 archivos, +20 tests, cero
+      regresiones). `rg -c "AdvancedSeismicMap|SeismicMapWithCities|
+      StationMiniMap|use-area-refresh|/ws/|EventSource"` sobre
+      `HypocenterMap.tsx` ⇒ exit 1 (cero matches), y el propio test lo
+      chequea leyendo el fuente con `readFileSync` (suma `setInterval`,
+      `refreshInterval` y `from 'swr'`).
       *Archivos*: crea `dashboard/components/analytics/TremorPanel.tsx`
       (+ `.test.tsx`); crea `dashboard/components/analytics/HypocenterMap.tsx`
       (+ `.test.tsx`).
@@ -920,7 +1003,35 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: tests verdes.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/TremorPanel.test.tsx components/analytics/HypocenterMap.test.tsx`.
       *Mutación*: la lleva 5.7 (M14); M9 es QA (7.6).
-- [ ] 5.7 **Mutaciones críticas del frontend**.
+- [x] 5.7 **Mutaciones críticas del frontend**.
+      *Resultado real (2026-09-07)*: las 2 filas nuevas están en
+      `mutation-log.md` (sección "Fase 5"), con `rg`, rojo real, `cmp` de la
+      reversión y verde posterior.
+      **M8**: la primera versión (solo `const estimate = data.status === 'ok'
+      ? … : null` → leer `b` del body sin mirar `status`) **SOBREVIVIÓ**, 8/8
+      verdes: el ternario `{notEstimable ? … : …}` ya tapa la rama del número,
+      así que `estimate` por sí solo es inalcanzable fuera de `ok` y esa
+      mutación no cambia nada observable. La mutación VÁLIDA agrega
+      `{notEstimable ? (` → `{false ? (`, y ahí sí muere: `4 failed | 4
+      passed`, con `Unable to find an element by:
+      [data-testid="b-value-insufficient"]` (y `-degenerate`) en los cuatro
+      tests — incluidos los dos que nombra la tabla (`insufficient` muestra
+      número, body malformado muestra `1.2`). Reversión `cmp` idéntica, 8
+      passed.
+      **M14**: `getDepthColor(ev.prof_km ?? 0)` exige ADEMÁS neutralizar la
+      guarda (`if (ev.prof_km === null || !Number.isFinite(ev.prof_km))` →
+      `if (false)`), porque con la guarda viva el `??` es código muerto y la
+      mutación no mutaría nada. Aplicada así mata `3 failed | 21 passed`, en
+      las DOS capas: 4.5 (`markerStyle > prof_km null …` y `prof_km NaN se
+      trata como sin profundidad, no como 0`) y 5.6 (`HypocenterMap > el
+      evento con prof_km null lleva el estilo no-depth …`), las tres con
+      `AssertionError: expected 'depth' to be 'no-depth'`. Reversión `cmp`
+      idéntica; `components/analytics` + `lib/hypocenter-markers.test.ts` ⇒
+      `8 files, 68 passed`.
+      Entre corridas se borró `node_modules/.vite`: la caché de transform de
+      vitest sirve el módulo viejo cuando mutación y reversión caen en el
+      mismo segundo (la versión JS de `mutacion-sd-mismo-segundo-pyc-viejo`).
+      Cada mutación se confirmó con `git diff --stat` ANTES de correr tests.
       *Archivos*: `dashboard/components/analytics/BValueChart.tsx`,
       `dashboard/lib/hypocenter-markers.ts` (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |
@@ -930,7 +1041,42 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: 2 filas más en `mutation-log.md` con `rg`, rojo,
       reversión por `cmp`, verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics lib/hypocenter-markers.test.ts`.
-- [ ] 5.8 (RED→GREEN) Página `/analytics` — estado, grilla, `useAreaRefresh`.
+- [x] 5.8 (RED→GREEN) Página `/analytics` — estado, grilla, `useAreaRefresh`.
+      *Resultado real (2026-09-07)*: RED = 7 tests fallando por timeout (la
+      página vieja no monta el `StationPicker`, así que `renderLoaded` nunca
+      encuentra el botón del canal); GREEN = 7 passed. Cubre (a) carga inicial
+      con 1 `/report` SIN query string + 1 `b-value?days=30` + 1
+      `hipocentros?days=30` + 1 `station-uptime?days=30&bucket=hour` y CERO
+      RSAM/tremor; (b) preset `7` ⇒ los tres de catálogo con `days=7` y 0 a
+      `/report`/RSAM/tremor; (c) 2 canales + preset `6 h` ⇒ 2 RSAM + 1 tremor
+      con `end − start = 6 h` exactos y 0 a catálogo/`/report`, con el tremor
+      apuntando al PRIMER canal (el endpoint es por canal); (d) uptime en 503 ⇒
+      `role="alert"` propio del panel, sin `loadError` de página y con
+      `MagnitudeTimeChart`/`DepthDistributionChart`/`EventsTable` montados;
+      (e) `emitAreaChanged()` ⇒ 1 `/report` + 1 b-value + 1 hipocentros y CERO
+      uptime/RSAM/tremor, más un test del `Promise.all` que retiene la
+      respuesta de hipocentros y observa que el indicador de `AreaRefreshIndicator`
+      sigue encendido con el reporte y el b-value ya resueltos.
+      Falsabilidad VERIFICADA por mutación (no la pedía la tarea, pero el
+      `Promise.all` es la cláusula normativa): `Promise.all([mutate(),
+      mutateBValue(), mutateHypocenters()])` → `mutate()` ⇒ `2 failed | 5
+      passed` (mueren los DOS tests de área); reversión con `cmp` idéntica y 7
+      passed. Entre corridas se borró `node_modules/.vite`.
+      Dos hallazgos del RED que corrigieron el TEST, no el código: el ranking
+      de uptime también renderiza botones con el nombre del canal (las
+      búsquedas del picker se acotan con `within(getByTestId('station-picker'))`),
+      y `RsamTrendChart` reinicia sus series al cambiar la lista de canales, así
+      que elegir 2 canales dispara 3 RSAM — el conteo del escenario (c) espera a
+      que esa cascada se asiente antes de resetear el contador.
+      `HypocenterMap` y `recharts` se mockean en el test de página (el mapa es
+      presentacional: el mock no esconde ninguna request, y Leaflet real exige
+      el andamio entero de `HypocenterMap.test.tsx`).
+      `areaBbox` sale de `report.region_monitorizada` — mismo shape que
+      `AreaBbox` y ya viene en el body: encuadrar el mapa NO agrega una request
+      a `/areas/active`.
+      Aceptación verificada: `git diff --stat` de los tres componentes
+      existentes VACÍO; `tsc --noEmit -p .` exit 0; los 3 archivos de la
+      verificación ⇒ `3 files / 34 tests passed`.
       *Archivos*: modifica `dashboard/app/(app)/analytics/page.tsx`; crea
       `dashboard/app/(app)/analytics/page.test.tsx` (molde
       `app/(app)/feedback/page.test.tsx`; `fetch` mockeado con contador por
@@ -960,7 +1106,29 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Mutación*: NO — los contadores de fetch son la aserción; una
       regresión que agregue `refreshInterval` a un panel nuevo muere en (d)/
       timers falsos de 5.6.
-- [ ] 5.9 (SHOULD, ÚLTIMA — recortable) `DepthSectionChart.tsx`.
+- [x] 5.9 (SHOULD, ÚLTIMA — recortable) `DepthSectionChart.tsx`.
+      *Resultado real (2026-09-07)*: ENTRÓ, no se recortó — el alcance real
+      fueron una lib pura de 30 líneas y un componente presentacional que se
+      cuelga del `useSWR` de hipocentros que ya tenía la página (cero requests
+      nuevas), y las claves `depthSection.*` ya existían de 5.1.
+      RED = "Failed to resolve import" en los dos tests (`./depth-section`,
+      `./DepthSectionChart`); GREEN = 5 + 5 tests.
+      Lib: 3 eventos con 1 `prof_km: null` ⇒ 2 puntos y `omitted: 1`;
+      `prof_km: NaN` ⇒ omitido y NINGÚN punto en `depthKm === 0` (la trampa
+      del `?? 0`, misma regla que M14); profundidad NEGATIVA (`-35`) SÍ entra;
+      color por `getMagnitudeColor`; lista vacía ⇒ `{points: [], omitted: 0}`.
+      Componente: `data` del `ScatterChart` mockeado trae solo los eventos con
+      profundidad; el aviso `omittedNoDepth` sale con `1` y NO aparece cuando
+      no hay omitidos; `YAxis reversed === true` (prop capturada — sin eso el
+      corte estaría dado vuelta y el DOM no lo delataría); un `Cell` por punto
+      con el color de SU magnitud (`#14b8a6` / `#dc2626`); cero eventos con
+      profundidad ⇒ no se dibuja el gráfico pero sí el aviso.
+      Desvío MENOR: el eje Y necesitaba una etiqueta y `charts.depthKm` no
+      existe en ese namespace (`tsc` lo cazó: las claves son literales
+      tipados) — se agregó `analytics.depthSection.depthAxis` a es.json Y
+      en.json; `messages/parity.test.ts` ⇒ 4 passed.
+      Montado en la página al lado del mapa, en la misma grilla de 2 columnas,
+      sobre `hypocenters?.eventos ?? []`. `tsc --noEmit -p .` exit 0.
       *Archivos*: crea `dashboard/lib/depth-section.ts` (+ `.test.ts`);
       crea `dashboard/components/analytics/DepthSectionChart.tsx`
       (+ `.test.tsx`); modifica `dashboard/app/(app)/analytics/page.tsx`
@@ -976,7 +1144,24 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: tests verdes o tarea explícitamente diferida.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run lib/depth-section.test.ts components/analytics/DepthSectionChart.test.tsx`.
       *Mutación*: no aplica.
-- [ ] 5.10 Gate de fase.
+- [x] 5.10 Gate de fase.
+      *Resultado real (2026-09-07)*: suite COMPLETA `118 files / 1287 tests
+      passed` (baseline 5.7: 115 / 1270 ⇒ +3 archivos, +17 tests, que son
+      EXACTAMENTE los de 5.8 (7) y 5.9 (5 + 5); cero regresiones).
+      `tsc --noEmit -p .` exit 0.
+      `git diff --stat main -- AdvancedSeismicMap SeismicMapWithCities
+      MagnitudeTimeChart DepthDistributionChart EventsTable RsamChart` ⇒
+      VACÍO: los seis componentes protegidos siguen byte a byte como en `main`
+      en toda la rama, no solo en el último commit.
+      Auditoría estática adelantada de 6.2: `rg` de
+      `RsamChart|AdvancedSeismicMap|SeismicMapWithCities|StationMiniMap|
+      use-area-refresh|EventSource|/ws/|from 'swr'` sobre
+      `components/analytics --glob '!*.test.tsx'` ⇒ exit 1 (cero matches),
+      mientras que la PÁGINA sí usa `useSWR`/`use-area-refresh` (6 matches),
+      que es exactamente el reparto que fija la Decisión 8.
+      El gate es de frontend: no pide la suite de Python, así que los 9 fallos
+      preexistentes de `tests/integration/test_ws_events.py` quedan fuera de
+      esta fase (siguen anotados para 7.x).
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run && ./node_modules/.bin/tsc --noEmit` — suite COMPLETA contra la baseline de 4.1 (delta = solo tests nuevos) y `git diff --stat -- dashboard/components/AdvancedSeismicMap.tsx dashboard/components/SeismicMapWithCities.tsx dashboard/components/MagnitudeTimeChart.tsx dashboard/components/DepthDistributionChart.tsx dashboard/components/EventsTable.tsx dashboard/components/RsamChart.tsx` vacío.
       *Mutación*: no aplica.
 

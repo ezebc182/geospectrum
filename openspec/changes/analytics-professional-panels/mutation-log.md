@@ -385,3 +385,28 @@ el script `next lint`, que pediría crearla de forma interactiva); no se
 corrió y no se anota como corrido. `git status`: solo los 12 archivos nuevos
 en `dashboard/lib/` más `.env.example` y el proposal del asistente, que
 estaban modificados desde antes y no se tocan ni se stagean.
+
+## Fase 5 — mutaciones críticas del frontend (tarea 5.7, 2026-09-07)
+
+Las dos que nombra `tasks.md`. `M14` ya se había verificado a nivel lib en
+Fase 4 (fila `MF5`); acá se repite con la forma LITERAL que pide la tarea
+(`getDepthColor(ev.prof_km ?? 0)`, que exige además desactivar la guarda de
+`markerStyle` — con la guarda viva el `??` es código muerto y la mutación no
+mutaría nada) y se comprueba que mata TAMBIÉN el test del componente de 5.6,
+no solo el del lib.
+
+| # | Archivo | Mutación | Salida de `rg` (confirma el cambio) | Test que se puso rojo | Revertido |
+|---|---|---|---|---|---|
+| M8 | `dashboard/components/analytics/BValueChart.tsx` | leer `b` del body sin mirar `status` y renderizar el número igual: `const estimate = data.status === 'ok' ? formatB(data.b, data.sigma_b) : null;` → `const loose = data as unknown as {b?: number; sigma_b?: number}; const estimate = loose.b !== undefined ? formatB(loose.b, loose.sigma_b ?? 0) : null;` **y** `{notEstimable ? (` → `{false ? (` (las dos: con solo la primera la mutación SOBREVIVIÓ — el ternario de `notEstimable` seguía tapando la rama del número, o sea que `estimate` por sí solo es inalcanzable fuera de `ok`) | `98:  const loose = data as unknown as { b?: number; …` + `110:      {false ? (`; `git diff --stat` ⇒ `2 insertions(+), 2 deletions(-)` | `insufficient: tarjeta con 23 y 50, SIN número, SIN etiqueta de b-value y SIN recta`, `body malformado {status: insufficient, b: 1.2} ⇒ el 1.2 NO aparece`, `degenerate: su propio texto, NO el de insuficiente, sin número` y `el estado no estimable sale de en.json con la UI en inglés` — `Unable to find an element by: [data-testid="b-value-insufficient"]` / `[data-testid="b-value-degenerate"]` (4 failed, 4 passed) | `cp` + `cmp` ⇒ `REVERT_CMP_IDENTICAL`; 8 passed |
+| M14 | `dashboard/lib/hypocenter-markers.ts` | `markerStyle`: guarda `if (ev.prof_km === null \|\| !Number.isFinite(ev.prof_km)) {` → `if (false) {` y `const color = getDepthColor(ev.prof_km);` → `const color = getDepthColor(ev.prof_km ?? 0);` (el evento sin profundidad toma el color de `< 70 km`) | `49:  if (false) {` + `61:  const color = getDepthColor(ev.prof_km ?? 0);`; `git diff --stat` ⇒ `2 insertions(+), 2 deletions(-)` | 4.5: `markerStyle > prof_km null ⇒ kind "no-depth", …, NO el color de <70 km (R26/M14)` y `markerStyle > prof_km NaN se trata como sin profundidad, no como 0`; 5.6: `HypocenterMap > el evento con prof_km null lleva el estilo no-depth, NO el color de <70 km (M14)` — las tres `AssertionError: expected 'depth' to be 'no-depth'` (3 failed, 21 passed) | ídem; `components/analytics` + `lib/hypocenter-markers.test.ts` ⇒ 8 files, 68 passed |
+
+Entre cada corrida se borró `node_modules/.vite` (la caché de transform de
+vitest sirve el módulo viejo si la mutación y la reversión caen en el mismo
+segundo — la trampa `mutacion-sd-mismo-segundo-pyc-viejo` del proyecto, que en
+JS es la caché de Vite y no el `.pyc`).
+
+**Lección de M8**: una mutación "obvia" que no cambia lo observable no prueba
+nada. La primera versión tocaba únicamente el cálculo de `estimate` y los 8
+tests siguieron verdes — no porque los tests fueran flojos, sino porque el
+`notEstimable ? … : …` ya blinda la rama. La mutación válida es la que
+realmente pone el número en pantalla con `status !== "ok"`, y ESA muere.
