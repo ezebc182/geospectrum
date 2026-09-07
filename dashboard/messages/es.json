@@ -686,6 +686,12 @@
   "analytics": {
     "title": "Análisis Sísmico Avanzado",
     "loadError": "Error al cargar datos",
+    "tabs": {
+      "label": "Secciones de análisis",
+      "seismicity": "Sismicidad",
+      "signal": "Señal",
+      "network": "Red"
+    },
     "fullEventsTable": "Tabla Completa de Eventos",
     "loading": "Cargando…",
     "error": "No se pudo cargar este panel",

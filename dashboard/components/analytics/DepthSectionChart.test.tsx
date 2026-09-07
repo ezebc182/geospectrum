@@ -24,6 +24,8 @@ const scatterChartProps: Array<Record<string, unknown>> = [];
 const yAxisProps: Array<Record<string, unknown>> = [];
 const scatterProps: Array<Record<string, unknown>> = [];
 const cellProps: Array<Record<string, unknown>> = [];
+const gridProps: Array<Record<string, unknown>> = [];
+const tooltipProps: Array<Record<string, unknown>> = [];
 
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -45,8 +47,14 @@ vi.mock('recharts', () => ({
     return null;
   },
   ZAxis: () => null,
-  CartesianGrid: () => null,
-  Tooltip: () => null,
+  CartesianGrid: (props: Record<string, unknown>) => {
+    gridProps.push(props);
+    return null;
+  },
+  Tooltip: (props: Record<string, unknown>) => {
+    tooltipProps.push(props);
+    return null;
+  },
 }));
 
 function evento(over: Partial<SeismicEvent> = {}): SeismicEvent {
@@ -80,6 +88,8 @@ afterEach(() => {
   yAxisProps.length = 0;
   scatterProps.length = 0;
   cellProps.length = 0;
+  gridProps.length = 0;
+  tooltipProps.length = 0;
 });
 
 describe('DepthSectionChart', () => {
@@ -106,6 +116,50 @@ describe('DepthSectionChart', () => {
     renderChart([evento({ prof_km: 10 })]);
 
     expect(yAxisProps[0].reversed).toBe(true);
+  });
+
+  it('el dominio del eje arranca en 0 y crece hacia abajo, sin negativos inventados', () => {
+    // El bug: sin `domain` explicito Recharts "redondeaba" el eje hacia el
+    // otro lado y dibujaba 0 arriba y -105 subiendo. La profundidad es
+    // positiva hacia ABAJO, asi que el dominio tiene que arrancar en 0.
+    renderChart([evento({ id: 'a', prof_km: 105 })]);
+
+    const [min] = yAxisProps[0].domain as [number, unknown];
+    expect(min).toBe(0);
+  });
+
+  it('los ticks del eje se muestran como profundidad POSITIVA', () => {
+    renderChart([evento({ prof_km: 105 })]);
+
+    const formatter = yAxisProps[0].tickFormatter as (v: number) => string;
+    expect(formatter(105)).toBe('105');
+    expect(formatter(0)).toBe('0');
+  });
+
+  it('un evento SOBRE el nivel del mar mantiene su signo negativo', () => {
+    // Dato real de prod (EMSC/USGS): hipocentro sobre el nivel del mar. Se
+    // dibuja ARRIBA de la linea de 0 y el tick conserva el signo — decir "35"
+    // donde el dato es -35 seria mentir sobre la ubicacion del evento.
+    renderChart([evento({ id: 'aereo', prof_km: -35 })]);
+
+    const data = scatterChartProps[0].data as Array<{ depthKm: number }>;
+    expect(data[0].depthKm).toBe(-35);
+
+    const [min] = yAxisProps[0].domain as [number, unknown];
+    expect(min, 'con un evento sobre el nivel del mar el eje tiene que abrirse').toBe(-35);
+
+    const formatter = yAxisProps[0].tickFormatter as (v: number) => string;
+    expect(formatter(-35)).toBe('-35');
+  });
+
+  it('el cromo del grafico sale de tokens del tema, no de hex fijos', () => {
+    renderChart([evento({ prof_km: 10 })]);
+
+    expect(gridProps[0].stroke).toMatch(/^hsl\(var\(--/);
+    expect(yAxisProps[0].stroke).toMatch(/^hsl\(var\(--/);
+    const contentStyle = tooltipProps[0].contentStyle as Record<string, string>;
+    expect(contentStyle.backgroundColor).toMatch(/^hsl\(var\(--/);
+    expect(contentStyle.color).toMatch(/^hsl\(var\(--/);
   });
 
   it('cada punto lleva el color de SU magnitud', () => {
