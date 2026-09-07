@@ -1003,7 +1003,35 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: tests verdes.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run components/analytics/TremorPanel.test.tsx components/analytics/HypocenterMap.test.tsx`.
       *Mutación*: la lleva 5.7 (M14); M9 es QA (7.6).
-- [ ] 5.7 **Mutaciones críticas del frontend**.
+- [x] 5.7 **Mutaciones críticas del frontend**.
+      *Resultado real (2026-09-07)*: las 2 filas nuevas están en
+      `mutation-log.md` (sección "Fase 5"), con `rg`, rojo real, `cmp` de la
+      reversión y verde posterior.
+      **M8**: la primera versión (solo `const estimate = data.status === 'ok'
+      ? … : null` → leer `b` del body sin mirar `status`) **SOBREVIVIÓ**, 8/8
+      verdes: el ternario `{notEstimable ? … : …}` ya tapa la rama del número,
+      así que `estimate` por sí solo es inalcanzable fuera de `ok` y esa
+      mutación no cambia nada observable. La mutación VÁLIDA agrega
+      `{notEstimable ? (` → `{false ? (`, y ahí sí muere: `4 failed | 4
+      passed`, con `Unable to find an element by:
+      [data-testid="b-value-insufficient"]` (y `-degenerate`) en los cuatro
+      tests — incluidos los dos que nombra la tabla (`insufficient` muestra
+      número, body malformado muestra `1.2`). Reversión `cmp` idéntica, 8
+      passed.
+      **M14**: `getDepthColor(ev.prof_km ?? 0)` exige ADEMÁS neutralizar la
+      guarda (`if (ev.prof_km === null || !Number.isFinite(ev.prof_km))` →
+      `if (false)`), porque con la guarda viva el `??` es código muerto y la
+      mutación no mutaría nada. Aplicada así mata `3 failed | 21 passed`, en
+      las DOS capas: 4.5 (`markerStyle > prof_km null …` y `prof_km NaN se
+      trata como sin profundidad, no como 0`) y 5.6 (`HypocenterMap > el
+      evento con prof_km null lleva el estilo no-depth …`), las tres con
+      `AssertionError: expected 'depth' to be 'no-depth'`. Reversión `cmp`
+      idéntica; `components/analytics` + `lib/hypocenter-markers.test.ts` ⇒
+      `8 files, 68 passed`.
+      Entre corridas se borró `node_modules/.vite`: la caché de transform de
+      vitest sirve el módulo viejo cuando mutación y reversión caen en el
+      mismo segundo (la versión JS de `mutacion-sd-mismo-segundo-pyc-viejo`).
+      Cada mutación se confirmó con `git diff --stat` ANTES de correr tests.
       *Archivos*: `dashboard/components/analytics/BValueChart.tsx`,
       `dashboard/lib/hypocenter-markers.ts` (mutar y REVERTIR).
       | # | Mutación | Test que DEBE morir |
