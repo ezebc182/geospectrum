@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { toDepthSectionPoints } from './depth-section';
+import { depthAxisDomain, formatDepthTick, toDepthSectionPoints } from './depth-section';
 import type { SeismicEvent } from './types';
 
 function evento(over: Partial<SeismicEvent> = {}): SeismicEvent {
@@ -68,5 +68,43 @@ describe('toDepthSectionPoints', () => {
 
   it('lista vacía ⇒ sin puntos y sin omitidos', () => {
     expect(toDepthSectionPoints([])).toEqual({ points: [], omitted: 0 });
+  });
+});
+
+describe('depthAxisDomain', () => {
+  it('con profundidades positivas el eje arranca en 0', () => {
+    // La superficie es la referencia del corte: el eje no empieza en el
+    // evento más superficial, empieza en 0.
+    expect(depthAxisDomain([10, 105, 44])).toEqual([0, 105]);
+  });
+
+  it('un evento sobre el nivel del mar abre el eje hacia arriba', () => {
+    expect(depthAxisDomain([-35, 20])).toEqual([-35, 20]);
+  });
+
+  it('sin puntos devuelve un rango degenerado pero usable', () => {
+    expect(depthAxisDomain([])).toEqual([0, 1]);
+  });
+
+  it('todos a la misma profundidad no colapsa el eje', () => {
+    // min === max dejaría el eje sin alto y el punto no se vería.
+    const [min, max] = depthAxisDomain([50, 50]);
+    expect(min).toBeLessThan(max);
+  });
+});
+
+describe('formatDepthTick', () => {
+  it('la profundidad se muestra positiva hacia abajo', () => {
+    expect(formatDepthTick(105)).toBe('105');
+    expect(formatDepthTick(0)).toBe('0');
+  });
+
+  it('una profundidad negativa CONSERVA el signo', () => {
+    // Es un evento sobre el nivel del mar: mostrar "35" mentiría.
+    expect(formatDepthTick(-35)).toBe('-35');
+  });
+
+  it('redondea los decimales que mete el algoritmo de ticks', () => {
+    expect(formatDepthTick(33.333333)).toBe('33.3');
   });
 });
