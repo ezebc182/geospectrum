@@ -841,7 +841,13 @@ Recharts NO se asserta por SVG (design Decision 8).
       *Aceptación*: `parity.test.ts` verde.
       *Verificación*: `cd dashboard && ./node_modules/.bin/vitest run messages/parity.test.ts`.
       *Mutación*: NO — `parity.test.ts` es el guardián.
-- [ ] 5.2 (RED→GREEN) `AnalyticsWindowSelector.tsx` y `StationPicker.tsx`.
+- [x] 5.2 (RED→GREEN) `AnalyticsWindowSelector.tsx` y `StationPicker.tsx`.
+      *Resultado real (2026-09-06)*: RED = "Failed to resolve import" en los
+      dos tests; GREEN = 5 + 7 tests. Ambos controlados (`selected`/
+      `onChange`, `catalogDays`/`signalWindowHours`); presets exportados
+      (`CATALOG_DAYS_PRESETS`, `SIGNAL_WINDOW_PRESETS`, `MAX_PICKED_CHANNELS`);
+      el picker reusa `filterCatalog` de `lib/station-search.ts` para el
+      filtro de texto.
       *Archivos*: crea `dashboard/components/analytics/AnalyticsWindowSelector.tsx`
       (+ `.test.tsx`); crea `dashboard/components/analytics/StationPicker.tsx`
       (+ `.test.tsx`).
