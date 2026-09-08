@@ -99,9 +99,15 @@ const broadcastFetcher = (): Promise<SeismicEvent[]> =>
 // clase fuera del build de Tailwind (el JIT solo ve strings literales).
 // Stack de tiras finas de espectrograma (estilo RaspberryShake): se van
 // agregando a medida que live-channels ofrece estaciones transmitiendo.
-// 8 tiras de 44px entran sin scroll junto a las analíticas; el corte es
-// por espacio, no por dato — el panel del HUD no scrollea (pedido del
-// usuario: el único scroll vive en el feed de eventos).
+// 8 tiras de 44px + las analíticas piden ~784px de alto.
+//
+// El HUD del aside SÍ scrollea (decisión revisada 2026-09-07, revierte el
+// "el HUD no scrollea" original). Motivo: al pasar /globe a embebido por
+// defecto (37ed42c) el aside perdió los ~120px del chrome de la página, y
+// en viewports de laptop (768px) el bloque de espectrogramas —que es el
+// último del stack— quedaba recortado por el overflow. Una beta tester lo
+// reportó como "no se alcanza a ver el panel de abajo a la izquierda".
+// El scroll del feed de eventos sigue siendo independiente de este.
 const SPECTRO_STRIPS = 8;
 // El ancho de la tira: el panel izquierdo mide w-72 (288px) menos p-3.
 const SPECTRO_WIDTH = 240;
@@ -684,7 +690,7 @@ export function GlobeBroadcastOverlay({
       {/* Panel de analíticas: regiones más activas + actividad por hora.
           Una serie y un tono por gráfico; los valores van directos. */}
       {(panels.analytics || panels.spectrograms) && (
-      <aside className="absolute top-14 bottom-9 left-0 z-10 w-72 space-y-3 overflow-hidden p-3">
+      <aside className="absolute top-14 bottom-9 left-0 z-10 w-72 space-y-3 overflow-y-auto p-3">
         {panels.analytics && (
         <section className="rounded-lg border border-border bg-background/85 p-3 backdrop-blur">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

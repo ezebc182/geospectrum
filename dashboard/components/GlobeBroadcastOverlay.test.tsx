@@ -309,6 +309,23 @@ describe('GlobeBroadcastOverlay', () => {
     expect(root?.className).not.toContain('fixed');
     expect((root as HTMLElement).style.height).toBe('720px');
   });
+
+  // Regresión del bug reportado en beta: con /globe embebido por defecto
+  // (37ed42c) el aside perdió ~120px y en viewports de laptop recortaba el
+  // bloque de espectrogramas, que es el último del stack.
+  //
+  // OJO CON EL ALCANCE DE ESTE TEST: jsdom no hace layout — todo elemento
+  // mide 0×0 y `overflow` no recorta nada — así que NO puede afirmar que las
+  // tiras "se vean". Lo único verificable acá es que el contenedor DECLARE
+  // scroll vertical en vez de esconder lo que desborda. Que efectivamente se
+  // vean es QA visual, no unit test.
+  it('el aside declara scroll vertical, no overflow oculto', () => {
+    const { container } = renderOverlay({ fullscreen: false, embeddedHeight: 720 });
+    const aside = container.querySelector('aside');
+    expect(aside).toBeTruthy();
+    expect(aside?.className).toContain('overflow-y-auto');
+    expect(aside?.className).not.toContain('overflow-hidden');
+  });
 });
 
 describe('cartelera (billboard)', () => {
