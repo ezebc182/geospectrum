@@ -254,36 +254,43 @@ no protege nada de lo que dice proteger**. Un test que no se demostró capaz de 
 4. Observar el **rojo** y anotar **qué test exacto falló** (nombre del `it`, no "falló la suite").
 5. Revertir (`git checkout -- <archivo>`), volver a correr, confirmar verde.
 
-- [ ] **4.1** **Mutación 1** — hex de cromo en `MagnitudeTimeChart.tsx`: cambiar
+- [x] **4.1** **Mutación 1** — hex de cromo en `MagnitudeTimeChart.tsx`: cambiar
   `stroke={CHART_GRID_STROKE}` por `stroke="#374151"` en el `CartesianGrid`.
   - *Aceptación*: falla **`MagnitudeTimeChart.test.tsx`** (el assert de cromo de 3.1.2) **Y**
     falla **`chart-chrome.test.ts`** (regla "no hardcodea hex" **y** regla "consume los tokens
     compartidos", esta última solo si el import queda sin usar — anotar cuál de las dos disparó).
     Los dos rojos son obligatorios: es lo que prueba que el descubrimiento alcanzó el archivo.
+  - *Resultado (2026-09-09)*: los dos rojos, **pero** de `chart-chrome.test.ts` disparó **solo**
+    "no hardcodea hex". La regla "consume los tokens compartidos" quedó verde porque el import
+    sigue en uso (los dos ejes usan `CHART_AXIS_STROKE`, misma sentencia de import). Detalle en
+    `mutation-log.md`.
   - *Spec*: Requirement "Verificación por mutación documentada", punto 1.
 
-- [ ] **4.2** **Mutación 2** — hex de cromo en `DepthDistributionChart.tsx`: cambiar
+- [x] **4.2** **Mutación 2** — hex de cromo en `DepthDistributionChart.tsx`: cambiar
   `stroke={CHART_AXIS_STROKE}` del `XAxis` por `stroke="#9ca3af"`.
   - *Aceptación*: falla `DepthDistributionChart.test.tsx` **Y** `chart-chrome.test.ts`.
   - *Spec*: punto 2.
 
-- [ ] **4.3** **Mutación 3** — quitar `itemStyle={CHART_TOOLTIP_ITEM_STYLE}` de la `<Tooltip>` de
+- [x] **4.3** **Mutación 3** — quitar `itemStyle={CHART_TOOLTIP_ITEM_STYLE}` de la `<Tooltip>` de
   `DepthDistributionChart.tsx`, dejando `contentStyle` y `labelStyle`.
   - *Aceptación*: falla el caso "usa las tres props si estila el tooltip por defecto" de
     `chart-chrome.test.ts` **Y** el caso 3 de `DepthDistributionChart.test.tsx`.
   - *Spec*: punto 3.
 
-- [ ] **4.4** **Mutación 4** — restringir el descubrimiento de `chart-chrome.test.ts` a un solo
+- [x] **4.4** **Mutación 4** — restringir el descubrimiento de `chart-chrome.test.ts` a un solo
   directorio: comentar la raíz `COMPONENTS_DIR` para que solo escanee `components/analytics/`
   (5 archivos, por debajo del piso de 7).
   - *Aceptación*: falla el test de piso de la tarea 2.2, **por no alcanzar los 7**, no por
     reportar cero fallos sobre cero archivos. El mensaje de error debe listar los 5 encontrados.
   - *Spec*: punto 4; escenario "Un descubrimiento vacío o incompleto no pasa".
 
-- [ ] **4.5** Dejar el resultado de las cuatro mutaciones **escrito** en el cuerpo del PR: una
+- [x] **4.5** Dejar el resultado de las cuatro mutaciones **escrito** en el cuerpo del PR: una
   tabla `mutación → archivo tocado → `git diff --stat` no vacío (sí/no) → test(s) que fallaron →
   verde al revertir`. La spec lo exige explícitamente ("el resultado de las cuatro mutaciones
   MUST quedar escrito en el registro de la fase").
+  - *Hecho (2026-09-09)*: la tabla vive en
+    `openspec/changes/analytics-redesign/mutation-log.md`, misma convención que los demás
+    changes del repo. Copiarla al cuerpo del PR cuando se abra.
 
 ---
 
