@@ -804,6 +804,54 @@
       "title": "Corte de profundidad",
       "omittedNoDepth": "{count} sin profundidad (omitidos)",
       "depthAxis": "Profundidad (km)"
+    },
+    "glossary": {
+      "trigger": "Ver definición de {term}",
+      "close": "Cerrar",
+      "bValue": {
+        "term": "b-value",
+        "definition": "Pendiente de la relación de Gutenberg-Richter entre magnitud y frecuencia de ocurrencia: cuánto más frecuentes son los eventos chicos que los grandes. Se estima por máxima verosimilitud (Aki-Utsu) sobre los eventos por encima de Mc.",
+        "note": "Valores cercanos a 1 son típicos en catálogos tectónicos."
+      },
+      "mc": {
+        "term": "Mc",
+        "definition": "Magnitud de completitud: la magnitud a partir de la cual se considera que el catálogo registró todos los eventos ocurridos.",
+        "note": "Los eventos por debajo de Mc existen, pero no están todos registrados; por eso no entran al ajuste."
+      },
+      "rsam": {
+        "term": "RSAM",
+        "definition": "Real-time Seismic Amplitude Measurement: amplitud media de la señal en ventanas sucesivas de duración fija. Mide cuánta energía llega al sensor.",
+        "note": "No dice de dónde viene esa energía."
+      },
+      "fi": {
+        "term": "FI",
+        "definition": "Índice de frecuencia: logaritmo del cociente entre la energía en una banda alta y la energía en una banda baja. Negativo significa que predominan las bajas frecuencias; positivo, que predominan las altas."
+      },
+      "uptimeRatio": {
+        "term": "uptime ratio",
+        "definition": "Fracción de columnas efectivamente escritas sobre las esperadas, contada solo en las horas observadas.",
+        "note": "Sin ninguna hora observada el valor es «sin dato», que no es lo mismo que cero."
+      }
+    },
+    "warnings": {
+      "b-value": {
+        "mc-at-catalog-floor": "Mc ({mc}) coincide con la magnitud más baja que se ingiere en el catálogo: ese valor refleja el piso de ingesta, no la sensibilidad real de la red. El b-value estimado sobre esa Mc no es confiable.",
+        "mixed-magnitude-scales": "El catálogo de la ventana mezcla {count} escalas de magnitud ({scales}). La relación de Gutenberg-Richter asume una sola escala: al mezclarlas, la pendiente ajustada combina mediciones que no son directamente comparables.",
+        "unknown-magnitude-type": "Hay {count} eventos sin tipo de magnitud declarado. Se cuentan en el ajuste sin que se sepa en qué escala fueron medidos.",
+        "small-sample-above-mc": "La muestra sobre Mc ({nAboveMc} eventos) supera el mínimo de {minEvents}, pero por poco margen. Cuanto más chica es la muestra, más ancha es la incertidumbre del ajuste.",
+        "most-events-below-mc": "Solo {nAboveMc} de los {nTotal} eventos de la ventana quedan por encima de Mc: el resto no participa del ajuste.",
+        "derived-sigma-interval": "El rango {low} – {high} es un intervalo derivado en esta pantalla como b ± 1,96 σ, bajo supuesto de normalidad, a partir de la σ de Shi y Bolt (1982) que devuelve el backend (σ = {sigma}). El backend no calcula ese rango."
+      },
+      "tremor": {
+        "median-baseline-masking": "La fracción de la ventana clasificada como episodio es {fraction}. La línea base es la mediana de la ventana: si los episodios ocupan más de la mitad, la mediana sube con ellos y un episodio puede quedar por debajo del umbral sin detectarse.",
+        "no-baseline": "No hubo muestras con valor en la ventana, así que no hay mediana con la que calcular un umbral. Por eso no se dibuja la línea de umbral.",
+        "emergent-onset": "Al menos un episodio arranca muy por debajo de su propio pico: la relación entre la amplitud inicial y la máxima (onset ratio) es baja, lo que describe un comienzo gradual y no un golpe seco.",
+        "undefined-band": "En al menos un episodio no se pudo determinar la banda de frecuencia dominante: su clasificación espectral no está disponible."
+      },
+      "uptime": {
+        "channels-below-threshold": "{count} canales quedan por debajo del {threshold} de columnas esperadas en la ventana.",
+        "channels-unobserved": "{count} canales no tienen ninguna hora observada en la ventana: no se los midió, que no es lo mismo que haber medido cero."
+      }
     }
   },
   "explore": {
