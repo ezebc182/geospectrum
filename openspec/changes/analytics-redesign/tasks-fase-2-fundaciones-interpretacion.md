@@ -207,7 +207,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
 
 ## Grupo 1: Tipos, constantes y `derivedBInterval`
 
-- [ ] **1.1 (RED)** Crear `dashboard/lib/analytics-warnings.test.ts` con los casos de
+- [x] **1.1 (RED)** Crear `dashboard/lib/analytics-warnings.test.ts` con los casos de
   `derivedBInterval` y de las constantes, **antes** de que exista el módulo:
   1. `NORMAL_95_FACTOR` es `1.96`, `UPTIME_ATTENTION_THRESHOLD` es `0.9`,
      `SMALL_SAMPLE_FACTOR` es `1.5`, `TREMOR_BASELINE_MASK_FRACTION` es `0.5`,
@@ -223,7 +223,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
   - *Spec*: Requirement "Catálogo de reglas de advertencia de b-value" (párrafo del
     factor `1.96`).
 
-- [ ] **1.2 (GREEN)** Crear `dashboard/lib/analytics-warnings.ts` con **solo** los
+- [x] **1.2 (GREEN)** Crear `dashboard/lib/analytics-warnings.ts` con **solo** los
   tipos, las constantes y `derivedBInterval`. Sin las funciones de reglas todavía.
   - `import type { BValueResponse, TremorResponse } from './analytics';` —
     **solo tipos**, nunca el transporte (el módulo trae `fetch`/`ApiStatusError`;
@@ -248,7 +248,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
     → 0 matches (la lib es pura).
   - *Spec*: Requirement "Tipos de la capa de advertencias".
 
-- [ ] **1.3 (MUTACIÓN 2.4)** `NORMAL_95_FACTOR = 1.96` → `2`.
+- [x] **1.3 (MUTACIÓN 2.4)** `NORMAL_95_FACTOR = 1.96` → `2`.
   - *Aceptación*: falla el caso 2 de 1.1 (`derivedBInterval(1.0, 0.1)` deja de dar
     `{0.804, 1.196}`). **El caso 4 NO debe fallar** — compara contra la constante,
     así que muta con ella; eso está bien y hay que anotarlo: es el caso que prueba
@@ -257,7 +257,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
 
 ## Grupo 2: Las reglas de b-value
 
-- [ ] **2.1 (RED)** Extender `analytics-warnings.test.ts` con los escenarios de
+- [x] **2.1 (RED)** Extender `analytics-warnings.test.ts` con los escenarios de
   b-value de la spec, uno por `it`, sobre `bValueWarnings(response)`:
   1. Respuesta sana (`status:'ok'`, `mc_at_catalog_floor:false`, una sola escala,
      `n_above_mc` holgado, `n_above_mc/n_total >= 0.5`) → **array vacío salvo**
@@ -306,7 +306,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
   - *Spec*: Requirements "Lib pura de reglas de confiabilidad" y "Catálogo de reglas
     de advertencia de b-value" (los 12 escenarios).
 
-- [ ] **2.2 (GREEN)** Implementar `bValueWarnings(response: BValueResponse)` en
+- [x] **2.2 (GREEN)** Implementar `bValueWarnings(response: BValueResponse)` en
   `analytics-warnings.ts`, más el helper de orden.
   - Las 6 reglas del catálogo final (**C2**), **en el orden de declaración** de la
     tabla de C2; el `sort` es **estable por severidad** (`critical` → `warning` →
@@ -322,26 +322,26 @@ natural que el design sugiere (entre el paso 6 y el 7).
   - *Aceptación*: los 18 casos de 2.1 en verde. `derivedBInterval` reusada, no
     reimplementada inline.
 
-- [ ] **2.3 (MUTACIÓN 2.1)** `mc_at_catalog_floor === true` → `=== false`.
+- [x] **2.3 (MUTACIÓN 2.1)** `mc_at_catalog_floor === true` → `=== false`.
   - *Aceptación*: falla el caso 2 de 2.1. Anotar `it` y mensaje.
 
-- [ ] **2.4 (MUTACIÓN 2.2)** en esa misma regla, `severity: 'critical'` → `'warning'`.
+- [x] **2.4 (MUTACIÓN 2.2)** en esa misma regla, `severity: 'critical'` → `'warning'`.
   - *Aceptación*: **dos rojos obligatorios** — el assert de severidad del caso 2
     **y** el caso 17 ("solo una regla emite `critical`"). Si solo cae uno, el caso
     17 no protege lo que dice.
 
-- [ ] **2.5 (MUTACIÓN nueva, exigida por la spec)** `Object.keys(...).length > 1`
+- [x] **2.5 (MUTACIÓN nueva, exigida por la spec)** `Object.keys(...).length > 1`
   → `> 0` en `mixed-magnitude-scales`.
   - *Aceptación*: falla el caso 5 (una sola escala no advierte). Es el punto 2 de
     las ocho mutaciones mínimas de la spec, que el design **no** listó.
 
-- [ ] **2.6 (MUTACIÓN 2.6)** quitar el `sort` por severidad.
+- [x] **2.6 (MUTACIÓN 2.6)** quitar el `sort` por severidad.
   - *Aceptación*: falla el caso 16. Si queda verde, el orden lo estaba dando el
     orden de los `if` por casualidad y el contrato no está protegido.
 
 ## Grupo 3: Las reglas de tremor
 
-- [ ] **3.1 (RED)** Extender el test con los escenarios de tremor sobre
+- [x] **3.1 (RED)** Extender el test con los escenarios de tremor sobre
   `tremorWarnings(response)`:
   1. `tremor_fraction: 0.62` → `median-baseline-masking` `warning`; con `0.5`
      exacto **no** aparece (corte estrictamente `>`). Los dos en el mismo `it`.
@@ -358,28 +358,28 @@ natural que el design sugiere (entre el paso 6 y el 7).
   7. Ninguna banda `'undefined'` → no aparece.
   - *Spec*: Requirement "Catálogo de reglas de advertencia de tremor" (5 escenarios).
 
-- [ ] **3.2 (GREEN)** Implementar `tremorWarnings(response: TremorResponse)` con las
+- [x] **3.2 (GREEN)** Implementar `tremorWarnings(response: TremorResponse)` con las
   4 reglas de C2. `no-baseline` compara `=== null` **explícito**, nunca
   `!baseline_rsam`. Las dos reglas por episodio usan `.some(...)` — una advertencia
   por regla, no por episodio.
   - *Aceptación*: los 7 casos verdes.
 
-- [ ] **3.3 (MUTACIÓN 2.7)** `tremor_fraction > 0.5` → `> 0.9`.
+- [x] **3.3 (MUTACIÓN 2.7)** `tremor_fraction > 0.5` → `> 0.9`.
   - *Aceptación*: falla el caso 1 (`0.62` deja de emitir).
 
-- [ ] **3.4 (MUTACIÓN nueva, exigida por la spec)** `>` → `>=` en
+- [x] **3.4 (MUTACIÓN nueva, exigida por la spec)** `>` → `>=` en
   `median-baseline-masking`.
   - *Aceptación*: falla la mitad "`0.5` exacto no aparece" del caso 1. Es el punto 6
     de las ocho mínimas de la spec.
 
-- [ ] **3.5 (MUTACIÓN 2.5 / punto 5 de la spec)** `baseline_rsam === null` →
+- [x] **3.5 (MUTACIÓN 2.5 / punto 5 de la spec)** `baseline_rsam === null` →
   `!baseline_rsam`.
   - *Aceptación*: falla el caso 3 (la línea base en cero empieza a emitir
     `no-baseline`). Es la mutación que prueba que `null ≠ 0` está protegido.
 
 ## Grupo 4: Uptime — partición y advertencias
 
-- [ ] **4.1 (RED)** Extender el test con los escenarios de uptime sobre
+- [x] **4.1 (RED)** Extender el test con los escenarios de uptime sobre
   `partitionUptimeChannels(overall)` y `uptimeWarnings(overall)` (**C4**):
   1. `{ A:0.89, B:0.9, C:0.91 }` → `needsAttention` contiene `A`; `B` y `C` en
      `healthy` (corte **estrictamente** `< 0.9`).
@@ -398,7 +398,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
      de `below-threshold` es 0 y no existe esa advertencia.
   - *Spec*: Requirement "Regla de umbral de uptime «qué mirar hoy»" (5 escenarios).
 
-- [ ] **4.2 (GREEN)** Implementar `partitionUptimeChannels` y, **encima de ella**,
+- [x] **4.2 (GREEN)** Implementar `partitionUptimeChannels` y, **encima de ella**,
   `uptimeWarnings` (**C4** — cero duplicación del umbral).
   - Comentario en español sobre `unobserved` explicando por qué es un grupo aparte,
     citando `src/services/station_uptime.py` y `lib/uptime-series.ts:5-13`.
@@ -406,12 +406,12 @@ natural que el design sugiere (entre el paso 6 y el 7).
     de strings) por nombre — determinista, no dependiente de `Object.keys`.
   - *Aceptación*: los 7 casos verdes.
 
-- [ ] **4.3 (MUTACIÓN 2.3 / punto 4 de la spec)** `UPTIME_ATTENTION_THRESHOLD = 0.9`
+- [x] **4.3 (MUTACIÓN 2.3 / punto 4 de la spec)** `UPTIME_ATTENTION_THRESHOLD = 0.9`
   → `0.95`.
   - *Aceptación*: falla el caso 1 (`B:0.9` y `C:0.91` pasan a `needsAttention`).
     El mensaje de error debe decir el valor esperado, no solo "expected true".
 
-- [ ] **4.4 (MUTACIÓN 2.5-bis / punto 5 de la spec, variante uptime)** en
+- [x] **4.4 (MUTACIÓN 2.5-bis / punto 5 de la spec, variante uptime)** en
   `partitionUptimeChannels`, tratar `ratio === null` como `0`.
   - *Aceptación*: **dos rojos** — el caso 2 (`A` deja de estar en `unobserved`) y el
     caso 7 (`A` empieza a contar en `below-threshold`). Es la invariante `null ≠ 0`
@@ -419,7 +419,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
 
 ## Grupo 5: El catálogo de términos del glosario (TS)
 
-- [ ] **5.1 (RED)** Crear `dashboard/lib/glossary.test.ts`:
+- [x] **5.1 (RED)** Crear `dashboard/lib/glossary.test.ts`:
   1. `GLOSSARY_TERM_IDS` tiene **exactamente 5** entradas y coincide con las claves
      de `GLOSSARY_MESSAGE_KEYS`.
   2. Para cada id, `GLOSSARY_MESSAGE_KEYS[id]` existe y es no vacío.
@@ -427,7 +427,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
      `tremor_fraction` (decisión 1 de la spec, hecha test).
   - *Spec*: Requirement "Glosario v1 de exactamente cinco términos".
 
-- [ ] **5.2 (GREEN)** Crear `dashboard/lib/glossary.ts` con
+- [x] **5.2 (GREEN)** Crear `dashboard/lib/glossary.ts` con
   `GlossaryTermId` (unión cerrada de `'b-value' | 'mc' | 'rsam' | 'fi' | 'uptime-ratio'`),
   `GLOSSARY_TERM_IDS` (`readonly`, `as const`) y
   `GLOSSARY_MESSAGE_KEYS: Record<GlossaryTermId, string>` mapeando kebab→camelCase.
@@ -436,7 +436,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
   - *Aceptación*: 5.1 en verde. Sin prosa de definiciones en este archivo: el
     contenido vive en i18n (Decisión 5).
 
-- [ ] **5.3 (MUTACIÓN 2.15)** borrar `'fi'` del `Record` (dejando la unión intacta).
+- [x] **5.3 (MUTACIÓN 2.15)** borrar `'fi'` del `Record` (dejando la unión intacta).
   - *Aceptación*: **dos rojos, y uno de ellos NO es vitest.**
     (a) `./node_modules/.bin/tsc --noEmit` falla: el `Record` tipado por la unión no
     compila si falta una entrada — es la única mutación de la fase que se verifica
@@ -446,7 +446,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
 
 ## Grupo 6: Contenido i18n (glosario + mensajes de advertencia)
 
-- [ ] **6.1** Agregar a `dashboard/messages/es.json` **y** `dashboard/messages/en.json`,
+- [x] **6.1** Agregar a `dashboard/messages/es.json` **y** `dashboard/messages/en.json`,
   **en el mismo commit** (si no, `parity.test.ts` se pone roja sola):
   - `analytics.glossary`: `trigger` (aria-label, interpola `{term}`), `close`, y los
     **5 términos** en camelCase (`bValue`, `mc`, `rsam`, `fi`, `uptimeRatio`), cada
@@ -474,7 +474,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
     fuera de las comas de cierre de bloque.
   - *Spec*: Requirements "Glosario v1…" y "Toda clave nueva explica la métrica…".
 
-- [ ] **6.2 (RED→GREEN)** Crear
+- [x] **6.2 (RED→GREEN)** Crear
   `dashboard/components/analytics/interpretation-copy.test.ts` — el test de **límite
   de dominio** sobre las claves i18n. Va **acá y no al final**: si la prosa cruza la
   línea, mejor enterarse antes de construir componentes sobre ella.
@@ -498,24 +498,24 @@ natural que el design sugiere (entre el paso 6 y el 7).
   - *Spec*: Requirement "Toda clave nueva explica la métrica y no diagnostica el
     fenómeno" (4 escenarios).
 
-- [ ] **6.3 (MUTACIÓN 2.13 / punto 7 de la spec)** meter
+- [x] **6.3 (MUTACIÓN 2.13 / punto 7 de la spec)** meter
   `"…esto indica tremor volcánico…"` dentro de una `definition` de `es.json`.
   - *Aceptación*: falla `interpretation-copy.test.ts` **nombrando la clave y el
     término**. Verificar que el mensaje efectivamente los nombra; si dice solo
     "expected false to be true", el test está mal escrito y hay que arreglarlo.
 
-- [ ] **6.4 (MUTACIÓN nueva — variante EN del punto 7)** meter `imminent` en una
+- [x] **6.4 (MUTACIÓN nueva — variante EN del punto 7)** meter `imminent` en una
   clave **solo de `en.json`**.
   - *Aceptación*: falla igual. Es el escenario "El test cubre los dos idiomas" de
     la spec, que ni el design ni la lista de 15 mutaciones cubría: la 2.13 solo
     muta español.
 
-- [ ] **6.5 (MUTACIÓN 2.14 / punto 8 de la spec)** renombrar una clave nueva en
+- [x] **6.5 (MUTACIÓN 2.14 / punto 8 de la spec)** renombrar una clave nueva en
   `en.json` sin tocar `es.json`.
   - *Aceptación*: falla `messages/parity.test.ts` (que **no se modifica** en esta
     fase: se cumple, no se toca) indicando la clave ausente.
 
-- [ ] **6.6 (MUTACIÓN nueva — punto 8 de la spec, primera mitad)** agregar una
+- [x] **6.6 (MUTACIÓN nueva — punto 8 de la spec, primera mitad)** agregar una
   **sexta** entrada al glosario, en los dos idiomas.
   - *Aceptación*: falla el caso 1 de `glossary.test.ts`… **solo si ese test cuenta
     contra el JSON**. Con `GLOSSARY_TERM_IDS` puro TS no lo hace.
@@ -526,7 +526,7 @@ natural que el design sugiere (entre el paso 6 y el 7).
   - *Aceptación (segunda mitad)*: agregar la sexta entrada **en un solo idioma** hace
     fallar **además** `parity.test.ts`.
 
-- [ ] **6.7** Correr la suite completa y confirmar el estado del BLOQUE A.
+- [x] **6.7** Correr la suite completa y confirmar el estado del BLOQUE A.
   `export PATH="$HOME/.nvm/versions/node/v22.16.0/bin:$PATH" && cd dashboard && ./node_modules/.bin/vitest run`
   - *Aceptación*: 0 fallos, total **estrictamente mayor** que 1362.
   - *Aceptación*: `git diff --name-only` del bloque toca **exactamente 7 archivos**:
