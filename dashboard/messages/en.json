@@ -833,6 +833,11 @@
         "note": "With no observed hour the value is “no data”, which is not the same as zero."
       }
     },
+    "severity": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Note"
+    },
     "warnings": {
       "b-value": {
         "mc-at-catalog-floor": "Mc ({mc}) matches the lowest magnitude ingested into the catalogue: that value reflects the ingestion floor, not the actual sensitivity of the network. The b-value estimated on that Mc is not reliable.",

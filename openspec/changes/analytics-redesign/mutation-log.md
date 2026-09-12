@@ -180,3 +180,107 @@ Test Files  1 failed | 126 passed (127)
 duplicados con la firma vieja), anteriores a esta rama y fuera de su alcance.
 
 `./node_modules/.bin/tsc --noEmit` sin errores.
+
+---
+
+# Fase 2 (fundaciones de interpretación) — BLOQUE B
+
+## Baseline (2026-09-12, ANTES de mutar)
+
+Rama `feat/analytics-redesign-fase2b`, sacada de `feat/analytics-redesign-fase2`
+(Bloque A, 7 commits). Suite al arrancar el bloque:
+
+```
+Test Files  1 failed | 126 passed (127)
+     Tests  14 failed | 1406 passed (1420)
+```
+
+Los 14 rojos son los MISMOS de `main` (`chart-chrome.test.ts`, bloques `it.each`
+duplicados), anteriores a esta rama y fuera de su alcance. Se arreglan en el PR #58.
+
+## Protocolo aplicado
+
+Idéntico al del Bloque A, con la lección de aquel bloque ya incorporada: **el
+estado verde se COMMITEA antes de mutar**. Sobre archivos sin trackear
+`git diff --stat` es ciego y `git checkout --` no revierte nada, así que una
+mutación sobre un archivo nuevo sin commitear no se puede ni verificar ni deshacer.
+
+Por cada mutación: `Edit` (nunca `sd`) → `git diff --stat` NO vacío → correr →
+anotar el `it` exacto y el mensaje → `git checkout -- <archivo>` → verde y
+`git status --porcelain` limpio.
+
+## Tabla de mutaciones — BLOQUE B (5)
+
+| # | Archivo | Mutación | `git diff --stat` | Test(s) rojo(s) | Revertido |
+|---|---------|----------|-------------------|-----------------|-----------|
+| 8.3 | `components/analytics/AnalyticsWarning.tsx` | `role` de `critical`: `'alert'` → `'status'` | 1 insert/1 delete ✅ | **4 rojos**, con el obligatorio: `solo critical lleva role="alert"; warning e info llevan role="status"` → `TestingLibraryElementError: Unable to find an accessible element with the role "alert"`. Cayeron además los tres casos que localizan el nodo por su rol | ✅ |
+| 8.4 | `components/analytics/AnalyticsWarning.tsx` | quitar el `<Icon aria-hidden="true" />` (quedan texto y color) | 1 delete ✅ | **3 rojos**, uno por severidad: `la severidad {critical,warning,info} es alcanzable como texto y además lleva un icono con aria-hidden` → `expected null not to be null`. Es el escenario "no depende ÚNICAMENTE del color" | ✅ |
+| 8.5 | `components/analytics/AnalyticsWarning.tsx` | `text-destructive` → `text-[#ef4444]` | 1/1 ✅ | **2 rojos, los dos predichos.** (a) `el fuente no contiene ningún literal hexadecimal de color` → `expected [ '#ef4444' ] to deeply equal []`. (b) `las clases de color son tokens declarados, no valores computados`. Prueba que el hueco de `chart-chrome.test.ts` (que NO descubre este archivo, porque no importa recharts) queda tapado por el test propio del componente | ✅ |
+| 9.3 | `components/analytics/GlossaryTerm.tsx` | `<button type="button">` → `<span>` | 2 inserts/3 deletes ✅ | **3 rojos, y caen los DOS que la tarea exigía distinguir.** (a) `el trigger es un role="button" con nombre accesible salido de i18n` → `Unable to find an accessible element with the role "button" and name "Ver definición de b-value"`. (b) `abre con teclado y al cerrar con Esc el foco vuelve al trigger` → `Unable to find an accessible element with the role "button"`. Que caiga (b) es lo que prueba que el caso 2 SÍ ejercita el teclado y no es decorativo | ✅ |
+| 9.4 | `components/ui/popover.tsx` | `<PopoverPrimitive.Portal>` → `<PopoverPrimitive.Portal forceMount>` | 1/1 ✅ | **3 rojos**, con el obligatorio: `con el popover cerrado la definición NO está en el DOM` → `AssertionError: expected <p class="text-muted-foreground"></p> to be null`. El contenido cerrado aparece en el DOM, que es exactamente el defecto que el caso 3 vigila | ✅ |
+
+## Desvío: la 9.4 sobre `PopoverContent` quedó VERDE, y el test NO estaba mal
+
+La tarea 9.4 dice "agregar `forceMount` al `Content`". Aplicada literalmente
+—`<PopoverContent forceMount>` en `GlossaryTerm.tsx`— el caso 3 quedó **VERDE**, y
+la primera lectura (la que sugiere la propia tarea) sería "el caso 3 mira
+visibilidad en vez de presencia".
+
+**Esa lectura es falsa, y se descartó MIDIENDO, no opinando.** Una sonda
+descartable imprimió el `document.body.innerHTML` con el popover cerrado: la
+definición **no estaba en el DOM** (`BODY incluye definicion? false`, 562 bytes de
+body). O sea: la mutación **no mutó el comportamiento**, y una mutación que no
+muta no prueba nada — ni a favor ni en contra del test.
+
+La causa es de Radix: para montar el subárbol cerrado, `forceMount` va en el
+**`Portal`**, no en el `Content`. Como `components/ui/popover.tsx` hardcodea su
+propio `<PopoverPrimitive.Portal>` sin pasarle esa prop, un `forceMount` puesto en
+el `Content` por un consumidor **queda inerte**: el Portal nunca monta, así que no
+hay nada que forzar.
+
+Aplicada donde el defecto REALMENTE vive —el `Portal` del wrapper— la mutación
+tiró el rojo predicho y el caso 3 lo atrapó por PRESENCIA
+(`expected <p …></p> to be null`). Registrado en la tabla como 9.4.
+
+**Lo que esto deja aprendido**, y vale para la Fase 3: el riesgo de montar
+contenido cerrado no está en el call-site, está en el wrapper. Un consumidor no
+puede reintroducirlo por su cuenta, y el test que lo vigila tiene que apuntarle al
+wrapper. El caso 5 de `GlossaryTerm.test.tsx` prohíbe además el literal en el
+fuente del componente, que es la otra mitad de la defensa.
+
+## Desvío: `fireEvent.keyDown` de Enter no abre el Popover en jsdom
+
+Al escribir el caso 2 (apertura por teclado), un `fireEvent.keyDown` de Enter
+dejaba `aria-expanded="false"`. Otra sonda midió las tres vías: `keyDown` →
+`false`; `click` → `true`; `pointerDown`+`mouseDown` → `true`.
+
+La causa no es Radix sino jsdom: un navegador real, al activar un `<button>` con
+Enter/Space, deriva un `click` nativo — jsdom no. El helper `activarConTeclado`
+del test emite la secuencia completa (`keyDown` → `keyUp` → `click`), que es lo
+que replica el browser. Quedarse en `keyDown` habría sido testear jsdom y no el
+componente.
+
+El caso 2 igual protege lo que dice: assertea que el trigger sea focusable y
+`instanceof HTMLButtonElement`, y la mutación 9.3 (`<button>` → `<span>`) lo tira
+al piso. `@testing-library/user-event` **no está instalado** en este repo y esta
+fase no agrega dependencias; el camino usado es el mismo que ya emplea
+`app/(app)/analytics/page.test.tsx`.
+
+## Verde al revertir (2026-09-12)
+
+Suite completa desde `dashboard/`, árbol limpio:
+
+```
+Test Files  1 failed | 128 passed (129)
+     Tests  14 failed | 1419 passed (1433)
+```
+
+**1419 verdes** contra los 1406 del Bloque A: +13 tests, cero regresiones. Los 14
+rojos siguen siendo los MISMOS de `main`, en `chart-chrome.test.ts`, que **no fue
+modificado** — los dos componentes nuevos no importan `recharts` a propósito, así
+que no entran al conjunto que descubre ni mueven su piso de 7.
+
+`./node_modules/.bin/tsc --noEmit` sin errores.
+
+**Ninguna mutación del bloque quedó en verde.** La 9.4 lo pareció, y la
+verificación demostró que el problema era la mutación (inerte), no el test.

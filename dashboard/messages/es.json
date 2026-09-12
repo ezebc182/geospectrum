@@ -833,6 +833,11 @@
         "note": "Sin ninguna hora observada el valor es «sin dato», que no es lo mismo que cero."
       }
     },
+    "severity": {
+      "critical": "Crítico",
+      "warning": "Advertencia",
+      "info": "Nota"
+    },
     "warnings": {
       "b-value": {
         "mc-at-catalog-floor": "Mc ({mc}) coincide con la magnitud más baja que se ingiere en el catálogo: ese valor refleja el piso de ingesta, no la sensibilidad real de la red. El b-value estimado sobre esa Mc no es confiable.",
