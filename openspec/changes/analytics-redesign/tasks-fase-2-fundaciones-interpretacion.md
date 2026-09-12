@@ -546,7 +546,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
 
 ## Grupo 7: El wrapper de Popover
 
-- [ ] **7.1** Crear `dashboard/components/ui/popover.tsx`, wrapper de `Popover` del
+- [x] **7.1** Crear `dashboard/components/ui/popover.tsx`, wrapper de `Popover` del
   paquete unificado **`radix-ui`** (`import { Popover as PopoverPrimitive } from "radix-ui"`),
   calcado del molde de `dashboard/components/ui/tooltip.tsx` — **del archivo
   existente, no de la doc de shadcn**. Dos detalles se copian a propósito:
@@ -569,7 +569,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
 
 ## Grupo 8: `AnalyticsWarning`
 
-- [ ] **8.1 (RED)** Crear
+- [x] **8.1 (RED)** Crear
   `dashboard/components/analytics/AnalyticsWarning.test.tsx` con
   `@testing-library/react` + **`IntlTestProvider` de `@/lib/test-intl`** (nunca
   `NextIntlClientProvider` a mano: pasar `timeZone` en un test es el falso verde que
@@ -595,7 +595,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
      es la **declaración**, y el contraste real lo ve el usuario.
   - *Spec*: Requirement "Componente de advertencia reutilizable" (3 escenarios).
 
-- [ ] **8.2 (GREEN)** Crear `dashboard/components/analytics/AnalyticsWarning.tsx`.
+- [x] **8.2 (GREEN)** Crear `dashboard/components/analytics/AnalyticsWarning.tsx`.
   - `switch (warning.id)` para narrowar `params` al shape exacto de esa regla — es
     el mecanismo que ata el contrato lib↔clave i18n en compile-time (Decisión 2).
   - Severidad → token + icono + `role`, según la tabla de la Decisión 7 del design,
@@ -617,21 +617,21 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
   - *Aceptación*: `./node_modules/.bin/vitest run components/analytics/chart-chrome.test.ts`
     sigue descubriendo **exactamente 7** archivos y pasa **sin modificaciones**.
 
-- [ ] **8.3 (MUTACIÓN 2.8)** `role` de `critical`: `'alert'` → `'status'`.
+- [x] **8.3 (MUTACIÓN 2.8)** `role` de `critical`: `'alert'` → `'status'`.
   - *Aceptación*: falla el caso 2 de 8.1.
 
-- [ ] **8.4 (MUTACIÓN 2.9)** quitar el icono (dejar solo texto y color).
+- [x] **8.4 (MUTACIÓN 2.9)** quitar el icono (dejar solo texto y color).
   - *Aceptación*: falla el caso 1 ("no depende solo del color"): no encuentra el
     icono con `aria-hidden`.
 
-- [ ] **8.5 (MUTACIÓN 2.10)** `text-destructive` → `text-[#ef4444]`.
+- [x] **8.5 (MUTACIÓN 2.10)** `text-destructive` → `text-[#ef4444]`.
   - *Aceptación*: falla el caso 5 (prohibición de hex) **y/o** el 6 (token
     declarado). Anotar cuál(es). Es la mutación que prueba que el hueco de
     `chart-chrome.test.ts` está tapado **por el test propio del componente**.
 
 ## Grupo 9: `GlossaryTerm`
 
-- [ ] **9.1 (RED)** Crear `dashboard/components/analytics/GlossaryTerm.test.tsx`,
+- [x] **9.1 (RED)** Crear `dashboard/components/analytics/GlossaryTerm.test.tsx`,
   con `IntlTestProvider` y **`userEvent`, nunca `fireEvent.click` pelado**:
   1. Renderizado para `'b-value'`: el trigger es un `role="button"` real, con
      nombre accesible que sale de `analytics.glossary.trigger`.
@@ -646,7 +646,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
   5. **Cero hex** en el fuente y **cero `forceMount`** (lectura del fuente).
   - *Spec*: Requirement "Componente de término de glosario reutilizable" (4 escenarios).
 
-- [ ] **9.2 (GREEN)** Crear `dashboard/components/analytics/GlossaryTerm.tsx`.
+- [x] **9.2 (GREEN)** Crear `dashboard/components/analytics/GlossaryTerm.tsx`.
   - Firma: `{ id: GlossaryTermId; label?: string }`. `id` tipado con la unión cerrada
     de `lib/glossary.ts`: pedir `'sigma_b'` **no compila** (escenario de la spec), no
     falla en runtime.
@@ -659,12 +659,12 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
   - Sin `t.rich`: las definiciones son párrafos planos (Decisión 5).
   - *Aceptación*: los 5 casos de 9.1 verdes.
 
-- [ ] **9.3 (MUTACIÓN 2.11)** `<button>` → `<span onClick>`.
+- [x] **9.3 (MUTACIÓN 2.11)** `<button>` → `<span onClick>`.
   - *Aceptación*: falla el caso 1 (`role="button"`) y/o el 2 (apertura con Enter).
     Anotar cuál(es): si **solo** cae el 1, el caso 2 no está probando el teclado y
     hay que reescribirlo.
 
-- [ ] **9.4 (MUTACIÓN 2.12)** agregar `forceMount` al `Content`.
+- [x] **9.4 (MUTACIÓN 2.12)** agregar `forceMount` al `Content`.
   - *Aceptación*: falla el caso 3 (contenido presente en el DOM con el popover
     cerrado). Si queda verde, el caso 3 está mirando visibilidad en vez de presencia
     — y jsdom no mide visibilidad: sería verde falso.
@@ -673,7 +673,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
 
 # BLOQUE C — cierre
 
-- [ ] **10.1** **Suite completa en verde.**
+- [x] **10.1** **Suite completa en verde.**
   `export PATH="$HOME/.nvm/versions/node/v22.16.0/bin:$PATH" && cd dashboard && ./node_modules/.bin/vitest run`
   - *Aceptación*: 0 fallos, 0 saltados. Total **estrictamente mayor que 1362**
     (baseline de Fase 1, `mutation-log.md`). Anotar el número exacto.
@@ -683,7 +683,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
     `recharts`, así que no entran al conjunto ni mueven el piso. Si alguien lo
     "arregla" creyendo que los perdió, salió del alcance.
 
-- [ ] **10.2** **Invariantes de "la fase no altera nada".**
+- [x] **10.2** **Invariantes de "la fase no altera nada".**
   - `git diff --stat src/` → **vacío**. Es el riesgo #1 del change: la invariante de
     tres casos de `_ratio()` en `station_uptime.py` es correcta y está blindada por 8
     tests. Una sola línea ahí y la fase no cierra.
@@ -698,7 +698,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
     Ni uno más.
   - *Spec*: Requirement "La fase no altera la página ni el backend".
 
-- [ ] **10.3** **Registrar las mutaciones en
+- [x] **10.3** **Registrar las mutaciones en
   `openspec/changes/analytics-redesign/mutation-log.md`**, en la misma tabla y con la
   misma convención que las 4 de la Fase 1.
   - Una sección `## Fase 2` con: baseline (total de tests antes), el protocolo
@@ -716,7 +716,7 @@ Pasos 7-9 del orden de construcción. Segundo PR. Sigue sin cablearse a ningún 
     debía atraparla no protege lo que dice y hay que arreglarlo **antes** de cerrar.
   - *Spec*: Requirement "Verificación por mutación de toda regla del catálogo".
 
-- [ ] **10.4** **Commits**, conventional commits, mensaje en español, **sin ninguna
+- [x] **10.4** **Commits**, conventional commits, mensaje en español, **sin ninguna
   atribución de IA** (ni `Co-Authored-By`, ni "Generated with Claude Code", ni nada
   equivalente, en el título, el cuerpo o el PR). Sugeridos, uno por bloque:
   - BLOQUE A:
