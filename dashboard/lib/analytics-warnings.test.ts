@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import type { BValueNotEstimable, BValueOk, BValueResponse } from './analytics';
+import type { BValueNotEstimable, BValueOk, TremorEpisode, TremorResponse } from './analytics';
 import {
   type AnalyticsWarning,
   EMERGENT_ONSET_RATIO,
@@ -17,6 +17,7 @@ import {
   UPTIME_ATTENTION_THRESHOLD,
   bValueWarnings,
   derivedBInterval,
+  tremorWarnings,
 } from './analytics-warnings';
 
 /** Respuesta sana: `ok`, un solo tipo de magnitud, muestra holgada. */
@@ -228,24 +229,32 @@ describe('bValueWarnings', () => {
     expect(listed).toContain('b-value.mixed-magnitude-scales');
   });
 
-  it('el orden es determinista y el critical va primero', () => {
+  it('el orden es por severidad, no por orden de declaración de las reglas', () => {
+    // El caso está ELEGIDO para que los dos órdenes NO coincidan:
+    // `unknown-magnitude-type` (info) se declara ANTES que
+    // `small-sample-above-mc` (warning). Sin el sort por severidad, el info
+    // saldría primero. Un caso donde ambos órdenes coinciden deja la mutación
+    // "quitar el sort" en verde y no prueba nada — ya pasó (mutación 2.6).
     const response = okResponse({
       mc_at_catalog_floor: true,
       mc: 2.1,
       mag_type_counts: { ml: 100, unknown: 4 },
       n_total: 400,
-      n_above_mc: 120,
+      n_above_mc: 60,
+      min_events: 50,
     });
     const first = ids(bValueWarnings(response));
     const second = ids(bValueWarnings(response));
     expect(first).toEqual(second);
     expect(first[0]).toBe('b-value.mc-at-catalog-floor');
+    expect(first.indexOf('b-value.small-sample-above-mc')).toBeLessThan(
+      first.indexOf('b-value.unknown-magnitude-type'),
+    );
+
     const severities = bValueWarnings(response).map((w) => w.severity);
     expect(severities.indexOf('critical')).toBe(0);
-    // `info` nunca precede a un `warning`.
-    const lastWarning = severities.lastIndexOf('warning');
-    const firstInfo = severities.indexOf('info');
-    if (lastWarning >= 0 && firstInfo >= 0) expect(firstInfo).toBeGreaterThan(lastWarning);
+    // Ningún `info` precede a un `warning`.
+    expect(severities.indexOf('info')).toBeGreaterThan(severities.lastIndexOf('warning'));
   });
 
   it('critical es escaso: mc-at-catalog-floor es la ÚNICA regla que puede emitirlo', () => {
@@ -281,5 +290,94 @@ describe('bValueWarnings', () => {
         expect(['string', 'number']).toContain(typeof value);
       }
     }
+  });
+});
+
+/** Episodio mínimo: solo importan `onset_ratio` y `band` para estas reglas. */
+function episode(overrides: Partial<TremorEpisode> = {}): TremorEpisode {
+  return {
+    start: '2026-09-01T00:00:00Z',
+    end: '2026-09-01T00:10:00Z',
+    samples: 40,
+    duration_s: 600,
+    mean_ratio: 2.4,
+    peak_rsam: 120,
+    peak_ratio: 3.1,
+    onset_ratio: 0.8,
+    mean_dominant_hz: 3.2,
+    mean_fi: -0.4,
+    band: 'mid',
+    fi_sign: 'lp_like',
+    ...overrides,
+  };
+}
+
+function tremorResponse(overrides: Partial<TremorResponse> = {}): TremorResponse {
+  return {
+    channel: 'AR.CHE.00.HHZ',
+    sampling_rate: 100,
+    period_seconds: 15,
+    baseline_rsam: 50,
+    threshold_rsam: 100,
+    tremor_fraction: 0.1,
+    parameters: { baseline_factor: 2.0, min_duration_periods: 3 },
+    samples: [],
+    episodes: [],
+    ...overrides,
+  };
+}
+
+describe('tremorWarnings', () => {
+  it('el corte de median-baseline-masking es estrictamente > 0.5', () => {
+    const alta = tremorWarnings(tremorResponse({ tremor_fraction: 0.62 }));
+    expect(find(alta, 'tremor.median-baseline-masking')?.severity).toBe('warning');
+    // 0.5 exacto NO aparece: el corte es estrictamente mayor.
+    const exacta = tremorWarnings(tremorResponse({ tremor_fraction: 0.5 }));
+    expect(ids(exacta)).not.toContain('tremor.median-baseline-masking');
+  });
+
+  it('baseline_rsam null emite no-baseline con severidad info (C3)', () => {
+    const warnings = tremorWarnings(tremorResponse({ baseline_rsam: null, threshold_rsam: null }));
+    expect(find(warnings, 'tremor.no-baseline')?.severity).toBe('info');
+  });
+
+  it('una línea base en CERO no es "sin dato": no emite no-baseline', () => {
+    // Invariante `null ≠ 0` que declaran `lib/analytics.ts` y
+    // `src/models/analytics.py:11-15`. Convertir null en 0 acá reintroduciría
+    // del lado del frontend el bug que el backend evita a propósito.
+    const warnings = tremorWarnings(tremorResponse({ baseline_rsam: 0, threshold_rsam: 0 }));
+    expect(ids(warnings)).not.toContain('tremor.no-baseline');
+  });
+
+  it('sin episodios las reglas por episodio no disparan ni lanzan', () => {
+    const warnings = tremorWarnings(tremorResponse({ episodes: [] }));
+    expect(ids(warnings)).not.toContain('tremor.emergent-onset');
+    expect(ids(warnings)).not.toContain('tremor.undefined-band');
+  });
+
+  it('emergent-onset aparece UNA sola vez, no una por episodio', () => {
+    const warnings = tremorWarnings(
+      tremorResponse({
+        episodes: [episode({ onset_ratio: 0.8 }), episode({ onset_ratio: 0.12 }), episode({ onset_ratio: 0.05 })],
+      }),
+    );
+    expect(ids(warnings).filter((id) => id === 'tremor.emergent-onset')).toHaveLength(1);
+    expect(find(warnings, 'tremor.emergent-onset')?.severity).toBe('info');
+  });
+
+  it('un episodio con banda undefined entre varios emite undefined-band una vez', () => {
+    const warnings = tremorWarnings(
+      tremorResponse({
+        episodes: [episode({ band: 'mid' }), episode({ band: 'undefined' }), episode({ band: 'low' })],
+      }),
+    );
+    expect(ids(warnings).filter((id) => id === 'tremor.undefined-band')).toHaveLength(1);
+  });
+
+  it('sin ninguna banda undefined no aparece undefined-band', () => {
+    const warnings = tremorWarnings(
+      tremorResponse({ episodes: [episode({ band: 'mid' }), episode({ band: 'high' })] }),
+    );
+    expect(ids(warnings)).not.toContain('tremor.undefined-band');
   });
 });

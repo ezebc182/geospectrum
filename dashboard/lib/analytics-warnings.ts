@@ -18,7 +18,7 @@
  *   fuerza, porque `BValueResponse` está discriminada por `status`).
  */
 
-import type { BValueResponse } from './analytics';
+import type { BValueResponse, TremorResponse } from './analytics';
 
 // --- constantes con nombre ------------------------------------------------------
 
@@ -238,6 +238,42 @@ export function bValueWarnings(response: BValueResponse): AnalyticsWarning[] {
       severity: 'info',
       params: { low, high, sigma: response.sigma_b },
     });
+  }
+
+  return bySeverity(warnings);
+}
+
+// --- reglas de tremor -----------------------------------------------------------
+
+/**
+ * Las 4 reglas de tremor. Las dos que miran episodios usan `.some(...)`: una
+ * advertencia POR REGLA, no una por episodio — diez episodios emergentes no
+ * son diez avisos, son un aviso.
+ */
+export function tremorWarnings(response: TremorResponse): AnalyticsWarning[] {
+  const warnings: AnalyticsWarning[] = [];
+
+  if (response.tremor_fraction > TREMOR_BASELINE_MASK_FRACTION) {
+    warnings.push({
+      id: 'tremor.median-baseline-masking',
+      severity: 'warning',
+      params: { fraction: response.tremor_fraction },
+    });
+  }
+
+  // `=== null` EXPLÍCITO, nunca `!baseline_rsam`: un `0` es un hecho medido
+  // ("se miró y la amplitud es cero") y NO es "sin dato". Es la invariante
+  // `null ≠ 0` de `lib/analytics.ts` y `src/models/analytics.py:11-15`.
+  if (response.baseline_rsam === null) {
+    warnings.push({ id: 'tremor.no-baseline', severity: 'info', params: {} });
+  }
+
+  if (response.episodes.some((ep) => ep.onset_ratio < EMERGENT_ONSET_RATIO)) {
+    warnings.push({ id: 'tremor.emergent-onset', severity: 'info', params: {} });
+  }
+
+  if (response.episodes.some((ep) => ep.band === 'undefined')) {
+    warnings.push({ id: 'tremor.undefined-band', severity: 'info', params: {} });
   }
 
   return bySeverity(warnings);
