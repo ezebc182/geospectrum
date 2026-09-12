@@ -37,6 +37,16 @@
  * es una transformación de build de un plugin de Vite y `vitest.config.ts` no
  * carga ninguno, así que llega `undefined` en runtime.
  *
+ * ## Cada caso recibe DOS valores: etiqueta y ruta. No son intercambiables.
+ *
+ * `PANELES` son pares `[etiqueta, rutaAbsoluta]`, así que todo `it.each` los
+ * desestructura como `(archivo, ruta)`: `archivo` es para el MENSAJE de error y
+ * `ruta` es lo único que puede ir a `readFileSync`. Pasarle la etiqueta —
+ * `fuente(archivo)` — tira `ENOENT: open 'analytics/TremorPanel.tsx'`, porque
+ * la etiqueta lleva el prefijo del directorio pero es relativa al cwd, no una
+ * ruta real. Ya pasó: una copia mal pegada de los dos casos de tooltip y grises
+ * duplicó los bloques con la firma `(archivo)` y dejó 14 de 44 en rojo.
+ *
  * ## Filo conocido: esto protege por ADYACENCIA LITERAL, no por semántica
  *
  * `CROMO_HEX` matchea un hex PEGADO a un atributo de cromo (`stroke="#..."`,
@@ -175,56 +185,6 @@ describe('cromo de los paneles de analytics', () => {
     // explica el arreglo no es un gris APLICADO, y si contara, el test no
     // podría satisfacerse nunca sin borrar su propia documentación.
     const huerfanos = [...fuente(ruta).matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\}|\{([^}]*)\})/g)]
-      .flatMap((m) => {
-        const clases = m[1] ?? m[2] ?? m[3] ?? '';
-        // La pareja `dark:` vive en el MISMO className.
-        if (new RegExp(`dark:(?:${GRIS}|text-white)`).test(clases)) return [];
-        return [...clases.matchAll(new RegExp(`(?<!dark:)\\b${GRIS}`, 'g'))].map((g) => g[0]);
-      });
-
-    expect(huerfanos, `${archivo} tiene un gris fijo sin variante para oscuro`).toEqual([]);
-  });
-
-  /**
-   * Bug reportado con captura (modo oscuro): las FILAS del tooltip salían en
-   * gris oscuro sobre panel oscuro mientras la etiqueta se leía bien.
-   *
-   * Recharts estila el tooltip por defecto en TRES tramos independientes:
-   * `contentStyle` (contenedor), `labelStyle` (etiqueta) e `itemStyle` (cada
-   * fila). El `color` de `contentStyle` no cascadea a las filas — a falta de
-   * `itemStyle`, Recharts le pinta a cada fila el color de SU serie. Por eso
-   * `contentStyle` solo no alcanza y hay que pasar las tres props.
-   *
-   * Los paneles con `content={...}` propio quedan fuera: ahí el markup es
-   * nuestro y ya usa `text-popover-foreground` de Tailwind.
-   */
-  it.each(PANELES)('%s usa las tres props si estila el tooltip por defecto', (archivo) => {
-    const src = fuente(archivo);
-    if (!src.includes('contentStyle')) return; // tooltip con `content` propio
-
-    expect(src, `${archivo} estila el contenedor del tooltip pero no la etiqueta`).toMatch(
-      /labelStyle=\{CHART_TOOLTIP_LABEL_STYLE\}/,
-    );
-    expect(src, `${archivo} estila el contenedor del tooltip pero no las filas`).toMatch(
-      /itemStyle=\{CHART_TOOLTIP_ITEM_STYLE\}/,
-    );
-  });
-
-  /**
-   * Un gris de Tailwind SIN pareja `dark:` es el mismo valor en los dos temas,
-   * igual que un hex. Medido con la fórmula WCAG contra los tokens reales:
-   * `text-gray-400` (#9ca3af) sobre `--popover` da 2,54:1 en claro — falla AA
-   * (4,5:1) — aunque en oscuro dé 7,05:1.
-   *
-   * El par `text-gray-700 dark:text-gray-300` SÍ se adapta y queda fuera: lo
-   * que se prohíbe es el gris huérfano, que es el que rompe en un tema.
-   */
-  it.each(PANELES)('%s no deja grises de Tailwind sin variante dark', (archivo) => {
-    const GRIS = String.raw`text-(?:gray|slate|zinc|neutral|stone)-\d{2,3}`;
-    // Solo dentro de listas de clases: un gris NOMBRADO en un comentario que
-    // explica el arreglo no es un gris APLICADO, y si contara, el test no
-    // podría satisfacerse nunca sin borrar su propia documentación.
-    const huerfanos = [...fuente(archivo).matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\}|\{([^}]*)\})/g)]
       .flatMap((m) => {
         const clases = m[1] ?? m[2] ?? m[3] ?? '';
         // La pareja `dark:` vive en el MISMO className.
