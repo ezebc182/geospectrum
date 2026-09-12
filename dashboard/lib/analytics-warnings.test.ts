@@ -17,7 +17,9 @@ import {
   UPTIME_ATTENTION_THRESHOLD,
   bValueWarnings,
   derivedBInterval,
+  partitionUptimeChannels,
   tremorWarnings,
+  uptimeWarnings,
 } from './analytics-warnings';
 
 /** Respuesta sana: `ok`, un solo tipo de magnitud, muestra holgada. */
@@ -379,5 +381,59 @@ describe('tremorWarnings', () => {
       tremorResponse({ episodes: [episode({ band: 'mid' }), episode({ band: 'high' })] }),
     );
     expect(ids(warnings)).not.toContain('tremor.undefined-band');
+  });
+});
+
+describe('partitionUptimeChannels / uptimeWarnings', () => {
+  it('el corte es estrictamente < 0.9', () => {
+    const { needsAttention, healthy } = partitionUptimeChannels({ A: 0.89, B: 0.9, C: 0.91 });
+    expect(needsAttention).toContain('A');
+    expect(healthy).toContain('B');
+    expect(healthy).toContain('C');
+  });
+
+  it('un canal nunca observado (null) va a un tercer grupo, no a "a revisar" ni a "sano"', () => {
+    // `null` = "nadie miró"; `0` = "se miró y el canal no mandó nada". Son
+    // cosas distintas y la partición no las mezcla.
+    const { needsAttention, healthy, unobserved } = partitionUptimeChannels({ A: null, B: 0.0 });
+    expect(needsAttention).toContain('B');
+    expect(unobserved).toEqual(['A']);
+    expect(needsAttention).not.toContain('A');
+    expect(healthy).not.toContain('A');
+  });
+
+  it('el grupo a revisar va de peor a mejor con desempate por nombre ascendente', () => {
+    const { needsAttention } = partitionUptimeChannels({ Z: 0.5, A: 0.5, M: 0.2 });
+    expect(needsAttention).toEqual(['M', 'A', 'Z']);
+  });
+
+  it('una red sana devuelve el grupo a revisar VACÍO, y eso no es un error', () => {
+    const { needsAttention, healthy } = partitionUptimeChannels({ A: 0.95, B: 1.0 });
+    expect(needsAttention).toEqual([]);
+    expect(healthy).toHaveLength(2);
+  });
+
+  it('un overall vacío devuelve los tres grupos vacíos', () => {
+    expect(partitionUptimeChannels({})).toEqual({ needsAttention: [], healthy: [], unobserved: [] });
+  });
+
+  it('uptimeWarnings cuenta lo que la partición separa y omite el grupo vacío', () => {
+    const overall = { A: 0.2, B: 0.5, C: 0.95, D: null };
+    const partition = partitionUptimeChannels(overall);
+    const warnings = uptimeWarnings(overall);
+
+    const below = find(warnings, 'uptime.channels-below-threshold');
+    expect((below?.params as { count: number }).count).toBe(partition.needsAttention.length);
+    const unobserved = find(warnings, 'uptime.channels-unobserved');
+    expect((unobserved?.params as { count: number }).count).toBe(partition.unobserved.length);
+
+    // Con los dos grupos vacíos no se emite ninguna advertencia.
+    expect(uptimeWarnings({ A: 0.95 })).toEqual([]);
+  });
+
+  it('un null NUNCA suma a channels-below-threshold', () => {
+    const warnings = uptimeWarnings({ A: null });
+    expect(ids(warnings)).not.toContain('uptime.channels-below-threshold');
+    expect((find(warnings, 'uptime.channels-unobserved')?.params as { count: number }).count).toBe(1);
   });
 });

@@ -278,3 +278,80 @@ export function tremorWarnings(response: TremorResponse): AnalyticsWarning[] {
 
   return bySeverity(warnings);
 }
+
+// --- uptime ---------------------------------------------------------------------
+
+export interface UptimePartition {
+  /** `ratio < UPTIME_ATTENTION_THRESHOLD`, de peor a mejor; empate por nombre asc. */
+  needsAttention: string[];
+  /** `ratio >= UPTIME_ATTENTION_THRESHOLD`. */
+  healthy: string[];
+  /** `ratio === null`: NADIE MIRÓ. */
+  unobserved: string[];
+}
+
+/**
+ * Parte `overall` en TRES grupos por el umbral fijo de uptime.
+ *
+ * Por qué `unobserved` es un grupo aparte y no "ratio bajo": `null` significa
+ * "nadie miró esa hora" (el pipeline estaba caído), no "el canal no mandó
+ * nada". El backend lo distingue a propósito en `_ratio()` de
+ * `src/services/station_uptime.py`, y `lib/uptime-series.ts:5-13` lo protege
+ * del lado del frontend. Meterlo en `needsAttention` haría que un pipeline
+ * caído se lea como una red degradada — y arreglar la estación no arreglaría
+ * nada.
+ *
+ * El orden de `needsAttention` es determinista: ratio ascendente con desempate
+ * por nombre ascendente. Nunca depende del orden de `Object.keys`.
+ */
+export function partitionUptimeChannels(overall: Record<string, number | null>): UptimePartition {
+  const needsAttentionEntries: Array<{ channel: string; ratio: number }> = [];
+  const healthy: string[] = [];
+  const unobserved: string[] = [];
+
+  for (const [channel, ratio] of Object.entries(overall)) {
+    if (ratio === null) {
+      unobserved.push(channel);
+    } else if (ratio < UPTIME_ATTENTION_THRESHOLD) {
+      needsAttentionEntries.push({ channel, ratio });
+    } else {
+      healthy.push(channel);
+    }
+  }
+
+  needsAttentionEntries.sort((a, b) => a.ratio - b.ratio || a.channel.localeCompare(b.channel));
+
+  return {
+    needsAttention: needsAttentionEntries.map((entry) => entry.channel),
+    healthy,
+    unobserved,
+  };
+}
+
+/**
+ * Las dos advertencias de uptime, construidas ENCIMA de `partitionUptimeChannels`
+ * para que el umbral viva en un solo lugar. Un grupo vacío no emite advertencia:
+ * "cero canales a revisar" no es una advertencia, es una red sana.
+ */
+export function uptimeWarnings(overall: Record<string, number | null>): AnalyticsWarning[] {
+  const { needsAttention, unobserved } = partitionUptimeChannels(overall);
+  const warnings: AnalyticsWarning[] = [];
+
+  if (needsAttention.length > 0) {
+    warnings.push({
+      id: 'uptime.channels-below-threshold',
+      severity: 'warning',
+      params: { count: needsAttention.length, threshold: UPTIME_ATTENTION_THRESHOLD },
+    });
+  }
+
+  if (unobserved.length > 0) {
+    warnings.push({
+      id: 'uptime.channels-unobserved',
+      severity: 'info',
+      params: { count: unobserved.length },
+    });
+  }
+
+  return bySeverity(warnings);
+}
