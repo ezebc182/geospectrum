@@ -39,15 +39,21 @@ interface DepthDistributionChartProps {
 export function DepthDistributionChart({ eventos, className }: DepthDistributionChartProps) {
   const t = useTranslations('charts');
   // Agrupar por rangos de profundidad
+  // El primer bin abre en -Infinity, no en 0: la profundidad puede ser NEGATIVA
+  // (hipocentro sobre el nivel del mar, lo reportan EMSC y USGS). Con `min: 0`
+  // esos eventos no caían en ningún bin y se perdían en silencio.
   const bins = [
-    { name: '<70 km', min: 0, max: 70, count: 0, color: DEPTH_BIN_COLORS[0] },
+    { name: '<70 km', min: -Infinity, max: 70, count: 0, color: DEPTH_BIN_COLORS[0] },
     { name: '70-150 km', min: 70, max: 150, count: 0, color: DEPTH_BIN_COLORS[1] },
     { name: '150-300 km', min: 150, max: 300, count: 0, color: DEPTH_BIN_COLORS[2] },
     { name: '>300 km', min: 300, max: Infinity, count: 0, color: DEPTH_BIN_COLORS[3] },
   ];
 
   eventos.forEach((ev) => {
-    if (ev.prof_km) {
+    // `!= null` y no truthiness: `prof_km` es `number | null` y `0 km` es un
+    // evento superficial legítimo, no un dato ausente. El resto del código
+    // (formatDepth, el KPI de someros del backend) ya distingue null de cero.
+    if (ev.prof_km != null) {
       const bin = bins.find((b) => ev.prof_km! >= b.min && ev.prof_km! < b.max);
       if (bin) bin.count++;
     }

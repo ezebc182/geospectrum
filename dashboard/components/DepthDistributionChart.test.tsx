@@ -1,5 +1,5 @@
 /**
- * Distribución de profundidades (analytics-redesign, Fase 1).
+ * Distribución de profundidades.
  *
  * Recharts se mockea capturando props, igual que `DepthSectionChart.test.tsx`:
  * `ResponsiveContainer` mide 0×0 en jsdom y el SVG no se assertea nunca. Lo
@@ -165,23 +165,30 @@ describe('DepthDistributionChart', () => {
   });
 
   /**
-   * El componente filtra con `if (ev.prof_km)`, que es TRUTHINESS: descarta
-   * `null` y también `prof_km: 0` (un evento superficial, dato legítimo).
+   * Corrección deliberada de comportamiento: el componente filtraba con
+   * `if (ev.prof_km)` (TRUTHINESS) y el primer bin arrancaba en `min: 0`, así
+   * que perdía DOS clases de dato legítimo:
    *
-   * Este test DOCUMENTA el comportamiento actual tal cual es — no lo arregla.
-   * Cambiar el binning es comportamiento de producto y esta fase declara
-   * "MODIFIED Requirements: Ninguno". Si `0 km` tiene que contar, es otro change
-   * y este assert es el que hay que actualizar a propósito.
+   * 1. `prof_km: 0` — un evento superficial. En todo el resto del código
+   *    `null ≠ 0` (`formatDepth` compara `=== null`, el backend `is not None`),
+   *    y el KPI de someros SÍ lo contaba: el histograma desmentía al KPI.
+   * 2. `prof_km` negativo — hipocentro sobre el nivel del mar, que EMSC y USGS
+   *    reportan y `HypocentersResponse` documenta. Pasaba el truthiness pero
+   *    ningún bin lo atrapaba, así que se caía en silencio.
+   *
+   * Ahora el filtro es `!= null` y el primer bin abre en `-Infinity`: solo el
+   * `null` (ausencia de dato) queda afuera.
    */
-  it('un evento sin profundidad no entra en ningún bin (y hoy 0 km tampoco)', () => {
+  it('excluye solo la profundidad ausente: 0 km y las negativas cuentan como <70 km', () => {
     renderChart([
       evento({ id: 'sin-dato', prof_km: null }),
       evento({ id: 'superficial', prof_km: 0 }),
+      evento({ id: 'sobre-el-mar', prof_km: -1.2 }),
       evento({ id: 'con-dato', prof_km: 10 }),
     ]);
 
-    // Solo cuenta el de 10 km: el null y el 0 quedan afuera por truthiness.
-    expect(counts()).toEqual([1, 0, 0, 0]);
+    // Tres en <70 km (0, -1.2 y 10); el null es el único descartado.
+    expect(counts()).toEqual([3, 0, 0, 0]);
   });
 
   it('con una lista vacía renderiza sin lanzar y deja los cuatro bins en cero', () => {
