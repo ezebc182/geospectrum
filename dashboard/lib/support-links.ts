@@ -31,7 +31,7 @@ export interface SupportLink {
  */
 const SUPPORT_LINKS: readonly SupportLink[] = [
   { id: 'cafecito', url: 'https://cafecito.app/ezebc182' },
-  { id: 'kofi', url: '' }, // TODO: https://ko-fi.com/<usuario>
+  { id: 'kofi', url: 'https://ko-fi.com/B8D026Y7L1' },
   { id: 'sponsors', url: '' }, // TODO: https://github.com/sponsors/<usuario>
 ] as const;
 
