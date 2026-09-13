@@ -20,6 +20,7 @@ import { useLocale } from 'next-intl';
 import { setLocaleCookie, toAppLocale } from '@/lib/locale';
 import { LandingHero } from '@/components/landing/LandingHero';
 import { LandingSections } from '@/components/landing/LandingSections';
+import { LandingSupport } from '@/components/landing/LandingSupport';
 import { LandingFooter } from '@/components/landing/LandingFooter';
 
 export function LandingContent() {
@@ -37,6 +38,7 @@ export function LandingContent() {
     <>
       <LandingHero onToggleLocale={toggleLocale} />
       <LandingSections />
+      <LandingSupport />
       <LandingFooter />
     </>
   );

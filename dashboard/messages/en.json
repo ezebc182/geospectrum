@@ -982,6 +982,19 @@
     "meta": {
       "title": "GeoSpectrum — Global seismic monitoring in real time",
       "description": "Earthquakes across the planet on a live 3D globe: continuous ingestion from USGS, EMSC and INPRES, swarm detection, spectrograms and alerts on your areas of interest."
+    },
+    "support": {
+      "kicker": "Support the project",
+      "title": "GeoSpectrum runs out of pocket",
+      "body": "There is no company or grant behind this: the servers that ingest the seismic signals, the database that keeps the history and the domain are all paid for by the person who maintains it — about 16 US dollars a month. If the tool is useful to you, a contribution helps keep it online and ad-free.",
+      "costNote": "Current infrastructure cost: ~16 USD/month",
+      "cafecito": "Invitame un cafecito",
+      "cafecitoHint": "From Argentina, in pesos",
+      "kofi": "Buy me a coffee",
+      "kofiHint": "International, card or PayPal",
+      "sponsors": "GitHub Sponsors",
+      "sponsorsHint": "Monthly, no fees",
+      "thanks": "Thanks for supporting the project."
     }
   },
   "invite": {
@@ -1217,5 +1230,10 @@
       "commentFailed": "The comment could not be saved; the previous one was restored.",
       "sessionExpired": "Your session expired. Sign in again."
     }
+  },
+  "supportBanner": {
+    "text": "GeoSpectrum is kept running by contributions. If it helps you, you can chip in.",
+    "cta": "Contribute",
+    "dismiss": "Dismiss"
   }
 }
