@@ -5,6 +5,7 @@ import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { LocaleSync } from '@/components/LocaleSync';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingGate } from '@/components/onboarding/OnboardingGate';
+import { SupportBanner } from '@/components/SupportBanner';
 import { UserMenu } from '@/components/UserMenu';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
@@ -45,6 +46,10 @@ export default function AppShellLayout({
             <UserMenu />
           </div>
         </header>
+        {/* Pedido de colaboración, descartable. Debajo del header para que no
+            empuje la navegación, y fuera de <main> para que no herede su
+            padding. */}
+        <SupportBanner />
         {/* min-w-0: sin esto, un hijo ancho (el tablero kanban de /feedback,
             una tabla, lo que sea) fuerza a este flex item a crecer con su
             contenido en vez de respetar el overflow-x-auto que ya tenga
