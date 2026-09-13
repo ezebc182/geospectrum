@@ -30,7 +30,7 @@ export interface SupportLink {
  * resto del mundo.
  */
 const SUPPORT_LINKS: readonly SupportLink[] = [
-  { id: 'cafecito', url: '' }, // TODO: https://cafecito.app/<usuario>
+  { id: 'cafecito', url: 'https://cafecito.app/ezebc182' },
   { id: 'kofi', url: '' }, // TODO: https://ko-fi.com/<usuario>
   { id: 'sponsors', url: '' }, // TODO: https://github.com/sponsors/<usuario>
 ] as const;
